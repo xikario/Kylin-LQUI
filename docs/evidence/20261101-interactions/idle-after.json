@@ -1,0 +1,1358 @@
+{
+  "measuredAt": "2026-11-02T00:25:26.748420+08:00",
+  "durationSeconds": 15.357540035998682,
+  "scope": "Current-user front processes and descendants; PSS includes shared pages proportionally. CPU 100% = one core. Detached model scopes are excluded. No application is started.",
+  "samples": [
+    {
+      "elapsed": 0.6420095650246367,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": null
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": null
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": null
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": null
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7373046875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": null
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": null
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": null
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": null
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": null
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": null
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": null
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": null
+        }
+      ]
+    },
+    {
+      "elapsed": 2.3232491740200203,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 2.379196860815205
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7373046875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.5947992152038013
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": 0.0
+        }
+      ]
+    },
+    {
+      "elapsed": 3.944778977020178,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 5.550314267026225
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7412109375,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6167015852251362
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": 0.6167015852251362
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": 0.6167015852251362
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": 0.0
+        }
+      ]
+    },
+    {
+      "elapsed": 5.586609258025419,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6090763531220361
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7412109375,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6090763531220361
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": 0.6090763531220361
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": 0.0
+        }
+      ]
+    },
+    {
+      "elapsed": 7.215553529997123,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6138945433594124
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7412109375,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6138945433594124
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": 0.0
+        }
+      ]
+    },
+    {
+      "elapsed": 8.837378224008717,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 6.165894524188641
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7412109375,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6165894524188641
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": 0.6165894524188641
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": 0.0
+        }
+      ]
+    },
+    {
+      "elapsed": 10.47282630301197,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7412109375,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6114532236385417
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": 0.0
+        }
+      ]
+    },
+    {
+      "elapsed": 12.107548777014017,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6117246296564637
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7451171875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6117246296564637
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": 0.6117246296564637
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": 0.0
+        }
+      ]
+    },
+    {
+      "elapsed": 13.728510580025613,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 7.403012197884686
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7451171875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6169176831570572
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": 0.6169176831570572
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": 0.0
+        }
+      ]
+    },
+    {
+      "elapsed": 15.357540035998682,
+      "components": [
+        {
+          "id": "settings",
+          "name": "Kylin-LQUI 统一设置",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "control-center",
+          "name": "Kylin-LQUI 系统控制中心",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "fences",
+          "name": "Fences 桌面与小组件",
+          "pids": [
+            34573,
+            34590,
+            34591,
+            34592
+          ],
+          "pssMiB": 169.7783203125,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6138624420407855
+        },
+        {
+          "id": "launcher",
+          "name": "开始菜单 V2",
+          "pids": [
+            34560,
+            34566
+          ],
+          "pssMiB": 76.0,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "panel",
+          "name": "液态任务栏与 Dock",
+          "pids": [
+            34538,
+            34539
+          ],
+          "pssMiB": 102.7451171875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.6138624420407855
+        },
+        {
+          "id": "ai-station",
+          "name": "AI 小站",
+          "pids": [
+            34583
+          ],
+          "pssMiB": 54.0634765625,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-ui",
+          "name": "RIME 液态候选前端",
+          "pids": [
+            36754
+          ],
+          "pssMiB": 103.0029296875,
+          "swapPssMiB": 0.0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "peony-manager",
+          "name": "Peony 插件管理器",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "ai-space",
+          "name": "AI 空间 / 本地知识库",
+          "pids": [],
+          "pssMiB": 0,
+          "swapPssMiB": 0,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "native-desktop",
+          "name": "原生 Peony 桌面（兼容/回退）",
+          "pids": [
+            4317
+          ],
+          "pssMiB": 69.1669921875,
+          "swapPssMiB": 27.765625,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "compositor",
+          "name": "KWin 合成器",
+          "pids": [
+            4304
+          ],
+          "pssMiB": 126.7431640625,
+          "swapPssMiB": 9.66796875,
+          "cpuPercent": 0.0
+        },
+        {
+          "id": "input-engine",
+          "name": "Fcitx / Rime 引擎",
+          "pids": [
+            4221
+          ],
+          "pssMiB": 75.7470703125,
+          "swapPssMiB": 1.578125,
+          "cpuPercent": 0.0
+        }
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "id": "settings",
+      "name": "Kylin-LQUI 统一设置",
+      "pids": [],
+      "pssMiB": 0,
+      "swapPssMiB": 0,
+      "cpuPercent": 0.0,
+      "peakPssMiB": 0
+    },
+    {
+      "id": "control-center",
+      "name": "Kylin-LQUI 系统控制中心",
+      "pids": [],
+      "pssMiB": 0,
+      "swapPssMiB": 0,
+      "cpuPercent": 0.0,
+      "peakPssMiB": 0
+    },
+    {
+      "id": "fences",
+      "name": "Fences 桌面与小组件",
+      "pids": [
+        34573,
+        34590,
+        34591,
+        34592
+      ],
+      "pssMiB": 169.7783203125,
+      "swapPssMiB": 0.0,
+      "cpuPercent": 2.660775090899273,
+      "peakPssMiB": 169.7783203125
+    },
+    {
+      "id": "launcher",
+      "name": "开始菜单 V2",
+      "pids": [
+        34560,
+        34566
+      ],
+      "pssMiB": 76.0,
+      "swapPssMiB": 0.0,
+      "cpuPercent": 0.0,
+      "peakPssMiB": 76.0
+    },
+    {
+      "id": "panel",
+      "name": "液态任务栏与 Dock",
+      "pids": [
+        34538,
+        34539
+      ],
+      "pssMiB": 102.7451171875,
+      "swapPssMiB": 0.0,
+      "cpuPercent": 0.611668791980233,
+      "peakPssMiB": 102.7451171875
+    },
+    {
+      "id": "ai-station",
+      "name": "AI 小站",
+      "pids": [
+        34583
+      ],
+      "pssMiB": 54.0634765625,
+      "swapPssMiB": 0.0,
+      "cpuPercent": 0.0,
+      "peakPssMiB": 54.0634765625
+    },
+    {
+      "id": "input-ui",
+      "name": "RIME 液态候选前端",
+      "pids": [
+        36754
+      ],
+      "pssMiB": 103.0029296875,
+      "swapPssMiB": 0.0,
+      "cpuPercent": 0.0,
+      "peakPssMiB": 103.0029296875
+    },
+    {
+      "id": "peony-manager",
+      "name": "Peony 插件管理器",
+      "pids": [],
+      "pssMiB": 0,
+      "swapPssMiB": 0,
+      "cpuPercent": 0.0,
+      "peakPssMiB": 0
+    },
+    {
+      "id": "ai-space",
+      "name": "AI 空间 / 本地知识库",
+      "pids": [],
+      "pssMiB": 0,
+      "swapPssMiB": 0,
+      "cpuPercent": 0.0,
+      "peakPssMiB": 0
+    },
+    {
+      "id": "native-desktop",
+      "name": "原生 Peony 桌面（兼容/回退）",
+      "pids": [
+        4317
+      ],
+      "pssMiB": 69.1669921875,
+      "swapPssMiB": 27.765625,
+      "cpuPercent": 0.06852239835834846,
+      "peakPssMiB": 69.1669921875
+    },
+    {
+      "id": "compositor",
+      "name": "KWin 合成器",
+      "pids": [
+        4304
+      ],
+      "pssMiB": 126.7431640625,
+      "swapPssMiB": 9.66796875,
+      "cpuPercent": 0.3412233003977285,
+      "peakPssMiB": 126.7431640625
+    },
+    {
+      "id": "input-engine",
+      "name": "Fcitx / Rime 引擎",
+      "pids": [
+        4221
+      ],
+      "pssMiB": 75.7470703125,
+      "swapPssMiB": 1.578125,
+      "cpuPercent": 0.0,
+      "peakPssMiB": 75.7470703125
+    }
+  ]
+}

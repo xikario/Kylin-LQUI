@@ -1,0 +1,51 @@
+{
+  "verifiedAt": "2026-11-02T00:35:56.505839+08:00",
+  "nativeCommit": "8b78f849a6978b5f3d776ec4a6ebe943d52680da",
+  "settingsCleanupCommit": "f960541",
+  "allWidgetsPreserved": true,
+  "chatMessages": 50,
+  "chatPrefixAndThreadPreserved": true,
+  "inputEngineAndCompositorPreserved": true,
+  "inputFrontendPreserved": true,
+  "dockPreset": "pure-glass-default-zero-refraction",
+  "controlCenterGpu": "snell-gpu",
+  "idleExit": {
+    "exitCode": 0,
+    "secondsAfterDismiss": 60.29,
+    "gpu": "snell-gpu"
+  },
+  "peony": {
+    "processes": 4,
+    "pssMiB": 234.09765625,
+    "singleton": true,
+    "allProcessesExited": true
+  },
+  "settingsPage": {
+    "page": "peony:plugins",
+    "fields": 48,
+    "pssMiB": 31.7255859375,
+    "exitCode": 0
+  },
+  "desktopGpu": {
+    "activityDesklet": {
+      "gpu": true,
+      "materialBuilds": 1
+    },
+    "calendarDesklet": {
+      "gpu": true,
+      "materialBuilds": 1
+    },
+    "clockDesklet": {
+      "gpu": true,
+      "faceGpu": true,
+      "materialBuilds": 1,
+      "faceMaterialBuilds": 2
+    },
+    "musicDesklet": {
+      "gpu": true,
+      "materialBuilds": 1
+    }
+  },
+  "installedNativeBridgeSha256": "d2e9eb4c0b775f821d44f2ea9a77766f66ee8a57f675da23f7557716be8e5555",
+  "nightAudit": "scheduled, compare stable idle after at least 30 minutes"
+}

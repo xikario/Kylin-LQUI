@@ -1,7 +1,7 @@
 {
   "baseline": "c511b99",
   "date": "2026-11-01",
-  "delivery": "source-only; no live desktop rollout",
+  "delivery": "user-local deployment completed at 20:22 Asia/Shanghai; runtime code 172037b",
   "findings": [
     {
       "id": "CLI-01",
@@ -541,5 +541,10 @@
     "ai_space_added_boundary_suites": 7,
     "module_scalar_roundtrips": 116,
     "module_rendered_views": 32
+  },
+  "liveRollout": {
+    "record": "LIVE_ROLLOUT_20261101.md",
+    "codeCommit": "172037b",
+    "verified": true
   }
 }

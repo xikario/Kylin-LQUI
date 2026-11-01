@@ -82,3 +82,8 @@ PSS 是按共享比例分摊后的常驻内存，避免把每个 Qt/WebEngine �
 快捷设置仍无进程/D-Bus owner，沿用先前 60.29 秒、退出码 0 的真实空闲退出验证。五个小组件启用/显示/自启状态保持，Fences 布局、原生任务栏布局和开始菜单固定图标配置与更新前备份逐字节一致；任务栏入口几何保持。50 条聊天原始前缀及线程保持，Fcitx、KWin、输入法前端和已部署主组件仍为原进程。
 
 本次复查未发现新增回归。原始采样见 [idle-night-audit.json](evidence/20261101-interactions/idle-night-audit.json)，逐项检查与差值见 [night-stability-audit.json](evidence/20261101-interactions/night-stability-audit.json)。私人状态快照仍仅保存在本机维护目录。夜间自动复查 `kylin-lqui` 已暂停，避免后续重复唤醒。
+
+
+## 11 月 2 日用户复测补充
+
+用户发现的快捷设置 Wi-Fi、蓝牙、声音详情点击后自动收回已复现。此前页面构建/开关测试未覆盖真实点击导航，本次改为原窗口内切页，补齐按钮点击、返回、读取中切页与实际 XTest 输入验证；本机已更新。28 项控制中心测试及两轮真实导航通过。原因、资源和安装证据见 [快捷设置子页修复](CONTROL_CENTER_NAVIGATION_FIX_20261102.md)。此前夜间只读空闲检查不应理解为所有交互均无缺陷。

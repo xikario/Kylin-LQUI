@@ -89,6 +89,37 @@ class ControlUi(unittest.TestCase):
         self.assertFalse(Fixture.calls);self.assertFalse(self.window.dialog_open)
     def test_hidden_window_stops_polling(self):
         self.assertTrue(self.window.poll.isActive());self.window.hide();self.assertFalse(self.window.poll.isActive());self.assertTrue(self.window.idle.isActive())
+    def test_detail_clicks_and_back_keep_window_visible_and_material(self):
+        class VisibilityEvents(QtCore.QObject):
+            def __init__(self):super().__init__();self.events=[]
+            def eventFilter(self,owner,event):
+                if event.type() in (QtCore.QEvent.Hide,QtCore.QEvent.Show):self.events.append(event.type())
+                return False
+        events=VisibilityEvents();self.window.installEventFilter(events)
+        native_id=int(self.window.winId());revision=self.window.material_revision
+        material=self.window.native_glass;backdrop_key=self.window.backdrop.cacheKey()
+        for page in ('wifi','bluetooth','sound','power')*2:
+            if page in ('wifi','bluetooth'):button=self.window.findChild(QtWidgets.QAbstractButton,page+'_details')
+            else:button=next(b for b in self.window.findChildren(QtWidgets.QToolButton) if b.toolTip()=={'sound':'输出设备与声音设置','power':'电池、电源与会话'}[page])
+            self.assertIsNotNone(button);QtTest.QTest.mouseClick(button,QtCore.Qt.LeftButton);QtTest.QTest.qWait(400)
+            self.assertEqual(self.window.page,page);self.assertTrue(self.window.isVisible());self.assertFalse(self.window.closing)
+            self.assertTrue(self.window.poll.isActive());self.assertFalse(self.window.idle.isActive())
+            QtTest.QTest.mouseClick(self.window.back,QtCore.Qt.LeftButton);QtTest.QTest.qWait(150)
+            self.assertEqual(self.window.page,'home');self.assertTrue(self.window.isVisible())
+        self.assertEqual(events.events,[]);self.assertEqual(int(self.window.winId()),native_id)
+        self.assertEqual(self.window.material_revision,revision);self.assertIs(self.window.native_glass,material)
+        self.assertEqual(self.window.backdrop.cacheKey(),backdrop_key)
+    def test_detail_click_while_reading_applies_result_to_current_page(self):
+        pending=[];self.window.job=lambda fn,cb:pending.append((fn,cb))
+        self.window.refresh();self.assertTrue(self.window.reading)
+        for page in ('wifi','bluetooth','sound'):
+            if page!='wifi':self.window.back.click()
+            button=self.window.findChild(QtWidgets.QAbstractButton,page+'_details') if page in ('wifi','bluetooth') else next(b for b in self.window.findChildren(QtWidgets.QToolButton) if b.toolTip()=='输出设备与声音设置')
+            QtTest.QTest.mouseClick(button,QtCore.Qt.LeftButton);QtTest.QTest.qWait(30)
+        result=copy.deepcopy(SAMPLE);result['audio']['selected']['volume']=64
+        pending[0][1]({'ok':True,'data':result});QtTest.QTest.qWait(400)
+        self.assertEqual(self.window.page,'sound');self.assertTrue(self.window.isVisible());self.assertEqual(self.window.volume.value(),64)
+        self.assertFalse(self.window.reading);self.assertEqual(len(pending),1)
     def test_dock_motion_reverses_and_stops_without_rebuilding_material(self):
         self.window.dialog_open=True # exclude platform focus changes from the motion-only check
         self.window.hide();self.window.open_at('home',1500,1030,40,40);target=QtCore.QRect(self.window.popup_target)

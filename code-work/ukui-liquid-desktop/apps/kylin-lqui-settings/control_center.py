@@ -45,7 +45,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         palette.setColor(QtGui.QPalette.Base,QtGui.QColor('#263a50'));self.setPalette(palette)
         self.backend_factory=backend_factory;self.data={};self.jobs=set();self.reading=False;self.changing=False;self.busy_domains=set();self.domain_revisions={};self.pending_actions={};self.dialog_open=False;self.page='home';self.anchor=QtCore.QRect();self.calendar_result={};self.calendar_revision=0;self.state_revision=0;self.pending_network=None
         layout=QtWidgets.QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(6)
-        self.header_frame=GlassCard(self,17);header=QtWidgets.QHBoxLayout(self.header_frame);header.setContentsMargins(8,3,8,3);self.back=QtWidgets.QPushButton('‹');self.back.setFixedWidth(28);self.back.clicked.connect(lambda:self.show_page('home'));header.addWidget(self.back)
+        self.header_frame=GlassCard(self,17);header=QtWidgets.QHBoxLayout(self.header_frame);header.setContentsMargins(8,3,8,3);self.back=QtWidgets.QPushButton('‹');self.back.setFixedWidth(28);self.back.clicked.connect(lambda:self.navigate('home'));header.addWidget(self.back)
         self.title=QtWidgets.QLabel('控制中心');self.title.setObjectName('centerTitle');header.addWidget(self.title,1)
         close=QtWidgets.QPushButton('×');close.setFixedWidth(28);close.clicked.connect(self.hide);header.addWidget(close);layout.addWidget(self.header_frame)
         self.scroll=QtWidgets.QScrollArea();self.scroll.setWidgetResizable(True);self.scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff);self.scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff);layout.addWidget(self.scroll,1)
@@ -158,8 +158,11 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             self.calendar.currentPageChanged.connect(self.load_calendar);self.calendar.selectionChanged.connect(self.update_calendar_day);self.load_calendar(self.calendar.yearShown(),self.calendar.monthShown())
         layout.addStretch();self.scroll.setWidget(content);content.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False);self.apply_snapshot();self.set_position()
     def navigate(self,page):
-        self.hide();self.show_page(page);self.release_material();self.capture_backdrop();self.popup_target=self.geometry();self.popup_progress=1.
-        self.show();self.raise_();self.activateWindow();self.refresh();self.poll.start()
+        # Keep the native window mapped and focused. Hiding to change pages
+        # queues WindowDeactivate, which can dismiss the newly shown detail.
+        # The opening's home-sized scene also covers the smaller detail pages;
+        # reusing it avoids capturing our own popup or rebuilding the material.
+        self.show_page(page);self.refresh()
     @staticmethod
     def action_domain(operation):
         if operation in ('volume','mute','output'):return 'audio'

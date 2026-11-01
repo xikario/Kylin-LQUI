@@ -1,0 +1,31 @@
+{
+  "verifiedAt": "2026-11-02T07:20:59.687574+08:00",
+  "reproduction": {
+    "beforeFix": "Native mouse click on wifi_details changes page to wifi then hides the popup within 400 ms. The new regression test failed on isVisible().",
+    "cause": "navigate() hid and remapped the native window, queuing WindowDeactivate and the delayed inactive-window dismissal."
+  },
+  "unitTests": {
+    "command": "xvfb-run -a -s \"-screen 0 1920x1200x24\" /usr/bin/python3 tests/test_control_center.py",
+    "passed": 28,
+    "newRegressions": [
+      "detail_clicks_and_back_keep_window_visible_and_material",
+      "detail_click_while_reading_applies_result_to_current_page"
+    ]
+  },
+  "native": {
+    "display": ":0",
+    "backend": "snell-gpu",
+    "detailPages": [
+      "wifi",
+      "bluetooth",
+      "sound",
+      "power"
+    ],
+    "cycles": 2,
+    "navigationClicks": 16,
+    "soundDropdownEscape": "real XTest keyboard event; stays open",
+    "outsideFocusDismisses": true,
+    "processExitCode": 0
+  },
+  "resourceScope": "The scene and native window remain unchanged across navigation. Material cache is capped at 32; the second complete cycle added no material renders. Hiding releases scene and card images and stops polling. No hardware connectivity, audio volume, power-session action, model response, or index operation was executed."
+}

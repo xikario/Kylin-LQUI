@@ -556,6 +556,13 @@
     "knownOpenRegressions": 0,
     "nightStabilityAudit": "completed",
     "nightStabilityEvidence": "docs/evidence/20261101-interactions/night-stability-audit.json",
-    "automationStatus": "PAUSED"
+    "automationStatus": "PAUSED",
+    "userReportedNavigationRegression": {
+      "status": "fixed-and-deployed",
+      "evidence": "docs/CONTROL_CENTER_NAVIGATION_FIX_20261102.md",
+      "cause": "window hide/remap during internal page navigation triggers delayed focus-loss dismissal",
+      "tests": 28,
+      "realPointerNavigationClicks": 16
+    }
   }
 }

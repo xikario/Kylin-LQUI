@@ -1,0 +1,104 @@
+{
+  "release": "release-20261102-071039-51aba781",
+  "controlCenterSha256": "58c4ae7649ab3566d6f4df2ba08b3d6850751f74c2726a804073c1ea00624c26",
+  "pointer": "real XTest button events, Qt global cursor placement",
+  "pages": [
+    {
+      "cycle": 1,
+      "page": "wifi",
+      "visible": true,
+      "active": true,
+      "gpu": "snell-gpu",
+      "renders": 12,
+      "cacheEntries": 12
+    },
+    {
+      "cycle": 1,
+      "page": "bluetooth",
+      "visible": true,
+      "active": true,
+      "gpu": "snell-gpu",
+      "renders": 22,
+      "cacheEntries": 22
+    },
+    {
+      "cycle": 1,
+      "page": "sound",
+      "visible": true,
+      "active": true,
+      "gpu": "snell-gpu",
+      "renders": 26,
+      "cacheEntries": 26
+    },
+    {
+      "cycle": 1,
+      "page": "power",
+      "visible": true,
+      "active": true,
+      "gpu": "snell-gpu",
+      "renders": 32,
+      "cacheEntries": 32
+    },
+    {
+      "cycle": 2,
+      "page": "wifi",
+      "visible": true,
+      "active": true,
+      "gpu": "snell-gpu",
+      "renders": 32,
+      "cacheEntries": 32
+    },
+    {
+      "cycle": 2,
+      "page": "bluetooth",
+      "visible": true,
+      "active": true,
+      "gpu": "snell-gpu",
+      "renders": 32,
+      "cacheEntries": 32
+    },
+    {
+      "cycle": 2,
+      "page": "sound",
+      "visible": true,
+      "active": true,
+      "gpu": "snell-gpu",
+      "renders": 32,
+      "cacheEntries": 32
+    },
+    {
+      "cycle": 2,
+      "page": "power",
+      "visible": true,
+      "active": true,
+      "gpu": "snell-gpu",
+      "renders": 32,
+      "cacheEntries": 32
+    }
+  ],
+  "initialState": {
+    "page": "home",
+    "visible": true,
+    "closing": false,
+    "motionRunning": false,
+    "progress": 1.0,
+    "busy": false,
+    "reading": false,
+    "geometry": [
+      1036,
+      485,
+      389,
+      660
+    ],
+    "materialBackend": "snell-gpu",
+    "materialRenders": 8
+  },
+  "pssInitialMiB": 61.8935546875,
+  "idleMaterialRendersStable": true,
+  "cacheEntries": 32,
+  "pssAfterNavigationMiB": 69.2705078125,
+  "sameWindowAndScene": true,
+  "outsideClickDismisses": true,
+  "verified": true,
+  "verifiedAt": "2026-11-02T07:16:32.778022+08:00"
+}

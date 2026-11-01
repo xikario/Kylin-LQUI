@@ -59,7 +59,13 @@ int lqui_glass_render(void *handle,int x,int y,int width,int height,double dpr,d
     try{
         auto *context=static_cast<MaterialContext*>(handle);const QRect rect(x,y,width,height);
         if(!context->region.contains(rect))return 0;
-        if(!session)session=new MaterialSession(qApp);
+        if(!session) {
+            session=new MaterialSession(qApp);
+            QObject::connect(qApp,&QCoreApplication::aboutToQuit,qApp,[]{
+                // Release GL while the platform integration still exists.
+                activeContext=nullptr;delete session.data();session=nullptr;
+            });
+        }
         if(activeContext!=context || session->dpr!=dpr) {
             if(context->material.source.devicePixelRatio()==dpr)session->renderer.setPreparedWallpaper(context->material);
             else {

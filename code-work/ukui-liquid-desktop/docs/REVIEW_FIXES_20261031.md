@@ -1,5 +1,7 @@
 # 2026-10-31 评审问题修复记录
 
+> 状态核对更新至 2026-11-01，功能基线 `10f4f90`。本文按时间保留修复过程，当前状态以 [阶段总览](KYLIN_LQUI_SUMMARY_20261031.md) 和后续章节为准：快捷设置日历入口已移除、玻璃已切换到共用 CPU 折射、弹窗已改左对齐。早期测试数字、进程号和截图仅属于对应时间点，不代表日历后来没有再次反馈问题。
+
 本轮依据两份评审与三张实机截图开展。本轮重点修复已完成验证并更新到当前用户桌面。Peony 系统助手安装仍需本机管理员认证；没有把这一步标为完成。源码、验证、部署与保留边界分别记录。
 
 ## 用户可见问题
@@ -80,12 +82,12 @@ stock-code 未改；温度/带宽/日期组合未改；自动扩宽与悬停放�
 
 实机截图：
 
-- [任务栏](../../../maintenance/review-fixes-20261031/dock-final.png)
-- [快捷设置](../../../maintenance/review-fixes-20261031/control-final.png)
-- [设置完整窗口](../../../maintenance/review-fixes-20261031/settings-final.png)
-- [设置顶部边界](../../../maintenance/review-fixes-20261031/settings-header-final.png)
-- [快速连点修复前](../../../maintenance/review-fixes-20261031/rapid-blank-before/result.json)
-- [快速连点修复后](../../../maintenance/review-fixes-20261031/rapid-blank-after/result.json)
+- [任务栏](/home/zhouzhang/应用/Kylin-LQUI/maintenance/review-fixes-20261031/dock-final.png)
+- [快捷设置](/home/zhouzhang/应用/Kylin-LQUI/maintenance/review-fixes-20261031/control-final.png)
+- [设置完整窗口](/home/zhouzhang/应用/Kylin-LQUI/maintenance/review-fixes-20261031/settings-final.png)
+- [设置顶部边界](/home/zhouzhang/应用/Kylin-LQUI/maintenance/review-fixes-20261031/settings-header-final.png)
+- [快速连点修复前](/home/zhouzhang/应用/Kylin-LQUI/maintenance/review-fixes-20261031/rapid-blank-before/result.json)
+- [快速连点修复后](/home/zhouzhang/应用/Kylin-LQUI/maintenance/review-fixes-20261031/rapid-blank-after/result.json)
 
 ## 明确保留的后续项
 
@@ -123,15 +125,15 @@ stock-code 未改；温度/带宽/日期组合未改；自动扩宽与悬停放�
 
 证据完整目录：`/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/`。
 
-- [当前任务栏](../../../maintenance/special-fixes-20261101/dock-live.png)
-- [快捷设置](../../../maintenance/special-fixes-20261101/control-home.png)
-- [Wi-Fi 固定阅读区](../../../maintenance/special-fixes-20261101/network-live.png)
-- [说明气泡](../../../maintenance/special-fixes-20261101/tooltip-live.png)
-- [同程序合并与窗口预览](../../../maintenance/special-fixes-20261101/group-preview-live.png)
-- [原生日历](../../../maintenance/special-fixes-20261101/calendar-live.png)
-- [验证摘要](../../../maintenance/special-fixes-20261101/verification.json)
-- [网络实机采样](../../../maintenance/special-fixes-20261101/network-live-samples.json)
-- [日历实机采样](../../../maintenance/special-fixes-20261101/calendar-live-samples.json)
+- [当前任务栏](/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/dock-live.png)
+- [快捷设置](/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/control-home.png)
+- [Wi-Fi 固定阅读区](/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/network-live.png)
+- [说明气泡](/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/tooltip-live.png)
+- [同程序合并与窗口预览](/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/group-preview-live.png)
+- [原生日历](/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/calendar-live.png)
+- [验证摘要](/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/verification.json)
+- [网络实机采样](/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/network-live-samples.json)
+- [日历实机采样](/home/zhouzhang/应用/Kylin-LQUI/maintenance/special-fixes-20261101/calendar-live-samples.json)
 
 ## 2026-11-01 发布前复核：日历方向、分组激活、气泡和 AI 收起
 

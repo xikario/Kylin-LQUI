@@ -16,7 +16,11 @@ class Fixture:
 app=QtWidgets.QApplication([])
 app.setQuitOnLastWindowClosed(False)
 class ControlUi(unittest.TestCase):
-    def setUp(self):self.window=ControlCenter(Fixture);self.window.open_at('home',1500,1030,40,40);QtTest.QTest.qWait(60)
+    def setUp(self):
+        self.window=ControlCenter(Fixture);self.window.open_at('home',1500,1030,40,40)
+        deadline=QtCore.QElapsedTimer();deadline.start()
+        while (self.window.reading or not self.window.data) and deadline.elapsed()<3000:QtTest.QTest.qWait(20)
+        self.assertTrue(self.window.data);self.assertFalse(self.window.reading)
     def tearDown(self):
         self.window.poll.stop();QtCore.QThreadPool.globalInstance().waitForDone(5000);QtTest.QTest.qWait(10);self.window.hide();self.window.deleteLater();QtTest.QTest.qWait(10)
     def test_pages_fit_screen_and_have_content(self):

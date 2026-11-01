@@ -3,7 +3,7 @@
 import datetime,hashlib,json,os,shlex,shutil,tempfile
 from pathlib import Path
 SOURCE=Path(__file__).resolve().parent
-FILES=['glass_widgets.py','fusion_view.py','desktop_controls.py','control_center.py','system_backend.py','design.py','main.py','backend.py','appconfig.py','status.py','peony_adapter.py','down.svg','check.svg','icon.svg']
+FILES=['native_glass.py','glass_widgets.py','fusion_view.py','desktop_controls.py','control_center.py','system_backend.py','design.py','main.py','backend.py','appconfig.py','status.py','peony_adapter.py','down.svg','check.svg','icon.svg']
 
 def link(target,path):
     temporary=path.with_name(path.name+'.new')
@@ -19,6 +19,8 @@ def install():
     try:
         for name in FILES:shutil.copy2(str(SOURCE/name),str(staging/name))
         repo=SOURCE.parents[1];runtime=staging/'runtime'
+        native=repo/'apps/ukui-panel-liquid/build/liblqui-glass-bridge.so'
+        if native.is_file():shutil.copy2(native,staging/native.name)
         for relative in ['integration/desktop_status.py','integration/components.json',
                 'apps/ukui-fences/scripts/calendar_snapshot.py','apps/ukui-fences/scripts/chinese_calendar.py',
                 'apps/ukui-fences/scripts/holiday_sync.py','apps/ukui-fences/scripts/china_holidays_2026.json','apps/ukui-fences/scripts/lunar_hko_reference.json']:

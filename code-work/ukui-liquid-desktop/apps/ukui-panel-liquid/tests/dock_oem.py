@@ -269,6 +269,8 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
                     time.sleep(.1)
                 raise AssertionError(message)
             awaitState(lambda s:s['nativeButton'] and not s['overlayVisible'] and not s['legacyWatcher'],'native start-button integration removes the transparent overlay and X watcher')
+            subprocess.run(['gdbus','call','--session','--dest','com.ukui.search.appdb.service','--object-path','/org/ukui/search/appDataBase/dbManager','--method','org.ukui.search.appDBManager.SetGrouped','true'],check=True,stdout=subprocess.DEVNULL)
+            call('applications',count=3,grouped=True,wait=1000)
             call('hover',name='StartMenuButton',wait=80);call('click',name='StartMenuButton',wait=450)
             awaitState(lambda s:s['menuVisible'],'real OEM start button opens the V2 menu without an overlay')
             call('click',name='StartMenuButton',wait=450)
@@ -276,6 +278,19 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             toggles=launcherState()['toggleRequests'];subprocess.run(['xdotool','click','--repeat','2','--delay','60','1'],check=True);time.sleep(.5)
             check(launcherState()['toggleRequests']==toggles+2,'two physical clicks deliver exactly two pointer commands')
             awaitState(lambda s:not s['menuVisible'],'two rapid real pointer clicks cancel without a delayed menu reappearance')
+            steady=call('traceDock',value=True,wait=50)
+            expected={w['name']:(w['x'],w['y'],w['w'],w['h']) for w in nodes(steady['panel']) if w['class']=='UKUITaskButton' and w['visible']}
+            for delay in (35,70,120):
+                subprocess.run(['xdotool','click','--repeat','12','--delay',str(delay),'1'],check=True)
+            for _ in range(4):
+                subprocess.run(['xdotool','mousedown','1'],check=True)
+                call('realign',wait=50)
+                subprocess.run(['xdotool','mouseup','1'],check=True)
+                call(wait=70)
+            moving=call('traceDock',value=False,wait=300)
+            failures=[e for e in moving['dockMotion'] if e['name'] in expected and (e['x'],e['y'],e['w'],e['h'])!=expected[e['name']]]
+            (args.output/'rapid-start-motion.json').write_text(json.dumps({'expected':expected,'events':moving['dockMotion'],'failures':failures},indent=2))
+            check(not failures,'36 rapid start-menu clicks keep task icon geometry fixed during every paint and layout event')
             call('context',name='StartMenuButton',wait=450)
             awaitState(lambda s:s['contextVisible'],'native right click opens the existing launcher context menu')
             subprocess.run(['xdotool','key','Escape'],check=True);awaitState(lambda s:not s['contextVisible'],'launcher context menu closes without retaining input')

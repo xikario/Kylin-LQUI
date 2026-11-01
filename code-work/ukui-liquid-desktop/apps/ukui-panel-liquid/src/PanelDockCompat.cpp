@@ -113,7 +113,13 @@ void PanelDockCompat::apply() {
     if(!m_panel)return;
     if(!enabled()){restore();return;}
     attach();if(!m_bar||!m_content||!m_container||!m_pages)return;
-    if(QApplication::mouseButtons()!=Qt::NoButton)return; // Native drag owns its layout until release.
+    // Only a task-button interaction may own the native drag layout. A
+    // launcher press can also trigger OEM realign(); deferring *all* mouse
+    // presses lets native square-cell positions reach a visible paint frame.
+    if(QApplication::mouseButtons()!=Qt::NoButton){
+        for(auto *grab=QWidget::mouseGrabber();grab;grab=grab->parentWidget())if(grab->inherits("UKUITaskButton"))return;
+        for(auto *button:m_bar->findChildren<QAbstractButton*>())if(button->inherits("UKUITaskButton")&&button->isDown())return;
+    }
     QVector<Group> groups;int count=0,preferred=0;
     auto *layout=m_content->layout();
     for(int i=0;i<layout->count();++i) {

@@ -34,3 +34,13 @@ xvfb-run -a python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/tests
 ```
 
 原生 OEM 测试只能使用私有 Xvfb、D-Bus 和测试配置，详见 `apps/ukui-panel-liquid/tests/dock_oem.py`。Qt 离屏通过不能替代窗口管理器下的动画、焦点与分数缩放验收。
+
+## 快捷设置的玻璃桥接
+
+构建 Panel 时会同时生成 `lqui-glass-bridge`，它直接复用开始菜单的 CPU 折射绘制。随后运行统一设置安装脚本，桥接库会一并进入用户本地的版本化安装目录。只安装 Python 设置程序、不构建此库时，会使用可读的磨砂降级。
+
+```bash
+cmake --build code-work/ukui-liquid-desktop/apps/ukui-panel-liquid/build --target lqui-glass-bridge -j2
+python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/install.py
+QT_QPA_PLATFORM=offscreen python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/tests/test_native_glass.py
+```

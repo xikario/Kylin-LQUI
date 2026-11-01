@@ -39,7 +39,7 @@
 #include <dlfcn.h>
 class LayoutProbe : public QObject {
     QList<QWidget *> testWindows;
-    QLocalServer server; QPointer<QWidget> panel; QJsonArray events,dndEvents,calendarEvents;
+    QLocalServer server; QPointer<QWidget> panel; QJsonArray events,dndEvents,calendarEvents,dockMotion; bool traceDock=false;
     QJsonObject item(QWidget *w) {
         const QRect g(w->mapToGlobal(QPoint()),w->size());
         QJsonArray children;
@@ -89,6 +89,8 @@ class LayoutProbe : public QObject {
             for(auto *w:panel->findChildren<QDialog *>())w->close();
         } else if(action=="shutdown") {
             QTimer::singleShot(150,qApp,&QCoreApplication::quit);
+        } else if(action=="traceDock") {
+            traceDock=request.value("value").toBool();if(traceDock)dockMotion=QJsonArray();
         } else if(panel && action=="rapidBlank") {
             QAbstractScrollArea *bar=nullptr;
             for(auto *area:panel->findChildren<QAbstractScrollArea*>())if(area->inherits("UKUITaskBar")){bar=area;break;}
@@ -224,11 +226,16 @@ class LayoutProbe : public QObject {
                     {"resizing",panel->property("liquidDockResizing").toBool()},{"materialBuilds",panel->property("liquidMaterialBuilds").toInt()},{"materialFallbacks",panel->property("liquidMaterialFallbacks").toInt()}});
             }
             QJsonArray windows;for(auto *w:QApplication::topLevelWidgets())if(w->isVisible() && w!=panel)windows.append(item(w));
-            result.insert("calendarEvents",calendarEvents);result.insert("windows",windows);result.insert("events",events);result.insert("dndEvents",dndEvents);
+            result.insert("dockMotion",dockMotion);result.insert("calendarEvents",calendarEvents);result.insert("windows",windows);result.insert("events",events);result.insert("dndEvents",dndEvents);
             guard->write(QJsonDocument(result).toJson(QJsonDocument::Compact)+char(10));guard->flush();guard->disconnectFromServer();
         });
     }
     bool eventFilter(QObject *o,QEvent *e) override {
+        if(traceDock&&o->inherits("UKUITaskButton")&&(e->type()==QEvent::Paint||e->type()==QEvent::Move||e->type()==QEvent::Resize)&&dockMotion.size()<10000){
+            auto *w=qobject_cast<QWidget*>(o);if(w&&w->isVisible()){
+                const QPoint pt=w->mapToGlobal(QPoint());dockMotion.append(QJsonObject{{"name",w->objectName()},{"type",int(e->type())},{"x",pt.x()},{"y",pt.y()},{"w",w->width()},{"h",w->height()},{"pressed",QApplication::mouseButtons()!=Qt::NoButton}});
+            }
+        }
         if(o->inherits("LunarCalendarWidget")&&e->type()==QEvent::Move){
             auto *w=qobject_cast<QWidget*>(o);
             if(w&&w->isVisible()&&calendarEvents.size()<200)calendarEvents.append(QJsonObject{{"x",w->x()},{"y",w->y()},{"opacity",w->windowOpacity()}});

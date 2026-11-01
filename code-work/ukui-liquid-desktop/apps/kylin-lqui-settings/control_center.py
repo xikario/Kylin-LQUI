@@ -33,7 +33,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
     def __init__(self,backend_factory=SystemBackend):
         super().__init__(None,QtCore.Qt.Tool|QtCore.Qt.FramelessWindowHint|QtCore.Qt.WindowStaysOnTopHint)
         self.ui_style=QtWidgets.QStyleFactory.create('Fusion');self.ui_style.setParent(self);self.setStyle(self.ui_style)
-        self.setObjectName('lquiControlCenter');self.setWindowTitle('Kylin-LQUI 系统控制中心');self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setStyleSheet(FUSION_STYLE);self.backdrop=QtGui.QImage()
+        self.setObjectName('lquiControlCenter');self.setWindowTitle('Kylin-LQUI 系统控制中心');self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setStyleSheet(FUSION_STYLE);self.backdrop=QtGui.QImage();self.native_glass=None
         palette=self.palette()
         for role in (QtGui.QPalette.WindowText,QtGui.QPalette.Text,QtGui.QPalette.ButtonText):palette.setColor(role,QtGui.QColor('#edf3fa'))
         palette.setColor(QtGui.QPalette.Base,QtGui.QColor('#263a50'));self.setPalette(palette)
@@ -46,14 +46,16 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.status=GlassStatusLabel(self);self.status.setWordWrap(True);self.status.hide();self.status.setTextFormat(QtCore.Qt.PlainText);layout.addWidget(self.status)
         self.poll=QtCore.QTimer(self);self.poll.setInterval(2500);self.poll.timeout.connect(self.refresh)
         self.idle=QtCore.QTimer(self);self.idle.setSingleShot(True);self.idle.timeout.connect(self.quit_if_idle)
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self.release_material)
         self.tooltips=ReadableTooltips(self)
         self.show_page('home')
+    def release_material(self):self.native_glass=None
     def event(self,event):
         if event.type()==QtCore.QEvent.WindowDeactivate:QtCore.QTimer.singleShot(100,self.dismiss_if_inactive)
         return super().event(event)
     def dismiss_if_inactive(self):
         if self.isVisible() and not self.isActiveWindow() and not self.dialog_open and not QtWidgets.QApplication.activePopupWidget() and not QtWidgets.QApplication.activeModalWidget():self.hide()
-    def hideEvent(self,event):self.backdrop=QtGui.QImage();self.poll.stop();self.idle.start(60000);super().hideEvent(event)
+    def hideEvent(self,event):self.native_glass=None;self.backdrop=QtGui.QImage();self.poll.stop();self.idle.start(60000);super().hideEvent(event)
     def closeEvent(self,event):event.ignore();self.hide()
     def keyPressEvent(self,event):
         if event.key()==QtCore.Qt.Key_Escape:self.hide()
@@ -199,7 +201,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.job(open_day,done)
     def launch(self,program):
         QtCore.QProcess.startDetached(program,[]);self.hide()
-    def state(self):return {'page':self.page,'visible':self.isVisible(),'busy':self.changing,'reading':self.reading,'geometry':[self.x(),self.y(),self.width(),self.height()]}
+    def state(self):return {'page':self.page,'visible':self.isVisible(),'busy':self.changing,'reading':self.reading,'geometry':[self.x(),self.y(),self.width(),self.height()],'materialBackend':'launcher-cpu-refraction' if self.native_glass else 'blur-fallback','materialRenders':self.native_glass.render_count if self.native_glass else 0}
 
 class Adaptor(QtDBus.QDBusAbstractAdaptor):
     QtCore.Q_CLASSINFO('D-Bus Interface','org.kylin.Lqui.ControlCenter')

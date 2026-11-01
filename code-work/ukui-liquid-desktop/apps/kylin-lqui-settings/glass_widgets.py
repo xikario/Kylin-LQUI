@@ -34,6 +34,11 @@ def glyph(name,color='#e6edf7',size=22):
 class GlassCard(QtWidgets.QFrame):
     def __init__(self,owner,radius=23):super().__init__();self.owner=owner;self.radius=radius;self.accent=False;self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setProperty('glass',True)
     def paintEvent(self,event):
+        native=getattr(self.owner,'native_glass',None)
+        if native:
+            image=native.render(QtCore.QRect(self.mapToGlobal(QtCore.QPoint()),self.size()),self.devicePixelRatioF(),self.radius)
+            if not image.isNull():
+                painter=QtGui.QPainter(self);painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform);painter.drawImage(self.rect(),image);return
         p=QtGui.QPainter(self);p.setRenderHints(QtGui.QPainter.Antialiasing|QtGui.QPainter.SmoothPixmapTransform);r=QtCore.QRectF(self.rect()).adjusted(.7,.7,-.7,-.7);clip=QtGui.QPainterPath();clip.addRoundedRect(r,self.radius,self.radius);p.setClipPath(clip)
         image=getattr(self.owner,'backdrop',QtGui.QImage())
         # Never expose live window text when capture is unavailable, a screen
@@ -88,7 +93,11 @@ def blurred_capture(owner):
     screen=QtWidgets.QApplication.screenAt(owner.geometry().center()) or QtWidgets.QApplication.primaryScreen();full=screen.grabWindow(0)
     if full.isNull():return QtGui.QImage()
     area=screen.geometry();owner.backdrop_origin=area.topLeft()
-    return diffuse_backdrop(full,area.size())
+    try:
+        from native_glass import NativeGlass
+        owner.native_glass=NativeGlass(full.toImage(),area)
+    except (OSError,RuntimeError):owner.native_glass=None
+    return QtGui.QImage() if owner.native_glass else diffuse_backdrop(full,area.size())
 
 
 class CardChevron(QtWidgets.QAbstractButton):

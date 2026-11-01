@@ -215,9 +215,7 @@ void LiquidDesklet::bakeMaterial(const LiquidMaterial::Prepared &material) {
     // Desklets share the fences' dark glass with light text. Bright glass
     // (a scrimmed white wallpaper) is deepened once, never milked over.
     if(const qreal lift=Palette::toneLift(cells,Palette::PrimaryTextContrast+.05,Qt::white);lift>0){
-        QPainter tone(&m_material);tone.setCompositionMode(QPainter::CompositionMode_SourceAtop);
-        QColor veil(Qt::black);veil.setAlphaF(qMin<qreal>(1,lift+.004));
-        tone.fillRect(QRectF(rect()),veil);tone.end();
+        m_material=LiquidMaterial::bodyTone(m_material,qMin<qreal>(1,lift+.004),outline);
         cells=materialCells();
         qInfo().noquote()<<QStringLiteral("[glass] %1 tone deepen %2 for 7:1 light text").arg(m_key).arg(lift,0,'f',3);
     }

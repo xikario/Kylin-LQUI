@@ -35,7 +35,7 @@ static QString setting(const QString &schema,const QString &key) {
     if(value.startsWith('\'') && value.endsWith('\''))value=value.mid(1,value.size()-2);
     return value;
 }
-bool WallpaperBackdrop::reload() {
+bool WallpaperBackdrop::reload(QSize decodeLimit) {
     const QString config=QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
     QString path=qEnvironmentVariable("UKUI_LIQUID_WALLPAPER");
     m_videoPath.clear();m_videoPoster.clear();
@@ -70,14 +70,25 @@ bool WallpaperBackdrop::reload() {
     QFileInfo info(path);
     const qint64 modified=info.exists()?info.lastModified().toMSecsSinceEpoch():0;
     const qint64 size=info.isFile()?info.size():0;
-    if(path==m_path && modified==m_modified && size==m_size && mode==m_mode && !m_source.isNull())return false;
+    if(path==m_path && modified==m_modified && size==m_size && mode==m_mode && decodeLimit==m_decodeLimit && !m_source.isNull())return false;
     m_path=path;m_modified=modified;m_size=size;m_mode=mode;
+    m_decodeLimit=decodeLimit;
     // Downloaded wallpaper may have a .png name but contain JPEG data. Match
     // Fences' content-based decoding so the visible desktop and optics agree.
     QImageReader reader(path);
     reader.setDecideFormatFromContent(true);
     reader.setAutoTransform(true);
+    const QSize original=reader.size();
+    if(decodeLimit.isValid() && original.isValid() && (original.width()>decodeLimit.width() || original.height()>decodeLimit.height()))
+        reader.setScaledSize(original.scaled(decodeLimit,Qt::KeepAspectRatio));
     m_source=reader.read();
+    m_originalSize=m_source.size();
+    if(decodeLimit.isValid() && original.isValid()) {
+        m_originalSize=original;
+        if(reader.transformation() & QImageIOHandler::TransformationRotate90)m_originalSize.transpose();
+        if(m_source.width()>decodeLimit.width() || m_source.height()>decodeLimit.height())
+            m_source=m_source.scaled(decodeLimit,Qt::KeepAspectRatio,Qt::SmoothTransformation);
+    }
     if(m_source.isNull())
         qWarning()<<"[LiquidPanelWallpaper] Cannot decode wallpaper"<<path<<reader.errorString();
     return true;
@@ -88,11 +99,14 @@ QImage WallpaperBackdrop::sample(const QRect &area,const QRect &screen,qreal dpr
     crop.setDevicePixelRatio(dpr);crop.fill(Qt::black);
     QPainter p(&crop);p.setRenderHint(QPainter::SmoothPixmapTransform);
     const QPointF offset=screen.topLeft()-area.topLeft();
-    QSizeF size=m_source.size();
+    QSizeF size=m_originalSize;
     if(m_mode==2)size=screen.size();
     else if(m_mode==0 || m_mode==1)size.scale(screen.size(),m_mode==0?Qt::KeepAspectRatioByExpanding:Qt::KeepAspectRatio);
     if(m_mode==3) {
-        p.translate(offset);p.setBrushOrigin(0,0);p.fillRect(QRectF(QPointF(),screen.size()),QBrush(QPixmap::fromImage(m_source)));
+        // Preserve the original logical tile size even with a bounded decode.
+        for(int y=0;y<screen.height();y+=m_originalSize.height())
+            for(int x=0;x<screen.width();x+=m_originalSize.width())
+                p.drawImage(QRectF(offset+QPointF(x,y),m_originalSize),m_source);
     } else {
         const QPointF origin=offset+QPointF((screen.width()-size.width())/2,(screen.height()-size.height())/2);
         p.drawImage(QRectF(origin,size),m_source);

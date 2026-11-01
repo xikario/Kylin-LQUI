@@ -12,6 +12,10 @@ target_include_directories(ukui-liquid-optics PUBLIC src PRIVATE ${UKUI_LIQUID_G
 target_link_libraries(ukui-liquid-optics PUBLIC Qt5::Gui Qt5::Widgets Threads::Threads)
 
 if(BUILD_TESTING)
+    add_executable(liquid-optical-policy-test tests/optical_policy_test.cpp)
+    target_link_libraries(liquid-optical-policy-test PRIVATE ukui-liquid-optics)
+    add_test(NAME liquid-optical-policy COMMAND liquid-optical-policy-test)
+    set_tests_properties(liquid-optical-policy PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;UKUI_LIQUID_GLASS_NO_GL=1")
     add_executable(liquid-renderer-sharing-test tests/renderer_sharing_test.cpp)
     target_link_libraries(liquid-renderer-sharing-test PRIVATE ukui-liquid-optics)
     add_test(NAME liquid-renderer-sharing-cpu COMMAND liquid-renderer-sharing-test)

@@ -39,6 +39,8 @@ def install():
                     'apps/ukui-fences/scripts/holiday_sync.py','apps/ukui-fences/scripts/china_holidays_2026.json','apps/ukui-fences/scripts/lunar_hko_reference.json']:
                 destination=runtime/relative;destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(repo/relative,destination)
             shutil.copytree(repo.parent.parent/'peony-manager/app',runtime/'peony-manager/app',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+            shutil.copy2(repo.parent.parent/'peony-manager/peony_manager.html',runtime/'peony-manager/peony_manager.html')
+            shutil.copytree(repo.parent.parent/'peony-manager/assets',runtime/'peony-manager/assets')
             (staging/'runtime.json').write_text(json.dumps({'sourceRoot':str(SOURCE.parents[1])},ensure_ascii=False))
             hashes={str(p.relative_to(staging)):hashlib.sha256(p.read_bytes()).hexdigest() for p in staging.rglob('*') if p.is_file()}
             manifest={'product':'Kylin-LQUI 设置','version':'0.4.0','release':str(release),'previous':previous,'source':str(SOURCE),'files':hashes}

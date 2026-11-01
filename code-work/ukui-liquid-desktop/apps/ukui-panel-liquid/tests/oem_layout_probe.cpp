@@ -104,6 +104,14 @@ class LayoutProbe : public QObject {
                     ok=QProcess::startDetached("xdotool",{"mousemove",QString::number(qRound(point.x()*scale)),QString::number(qRound(point.y()*scale)),"click","--repeat","12","--delay","35","1"});break;
                 }
             }
+        } else if(panel && action=="dragTask") {
+            auto *from=find(request.value("name").toString());auto *to=find(request.value("target").toString());ok=from&&to;
+            if(ok) {
+                const qreal scale=panel->devicePixelRatioF();const QPoint a=from->mapToGlobal(from->rect().center()),b=to->mapToGlobal(to->rect().center());
+                ok=QProcess::startDetached("xdotool",{"mousemove",QString::number(qRound(a.x()*scale)),QString::number(qRound(a.y()*scale)),"mousedown","1","sleep","0.1",
+                    "mousemove",QString::number(qRound((a.x()+12)*scale)),QString::number(qRound(a.y()*scale)),"sleep","0.15",
+                    "mousemove",QString::number(qRound(b.x()*scale)),QString::number(qRound(b.y()*scale)),"sleep","0.25","mouseup","1"});
+            }
         } else if(panel && action=="hidable") {
             ok=QMetaObject::invokeMethod(panel,"setHidable",Qt::DirectConnection,
                 Q_ARG(bool,request.value("value").toBool()),Q_ARG(bool,false));
@@ -231,6 +239,11 @@ class LayoutProbe : public QObject {
         });
     }
     bool eventFilter(QObject *o,QEvent *e) override {
+        if(dndEvents.size()<150 && (e->type()==QEvent::MouseButtonPress || e->type()==QEvent::MouseButtonRelease ||
+            (e->type()==QEvent::MouseMove && static_cast<QMouseEvent*>(e)->buttons()!=Qt::NoButton))) {
+            auto *w=qobject_cast<QWidget*>(o);auto *mouse=static_cast<QMouseEvent*>(e);
+            if(w)dndEvents.append(QJsonObject{{"widget",w->objectName()},{"class",w->metaObject()->className()},{"type",int(e->type())},{"x",mouse->pos().x()},{"y",mouse->pos().y()},{"dpr",w->devicePixelRatioF()}});
+        }
         if(traceDock&&o->inherits("UKUITaskButton")&&(e->type()==QEvent::Paint||e->type()==QEvent::Move||e->type()==QEvent::Resize)&&dockMotion.size()<10000){
             auto *w=qobject_cast<QWidget*>(o);if(w&&w->isVisible()){
                 const QPoint pt=w->mapToGlobal(QPoint());dockMotion.append(QJsonObject{{"name",w->objectName()},{"type",int(e->type())},{"x",pt.x()},{"y",pt.y()},{"w",w->width()},{"h",w->height()},{"pressed",QApplication::mouseButtons()!=Qt::NoButton}});

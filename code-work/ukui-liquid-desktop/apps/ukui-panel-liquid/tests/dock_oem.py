@@ -3,6 +3,7 @@
 import argparse, ast, configparser, json, os, pathlib, re, shutil, signal, socket, subprocess, tempfile, time
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+BUILD=pathlib.Path(os.environ.get('LQUI_PANEL_TEST_BUILD',str(ROOT/'build')))
 parser=argparse.ArgumentParser()
 parser.add_argument('--output',type=pathlib.Path,default=ROOT/'build/artifacts/dock-port')
 parser.add_argument('--inspect',action='store_true')
@@ -44,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
         stub=safeBin/program;stub.write_text('#!/bin/sh\nexit 1\n');stub.chmod(0o755)
     endpoint=temp/'probe.sock'
     env=dict(os.environ,XDG_CONFIG_HOME=str(home/'.config'),XDG_CACHE_HOME=str(home/'.cache'),XDG_DATA_HOME=str(temp/'data'),
-             GSETTINGS_BACKEND='memory',LQUI_SETTINGS_LEGACY='1',QT_PLUGIN_PATH=str(ROOT/'build/test-plugins')+':'+str(ROOT/'build/plugins'),
+             GSETTINGS_BACKEND='memory',LQUI_SETTINGS_LEGACY='1',QT_PLUGIN_PATH=str(BUILD/'test-plugins')+':'+str(BUILD/'plugins'),
              UKUI_PANEL_LAYOUT_PROBE_SOCKET=str(endpoint),UKUI_LIQUID_GLASS_NO_GL='1',PATH=str(safeBin)+':'+os.environ['PATH'],DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(temp/'no-system-bus'))
     if args.system_items:
         control_launcher=temp/'open-control';control_log=temp/'control-open.jsonl'
@@ -151,6 +152,21 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             check(initial['dock']['icon']>0 and initial['dock']['count']>0,'native taskbar uses adaptive layout')
             pages=named(initial,'TaskBar_KButtonBox');check(pages and pages['w']==0 and pages['offscreen'] and not pages['enabled'],'paired page arrows have no footprint, painting or input')
             snapshot=fixed(initial)
+            def task_order(state):return [w['name'] for w in sorted(nodes(state['panel']),key=lambda w:w['x']) if w['class']=='UKUITaskButton' and w['visible']]
+            order=task_order(initial)
+            check(len(order)>=2,'two native task buttons available for drag regression')
+            dragged=call('dragTask',name=order[0],target=order[1],wait=1200)
+            check(task_order(dragged)!=order,'real pointer drag reorders native pinned tasks')
+            call('shutdown',wait=0);check(process.wait(timeout=8)==0,'panel stops after saving reordered tasks')
+            if endpoint.exists():endpoint.unlink()
+            process=subprocess.Popen(command,env=env,stdout=open(args.output/'reorder-restart.log','w'),stderr=subprocess.STDOUT,start_new_session=True)
+            for _ in range(100):
+                if endpoint.exists():break
+                assert process.poll() is None;time.sleep(.1)
+            restarted=call(wait=1500)
+            check(task_order(restarted)==task_order(dragged),'pinned order survives a native panel restart')
+            call('dragTask',name=order[0],target=order[1],wait=1200)
+            initial=call()
             call('settings',wait=250)
             for tab in (1,2,0,2,1):
                 call('settingsTab',index=tab,wait=60)

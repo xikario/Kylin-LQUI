@@ -1,10 +1,21 @@
 #!/usr/bin/python3
 import json,os,sys,tempfile,unittest
 from pathlib import Path
+from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import peony_adapter as adapter
 
 class TestPeony(unittest.TestCase):
+    def test_manager_is_started_only_by_explicit_action(self):
+        with patch.object(adapter.subprocess,'Popen') as spawn,patch.object(adapter.scanner,'scan_plugins',return_value=[]):
+            page=adapter.page('plugins');self.assertFalse(spawn.called)
+            self.assertTrue(any(f['id']=='open-manager' for f in page['fields']))
+            adapter.activate('plugins','open-manager')
+            self.assertEqual(spawn.call_count,1)
+            args,kwargs=spawn.call_args
+            self.assertEqual(args[0],[sys.executable,str(adapter.BASE/'app/main.py')])
+            self.assertEqual(kwargs['env']['LQUI_SETTINGS_LEGACY'],'1')
+            self.assertTrue(kwargs['start_new_session'])
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.before=os.environ.get('XDG_CONFIG_HOME');os.environ['XDG_CONFIG_HOME']=self.temp.name
     def tearDown(self):

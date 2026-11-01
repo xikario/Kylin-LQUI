@@ -7,6 +7,7 @@
 #include <QSaveFile>
 #include "SystemMonitor.h"
 #include "GlassFinish.h"
+#include "../../../shared/liquid-glass/src/LiquidMaterial.h"
 #include "Palette.h"
 #include "../../../shared/liquid-glass/src/CohesiveGlass.h"
 #include <QUrl>
@@ -1004,11 +1005,11 @@ void SystemMonitor::updateHitRects()
 void SystemMonitor::drawHeader(QPainter &p, const Palette &colors)
 {
     updateHitRects();
-    p.setPen(Qt::NoPen);
-    p.setBrush(QColor(0, 0, 0,
-        qRound((m_skin == Skin::Light ? 10 : 35) *
-               m_windowOpacity / 100.0)));
-    p.drawRoundedRect(QRect(1, 1, logicalWidth() - 2, HEADER_H), 15, 15);
+    if(m_skin!=Skin::Liquid) {
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(0,0,0,qRound((m_skin==Skin::Light?10:35)*m_windowOpacity/100.0)));
+        p.drawRoundedRect(QRect(1,1,logicalWidth()-2,HEADER_H),15,15);
+    }
 
     p.setBrush(QColor(16, 185, 129));
     p.drawEllipse(QPoint(MARGIN + 6, HEADER_H / 2), 5, 5);
@@ -1198,7 +1199,7 @@ void SystemMonitor::paintEvent(QPaintEvent *event)
                 QVector<QColor> cells;const auto sample=m_liquidGlassImage.scaled(12,8,Qt::IgnoreAspectRatio,Qt::SmoothTransformation).convertToFormat(QImage::Format_ARGB32);
                 for(int y=1;y<sample.height()-1;++y)for(int x=1;x<sample.width()-1;++x)if(sample.pixelColor(x,y).alpha()>200)cells.append(sample.pixelColor(x,y));
                 const qreal lift=::Palette::toneLift(cells,::Palette::SecondaryTextContrast+.05,Qt::white);
-                if(lift>0){QPainter tone(&m_liquidGlassImage);tone.setCompositionMode(QPainter::CompositionMode_SourceAtop);QColor veil(Qt::black);veil.setAlphaF(qMin(1.,lift+.004));tone.fillRect(rect(),veil);}
+                if(lift>0)m_liquidGlassImage=LiquidMaterial::bodyTone(m_liquidGlassImage,qMin(1.,lift+.004),outline);
                 m_liquidGlassGeometry = geometry();
                 if (!m_liquidGlassImage.isNull())
                     VideoWallpaperRegion::publish(

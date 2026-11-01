@@ -25,6 +25,7 @@
 // Like the production XRecord backend, use the available libXtst runtime
 // without requiring extension development headers on the target machine.
 extern "C" int XTestFakeButtonEvent(Display *, unsigned int, Bool, unsigned long);
+extern "C" int XTestFakeMotionEvent(Display *, int, int, int, unsigned long);
 
 static void settle(int ms)
 {
@@ -98,6 +99,13 @@ public:
             && !menu.m_lastBackdrop.isNull(),"production opening maps only with the current prepared material");
         check(menu.m_lastBackdrop.pixelColor(menu.m_lastBackdrop.rect().center())==QColor("#267654"),
               "first material samples the visible desktop window rather than the root wallpaper");
+        settle(65);
+        check(menu.m_popupMotion.state()==QAbstractAnimation::Running && !menu.mask().isEmpty(),
+              "launcher emerges through the taskbar edge using cached material");
+        menu.hideMenu();settle(25);menu.showMenu();settle(350);
+        check(menu.m_visible && menu.m_popupProgress==1 && menu.mask().isEmpty()
+            && menu.m_popupMotion.state()==QAbstractAnimation::Stopped,
+              "reversing launcher motion settles without a mask or running animation");
         settle(650);
         check(menu.m_outsideTimer && menu.m_outsideTimer->isActive()
                   && !menu.m_taskbarCacheTimer.isValid(),
@@ -107,14 +115,14 @@ public:
         if (pointerDisplay) {
             XTestFakeButtonEvent(pointerDisplay, 1, True, CurrentTime);
             XSync(pointerDisplay, False);
-            settle(200);
+            settle(500);
             const bool closed = !menu.isVisible();
             XTestFakeButtonEvent(pointerDisplay, 1, False, CurrentTime);
             XSync(pointerDisplay, False);
             XCloseDisplay(pointerDisplay);
             check(closed, "real desktop mouse press still closes the idle launcher");
         }
-        menu.hideMenu();
+        menu.hideMenu();settle(260);
         desktop.setStyleSheet("background:#b85438");settle(30);
         menu.showMenu();
         check(menu.m_showPending && !menu.isVisible(),"changed desktop never exposes a stale material while remapping");
@@ -122,7 +130,7 @@ public:
         while(menu.m_showPending && opening.elapsed()<5000)settle(10);
         check(menu.m_lastBackdrop.pixelColor(menu.m_lastBackdrop.rect().center())==QColor("#b85438"),
               "subsequent opening refreshes actual desktop pixels");
-        menu.hideMenu();desktop.hide();
+        menu.hideMenu();settle(260);desktop.hide();
         menu.show(); menu.move(80, 80);
         QElapsedTimer scan; scan.start();
         while (menu.m_appScanBusy && scan.elapsed() < 5000) settle(15);
@@ -329,6 +337,25 @@ public:
               "hiding during animation stops timer and discards repaint work");
         menu.show(); settle(300);
         check(!menu.m_glassLightTimer->isActive(), "reopening has no stale reflection animation");
+        menu.m_searchEdit->clear();settle(250);menu.m_showingAllApps=false;
+        menu.m_filteredApps=menu.m_pinnedApps;menu.setupPinnedGrid();settle(100);
+        const QStringList pinnedBefore=AppRegistry::pinnedDesktopPaths();
+        const auto tiles=menu.m_pinnedContainer->findChildren<QPushButton *>(QString(),Qt::FindDirectChildrenOnly);
+        if(tiles.size()>=2) {
+            Display *display=XOpenDisplay(nullptr);check(display,"native drag connection opens");
+            if(display) {
+                const qreal dpr=menu.devicePixelRatioF();const QPoint from=tiles[0]->mapToGlobal(tiles[0]->rect().center()),to=tiles[1]->mapToGlobal(tiles[1]->rect().center());
+                auto move=[display,dpr](QPoint point){XTestFakeMotionEvent(display,-1,qRound(point.x()*dpr),qRound(point.y()*dpr),CurrentTime);XSync(display,False);};
+                move(from);XTestFakeButtonEvent(display,1,True,CurrentTime);XSync(display,False);
+                QTimer::singleShot(70,&menu,[=]{move(from+QPoint(20,0));});
+                QTimer::singleShot(180,&menu,[=]{move(to);});
+                QTimer::singleShot(400,&menu,[=]{XTestFakeButtonEvent(display,1,False,CurrentTime);XSync(display,False);});
+                settle(800);XTestFakeButtonEvent(display,1,False,CurrentTime);XSync(display,False);XCloseDisplay(display);
+                QStringList expected=pinnedBefore;expected.move(0,1);
+                check(AppRegistry::pinnedDesktopPaths()==expected,"real pinned-grid drag reorders apps and persists their order");
+                AppRegistry::savePinned(pinnedBefore);
+            }
+        } else check(false,"pinned drag has two fixture tiles");
         return failures ? 1 : 0;
     }
 };

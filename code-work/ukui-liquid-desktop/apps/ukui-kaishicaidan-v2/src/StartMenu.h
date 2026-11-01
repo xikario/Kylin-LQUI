@@ -13,6 +13,7 @@
 #include <QPixmap>
 #include <QPointer>
 #include <QRegion>
+#include <QVariantAnimation>
 #include <functional>
 #include <memory>
 #include "StartMenuTheme.h"
@@ -185,6 +186,11 @@ private:
     int m_fontSize = 14;
 
     bool m_visible = false;
+    QVariantAnimation m_popupMotion;
+    qreal m_popupProgress=0;
+    QRect m_popupTarget;
+    int m_popupEdge=3;
+    void animatePopup(bool opening);
     bool m_settingsOpen = false;
     bool m_showingAllApps = false;
     enum class AppSortMode {

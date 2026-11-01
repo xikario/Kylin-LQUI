@@ -154,12 +154,16 @@ int main(int argc,char **argv) {
         {
             QImage reference=on;
             const qreal dpr=panel.devicePixelRatioF();
+            QSettings authored(dir.path()+"/ukui/liquid-panel.ini",QSettings::IniFormat);
+            const qreal radius=authored.value("appearance/radius",CohesiveGlass::DockRadius).toDouble();
+            const qreal transmission=authored.value("appearance/seeThrough",true).toBool()
+                ?1-authored.value("appearance/transparency",.18).toDouble():1.;
             QPainterPath curve;
-            curve.addRoundedRect(QRectF(QPointF(),QSizeF(reference.size())),16*dpr,16*dpr);
+            curve.addRoundedRect(QRectF(QPointF(),QSizeF(reference.size())),radius*dpr,radius*dpr);
             if(qEnvironmentVariableIsSet("UKUI_LIQUID_GLASS_NO_GL")) {
                 reference=QImage(on.size(),QImage::Format_ARGB32_Premultiplied);
                 reference.fill(Qt::transparent);
-                QPainter painter(&reference);painter.setRenderHint(QPainter::Antialiasing);painter.fillPath(curve,Qt::white);
+                QPainter painter(&reference);painter.setRenderHint(QPainter::Antialiasing);painter.setOpacity(transmission);painter.fillPath(curve,Qt::white);
             }
             // grab() bypasses QWidget's on-screen mask; inspect the actual X11
             // backing pixels as well so an integer clip cannot hide in the test.
@@ -411,8 +415,8 @@ int main(int argc,char **argv) {
         auto *through=dialogs.first()->findChild<QCheckBox *>("liquidPanelSeeThrough");
         auto *transparency=dialogs.first()->findChild<QSlider *>("liquidPanelTransparency");
         check(clarity && strength && through && transparency,"clarity, liquid strength and window see-through available");
-        check(clarity->value()==65 && strength->value()==100 && !through->isChecked() && !transparency->isEnabled(),
-              "new clear material has legible defaults and no implicit transparency change");
+        check(clarity->value()==qRound(CohesiveGlass::Clarity*100) && strength->value()==100 && through->isChecked() && transparency->isEnabled(),
+              "pure glass recommendation has bounded clarity and explicit window transmission");
         clarity->setValue(60);strength->setValue(170);settle();saved.sync();
         check(qAbs(saved.value("appearance/clarity").toDouble()-.6)<.001 &&
               qAbs(saved.value("appearance/liquidStrength").toDouble()-1.7)<.001,"new material settings persist");
@@ -424,6 +428,7 @@ int main(int argc,char **argv) {
         check(app.property("liquidPanelConfigWrites").toInt()==writes+1 && app.property("liquidPanelPreviewBatches").toInt()==batches+1,
               "41 slider values merge into one preview and one configuration write");
         check(qAbs(saved.value("appearance/clarity").toDouble()-.6)<.001,"merged burst saves its final value");
+        through->setChecked(false);settle();
         const auto opaque=panel.grab().toImage();
         const auto buildsBeforeTransparency=panel.property("liquidMaterialBuilds").toInt();
         through->setChecked(true);for(int v=10;v<=50;++v)transparency->setValue(v);settle();saved.sync();

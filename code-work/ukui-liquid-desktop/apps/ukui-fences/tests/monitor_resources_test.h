@@ -13,6 +13,11 @@ struct SystemMonitorTestAccess {
         settings.setValue("systemMonitor/credentialStore","secret-service");
         QWidget host;host.resize(1600,950);host.show();
         SystemMonitor monitor(&host);monitor.m_timer.stop();monitor.setSkin(SystemMonitor::Skin::Dark);monitor.show();settle(150);
+        auto header=[&]{QImage image(monitor.size(),QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);QPainter painter(&image);monitor.drawHeader(painter,monitor.paletteForSkin());painter.end();return image;};
+        check(header().pixelColor(300,2).alpha()>0,"solid monitor skin retains its title plate");
+        monitor.setSkin(SystemMonitor::Skin::Liquid);
+        check(header().pixelColor(300,2).alpha()==0,"liquid monitor header paints no extra horizontal plate over the lens");
+        monitor.setSkin(SystemMonitor::Skin::Dark);
         check(monitor.findChildren<QProcess *>().isEmpty(),"monitor never starts a keyring reader or cloud request process");
         check(settings.value("systemMonitor/apiKey").toString()=="unused-legacy-fixture","removing diagnosis leaves legacy stored credentials untouched");
         const int realCores=monitor.m_coreCount;

@@ -1,4 +1,5 @@
 #include "Drawer.h"
+#include "DockPopupMotion.h"
 #include "LiquidPopup.h"
 #include "StationDrop.h"
 #include "UiColors.h"
@@ -66,7 +67,7 @@ QString kilo(qint64 tokens){return tokens<=0?QStringLiteral("—"):QString::numb
 static QImage wallpaperTile(const QString &path,const QRect &area,const QRect &screen,qreal dpr) {
     const QSize pixels(qRound(area.width()*dpr),qRound(area.height()*dpr));
     QImage result(pixels,QImage::Format_ARGB32_Premultiplied);result.fill(QColor("#17392f"));
-    QImageReader reader(path);reader.setAutoTransform(true);const QSize source=reader.size();
+    QImageReader reader(path);reader.setDecideFormatFromContent(true);reader.setAutoTransform(true);const QSize source=reader.size();
     if(!source.isEmpty()) {
         const qreal factor=qMax(screen.width()*dpr/source.width(),screen.height()*dpr/source.height());
         const QSize scaled(qCeil(source.width()*factor),qCeil(source.height()*factor));
@@ -87,10 +88,12 @@ public:
         setObjectName("cliEdge");setWindowTitle("AI小站");setWindowIcon(icon("app"));
         setAttribute(Qt::WA_TranslucentBackground);setAttribute(Qt::WA_ShowWithoutActivating);
         setCursor(Qt::PointingHandCursor);setToolTip("AI小站 · 右键设置");
-        pulse.setInterval(520);QObject::connect(&pulse,&QTimer::timeout,this,[this]{dim=!dim;update();});
+        pulse.setParent(this);pulse.setObjectName("edgeBusyPulse");pulse.setInterval(520);QObject::connect(&pulse,&QTimer::timeout,this,[this]{dim=!dim;update();});
     }
-    void refresh(){if(owner->backend->busy()){if(!pulse.isActive())pulse.start();}else{pulse.stop();dim=false;}update();}
+    void refresh(){if(isVisible()&&owner->backend->busy()){if(!pulse.isActive())pulse.start();}else{pulse.stop();dim=false;}update();}
 protected:
+    void showEvent(QShowEvent *event)override{QWidget::showEvent(event);refresh();}
+    void hideEvent(QHideEvent *event)override{pulse.stop();dim=false;QWidget::hideEvent(event);}
     void mousePressEvent(QMouseEvent *e)override {
         if(e->button()==Qt::LeftButton)owner->Toggle();
         if(e->button()==Qt::RightButton) {
@@ -441,6 +444,8 @@ void Drawer::place(qreal value) {
     const auto *screen=QGuiApplication::screenAt(panelAnchor.center());
     const bool topAnchor=panelAnchor.isValid()&&screen&&panelAnchor.center().y()<screen->availableGeometry().center().y();
     if(size()!=target.size())resize(target.size());
+    if(panelAnchor.isValid()) {DockPopupMotion::apply(this,target,topAnchor?2:3,value);return;}
+    clearMask();
     move(target.topLeft()+QPoint(0,qRound((topAnchor?-1:1)*distance*(1-value))));
     setWindowOpacity(settings.animation=="float"?qBound(0.,value*1.2,1.):1.);
 }
@@ -450,7 +455,8 @@ void Drawer::animate(bool show) {
     bool reduced=QSettings("org.ukui","style").value("reduceAnimation",false).toBool();
     if(settings.animation=="none"||reduced){place(show?1:0);if(!show){QWidget::hide();setWindowOpacity(1);}return;}
     // Reversing mid-way continues from the current point with the remaining time.
-    motion.setDuration(qMax(40,qRound(settings.animationMs*qAbs((show?1.:0.)-from))));
+    const int duration=panelAnchor.isValid()?(show?DockPopupMotion::OpenMs:DockPopupMotion::CloseMs):settings.animationMs;
+    motion.setDuration(qMax(40,qRound(duration*qAbs((show?1.:0.)-from))));
     motion.setEasingCurve(show?QEasingCurve::OutCubic:QEasingCurve::InCubic);
     motion.setStartValue(from);motion.setEndValue(show?1.:0.);motion.start();
 }

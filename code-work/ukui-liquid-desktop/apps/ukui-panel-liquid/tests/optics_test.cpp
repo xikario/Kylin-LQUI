@@ -56,6 +56,12 @@ int main(int argc,char **argv){
   check(clear.size()==old.size()&&clear.pixelColor(0,0).alpha()<5,"Dock finish preserves physical size and transparent rounded corners");
   optics.setOptics(3.5,.52,1.,.82);const auto maximum=optics.renderPanel(rect,16);
   check(peak(maximum)<245,"maximum highlight does not clip a dark backdrop to white");
+  optics.setOptics(0,.30,.55,1.05);optics.setMaterial(.18,1);
+  const auto glass=optics.renderPanel(rect,24);
+  check(peak(glass)>qGray(glass.pixelColor(qRound(400*d),qRound(24*d)).rgb())+15,
+        "pure Dock glass has a visible continuous rim even with zero refraction");
+  check(glass.pixelColor(0,0).alpha()<5,"pure Dock glass keeps transparent corner coverage");
+  glass.save(output+QString("/dock-pure-glass-%1.png").arg(d));
   optics.setFinish(LiquidOpticsRenderer::Finish::Soft);optics.setOptics(3.5,.58,.28,.72);optics.setMaterial(.22,.55);const auto soft=optics.renderPanel(rect,16);
   optics.setFinish(LiquidOpticsRenderer::Finish::Frosted);optics.setOptics(3.5,.64,.22,.62);optics.setMaterial(0,0);const auto frosted=optics.renderPanel(rect,16);
   check(clear!=soft&&soft!=frosted,"clear, soft and frosted presets produce distinct materials");

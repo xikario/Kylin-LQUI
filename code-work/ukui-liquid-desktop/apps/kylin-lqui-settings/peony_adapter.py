@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 """Small one-shot adapter; reuse Peony Manager validators, no WebEngine process."""
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from appconfig import ROOT,RUNTIME
@@ -41,6 +43,7 @@ def page(name):
             fields.append(field('cli:'+key,label,kind,value,**extra))
         fields.append(field('terminal-note','','note','设置立即保存。终端仍由用户点击时加载，关闭文件管理窗口时一起退出。'))
     elif name=='plugins':
+        fields.append(field('open-manager','打开 Peony 插件管理器','action'))
         fields.append(field('restart-note','','note','启用状态保存后，在下次启动文件管理器时生效。不会关闭你已打开的文件窗口。'))
         for plugin in scanner.scan_plugins():
             fields.append(field('heading:'+plugin.file_name,'','heading',plugin.name))
@@ -94,7 +97,12 @@ def set_value(name,fid,encoded):
 def activate(name,fid):
     allowed={'install-copy':operations.install_copy_path_plugin,'remove-copy':operations.remove_copy_path_plugin,'install-cli':operations.install_cli_panel_plugin,'remove-cli':operations.remove_cli_panel_plugin}
     if name!='plugins':raise ValueError('无效操作')
-    if fid in allowed:result=allowed[fid]()
+    if fid=='open-manager':
+        if not (BASE/'peony_manager.html').is_file():raise ValueError('插件管理器界面未安装，请重新安装 Kylin-LQUI 设置。')
+        subprocess.Popen([sys.executable,str(BASE/'app/main.py')],env=dict(os.environ,LQUI_SETTINGS_LEGACY='1'),
+                         stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True)
+        return page(name)
+    elif fid in allowed:result=allowed[fid]()
     else:raise ValueError('此操作不可用')
     if not result.get('success'):raise ValueError(result.get('error','操作失败'))
     return page(name)

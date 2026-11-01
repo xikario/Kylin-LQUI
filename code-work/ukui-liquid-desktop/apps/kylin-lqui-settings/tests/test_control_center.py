@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import copy,json,os,sys,unittest
+import copy,json,os,sys,unittest,tempfile
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -13,16 +13,18 @@ class Fixture:
     calls=[]
     def snapshot(self):return copy.deepcopy(SAMPLE)
     def action(self,operation,values):self.calls.append((operation,dict(values)));return self.snapshot()
+configuration=tempfile.TemporaryDirectory(prefix='lqui-control-test-')
+os.environ['XDG_CONFIG_HOME']=configuration.name
 app=QtWidgets.QApplication([])
 app.setQuitOnLastWindowClosed(False)
 class ControlUi(unittest.TestCase):
     def setUp(self):
         self.window=ControlCenter(Fixture);self.window.open_at('home',1500,1030,40,40)
         deadline=QtCore.QElapsedTimer();deadline.start()
-        while (self.window.reading or not self.window.data) and deadline.elapsed()<3000:QtTest.QTest.qWait(20)
+        while (self.window.reading or not self.window.data or self.window.material_loading or self.window.popup_motion.state()==QtCore.QAbstractAnimation.Running) and deadline.elapsed()<3000:QtTest.QTest.qWait(20)
         self.assertTrue(self.window.data);self.assertFalse(self.window.reading)
     def tearDown(self):
-        self.window.poll.stop();QtCore.QThreadPool.globalInstance().waitForDone(5000);QtTest.QTest.qWait(10);self.window.hide();self.window.deleteLater();QtTest.QTest.qWait(10)
+        self.window.poll.stop();self.window.material_pool.waitForDone(5000);QtCore.QThreadPool.globalInstance().waitForDone(5000);QtTest.QTest.qWait(10);self.window.hide();self.window.deleteLater();QtTest.QTest.qWait(10)
     def test_pages_fit_screen_and_have_content(self):
         root=Path(os.environ.get('LQUI_CENTER_ARTIFACT','/tmp/lqui-control-center'));root.mkdir(exist_ok=True,parents=True)
         for page in ('home','wifi','bluetooth','sound','power','calendar'):
@@ -87,6 +89,49 @@ class ControlUi(unittest.TestCase):
         self.assertFalse(Fixture.calls);self.assertFalse(self.window.dialog_open)
     def test_hidden_window_stops_polling(self):
         self.assertTrue(self.window.poll.isActive());self.window.hide();self.assertFalse(self.window.poll.isActive());self.assertTrue(self.window.idle.isActive())
+    def test_dock_motion_reverses_and_stops_without_rebuilding_material(self):
+        self.window.dialog_open=True # exclude platform focus changes from the motion-only check
+        self.window.hide();self.window.open_at('home',1500,1030,40,40);target=QtCore.QRect(self.window.popup_target)
+        QtTest.QTest.qWait(70);self.assertGreater(self.window.y(),target.y());self.assertFalse(self.window.mask().isEmpty())
+        self.window.dismiss();QtTest.QTest.qWait(30);self.window.open_at('home',1500,1030,40,40)
+        QtTest.QTest.qWait(350);self.assertEqual(self.window.geometry(),target);self.assertTrue(self.window.mask().isEmpty());self.assertFalse(self.window.state()['motionRunning'])
+        self.window.dismiss();deadline=QtCore.QElapsedTimer();deadline.start()
+        while self.window.isVisible() and deadline.elapsed()<1200:QtTest.QTest.qWait(20)
+        self.assertFalse(self.window.isVisible());self.assertIsNone(self.window.native_glass);self.assertFalse(self.window.poll.isActive());self.assertFalse(self.window.state()['motionRunning'])
+    def test_reduced_motion_opens_and_closes_immediately(self):
+        setting=QtCore.QSettings('org.ukui','style');old=setting.value('reduceAnimation');setting.setValue('reduceAnimation',True)
+        try:
+            self.window.hide();self.window.open_at('home',1500,1030,40,40)
+            self.assertEqual(self.window.popup_progress,1.);self.assertFalse(self.window.state()['motionRunning']);self.window.dismiss();self.assertFalse(self.window.isVisible())
+        finally:
+            if old is None:setting.remove('reduceAnimation')
+            else:setting.setValue('reduceAnimation',old)
+    def test_reopening_same_page_keeps_controls_and_discards_hidden_material(self):
+        self.window.hide();volume=self.window.volume;pending=[]
+        self.window.job=lambda work,done,**unused:pending.append((work,done))
+        self.window.open_at('home',1500,1030,40,40)
+        self.assertIs(volume,self.window.volume)
+        self.assertTrue(self.window.isVisible());self.assertGreaterEqual(len(pending),1)
+        self.window.hide()
+        class Material:
+            closed=False
+            def close(self):self.closed=True
+        material=Material();pending[0][1]({'ok':True,'data':material})
+        self.assertTrue(material.closed);self.assertIsNone(self.window.native_glass)
+    def test_rapid_toggles_keep_only_the_latest_material_request(self):
+        self.window.hide();pending=[];self.window.refresh=lambda:None
+        self.window.job=lambda work,done,**unused:pending.append((work,done))
+        image=QtGui.QImage(40,40,QtGui.QImage.Format_RGB32);image.fill(QtCore.Qt.blue)
+        def capture(owner,**unused):owner.prepare_material(image,QtCore.QRect(0,0,800,600),owner.geometry());return QtGui.QImage()
+        with patch('fusion_view.blurred_capture',side_effect=capture):
+            for _ in range(12):self.window.open_at('home',1500,1030,40,40);self.window.hide()
+            self.window.open_at('home',1500,1030,40,40)
+        self.assertEqual(len(pending),1)
+        class Material:
+            closed=False
+            def close(self):self.closed=True
+        old=Material();pending[0][1]({'ok':True,'data':old});self.assertTrue(old.closed);self.assertEqual(len(pending),2)
+        self.window.hide();latest=Material();pending[1][1]({'ok':True,'data':latest});self.assertTrue(latest.closed);self.assertIsNone(self.window.material_pending)
     def test_wifi_pending_does_not_claim_connected(self):
         self.window.show_page('wifi');self.window.pending_network=('/other',__import__('time').monotonic());self.window.update_pending_network();self.window.apply_snapshot()
         self.assertIn('正在连接',self.window.status.text());self.assertTrue(any('连接中' in b.text() for b in self.window.scroll.findChildren(QtWidgets.QPushButton)))

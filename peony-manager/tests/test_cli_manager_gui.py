@@ -13,8 +13,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 import sip
 from app.main import MainWindow
+
+class OfflineRequests(QWebEngineUrlRequestInterceptor):
+    def __init__(self,parent):super().__init__(parent);self.remote=[]
+    def interceptRequest(self,info):
+        if info.requestUrl().scheme() in ('http','https'):
+            self.remote.append(info.requestUrl().toString());info.block(True)
 
 
 def main():
@@ -22,6 +29,7 @@ def main():
     os.environ["XDG_CONFIG_HOME"] = directory.name
     app = QApplication(sys.argv)
     window = MainWindow()
+    offline=OfflineRequests(app);window.web_view.page().profile().setRequestInterceptor(offline)
     window.show()
     done = {"stage": 0, "ticks": 0}
     config = Path(directory.name) / "peony-manager/cli-profiles.json"
@@ -66,6 +74,9 @@ def main():
     timer.timeout.connect(check)
     timer.start(500)
     result = app.exec_()
+    assert not offline.remote, 'manager UI must load without remote styles or fonts'
+    if os.environ.get('PEONY_GUI_ARTIFACT'):
+        window.grab().save(os.environ['PEONY_GUI_ARTIFACT'])
     sip.delete(window)
     app.processEvents()
     directory.cleanup()

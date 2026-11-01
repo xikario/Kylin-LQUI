@@ -11,6 +11,8 @@ struct Options {
     bool material = true;
     bool colors = true;
     bool chrome = true;
+    // Native light surface used by the unified settings' image chooser.
+    bool settingsSurface = false;
     LiquidPopup::BackdropProvider backdrop;
     std::function<QRect(QSize)> placement;
 };

@@ -312,19 +312,26 @@ with tempfile.TemporaryDirectory(prefix="ai-space-app-") as directory:
             w = current["width"]
             h = current["height"]
             pointer(w - 80, h - 18)
+            time.sleep(.04) # XTest sync confirms X delivery, not Qt's child-enter dispatch.
             button_cursor = cursor_image()
+            def cursor_matches(expected, equal=True):
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline:
+                    if (cursor_image() == expected) == equal:return True
+                    time.sleep(.02)
+                return False
             for edge_x, edge_y in [(w - 80, h - 2), (1, h // 2), (w - 2, h // 2), (w // 2, 1)]:
                 pointer(edge_x, edge_y)
-                checked(cursor_image() != button_cursor, "window edge displays a resize cursor")
+                checked(cursor_matches(button_cursor, False), "window edge displays a resize cursor")
                 pointer(w - 80, h - 18)
                 checked(
-                    cursor_image() == button_cursor,
+                    cursor_matches(button_cursor),
                     "entering a footer button clears the inherited edge cursor",
                 )
             pointer(w - 16, h - 18)
-            checked(cursor_image() != button_cursor, "dedicated size grip keeps its resize cursor")
+            checked(cursor_matches(button_cursor, False), "dedicated size grip keeps its resize cursor")
             pointer(w - 80, h - 18)
-            checked(cursor_image() == button_cursor, "leaving the grip restores the button cursor")
+            checked(cursor_matches(button_cursor), "leaving the grip restores the button cursor")
 
             def check_knowledge_menu():
                 current = state()

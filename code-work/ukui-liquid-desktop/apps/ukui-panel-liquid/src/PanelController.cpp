@@ -135,23 +135,23 @@ PanelController::PanelController(QObject *parent):QObject(parent) {
     settingsBridge->registerOnSession();
     WindowEffectsSettings::recoverPendingTrial();
     QSettings s(configFile(),QSettings::IniFormat);
-    m_refraction=qBound(0.,s.value("appearance/refraction",3.5).toDouble(),8.);
-    m_clarity=qBound(0.,s.value("appearance/clarity",.65).toDouble(),1.);
+    m_refraction=qBound(0.,s.value("appearance/refraction",CohesiveGlass::Refraction).toDouble(),8.);
+    m_clarity=qBound(0.,s.value("appearance/clarity",CohesiveGlass::Clarity).toDouble(),1.);
     m_liquidStrength=qBound(0.,s.value("appearance/liquidStrength",1.).toDouble(),2.);
-    m_transparency=qBound(0.,s.value("appearance/transparency",.35).toDouble(),.65);
-    m_seeThrough=s.value("appearance/seeThrough",false).toBool();
-    m_chroma=qBound(0.,s.value("appearance/chroma",.82).toDouble(),1.3);
+    m_transparency=qBound(0.,s.value("appearance/transparency",.18).toDouble(),.65);
+    m_seeThrough=s.value("appearance/seeThrough",true).toBool();
+    m_chroma=qBound(0.,s.value("appearance/chroma",CohesiveGlass::Chroma).toDouble(),1.3);
     m_materialStyle=s.value("appearance/materialStyle","liquid").toString();
     if(m_materialStyle!="liquid"&&m_materialStyle!="soft"&&m_materialStyle!="frosted")m_materialStyle="liquid";
-    m_pointerHighlight=qBound(0.,s.value("appearance/pointerHighlight",.16).toDouble(),1.);
+    m_pointerHighlight=qBound(0.,s.value("appearance/pointerHighlight",0.).toDouble(),1.);
     m_enabled=s.value("appearance/enabled",true).toBool();
     m_followWallpaper=s.value("appearance/followWallpaper",true).toBool();
     m_reducedMotion=s.value("appearance/reducedMotion",false).toBool();
     m_dockAdaptive=s.value("dock/adaptive",true).toBool();m_dockClickFeedback=s.value("dock/clickFeedback",true).toBool();
     m_dockMagnification=s.value("dock/hoverMagnification",false).toBool();
-    m_surface.opacity=qBound(.15,s.value("appearance/opacity",.58).toDouble(),.95);
-    m_surface.radius=qBound(0.,s.value("appearance/radius",16.).toDouble(),24.);
-    m_surface.highlight=qBound(0.,s.value("appearance/highlight",.32).toDouble(),1.);
+    m_surface.opacity=qBound(.15,s.value("appearance/opacity",CohesiveGlass::Tint).toDouble(),.95);
+    m_surface.radius=qBound(0.,s.value("appearance/radius",CohesiveGlass::DockRadius).toDouble(),24.);
+    m_surface.highlight=qBound(0.,s.value("appearance/highlight",CohesiveGlass::Highlight).toDouble(),1.);
     LiquidPopup::install(*qApp);
     LiquidPopup::setEnabled(m_enabled);
     LiquidPopup::theme().reducedMotion=m_reducedMotion;
@@ -383,10 +383,10 @@ void PanelController::settingsDialog(QWidget *owner) {
     const QStringList styles{"liquid","soft","frosted"},names{"清透液态","柔和玻璃","磨砂玻璃"};
     for(int i=0;i<styles.size();++i){auto *button=new QPushButton(names[i],presets);button->setCheckable(true);button->setProperty("materialPreset",true);button->setProperty("materialStyle",styles[i]);button->setObjectName("liquidMaterialPreset_"+styles[i]);button->setChecked(styles[i]==m_materialStyle);group->addButton(button);presetRow->addWidget(button,1);}
     material->addRow(presets);
-    auto *description=new QLabel("选择材质会应用推荐参数，也可继续微调。",material->parentWidget());description->setWordWrap(true);material->addRow(description);
+    auto *description=new QLabel("清透液态保留透光和曲面反光，默认不扭曲背景。选择材质后也可继续微调。",material->parentWidget());description->setWordWrap(true);material->addRow(description);
     heading(material,"玻璃质感");
     auto *clarity=slider(material,"背景清晰度","liquidPanelClarity",0,100,qRound(m_clarity*100),"%","向左更磨砂，向右保留更多壁纸细节。",[this](int v){m_clarity=v/100.;});
-    auto *strength=slider(material,"折射强度","liquidPanelStrength",0,200,qRound(m_liquidStrength*100),"%","调整玻璃边缘的弯折；磨砂材质不使用折射。",[this](int v){m_liquidStrength=v/100.;});
+    auto *strength=slider(material,"透光边缘","liquidPanelStrength",0,200,qRound(m_liquidStrength*100),"%","调整边缘保留背景细节的范围；磨砂材质不使用清透边缘。",[this](int v){m_liquidStrength=v/100.;});
     auto *highlight=slider(material,"边缘反光","liquidPanelHighlight",0,100,qRound(m_surface.highlight*100),"%","只调细边反光，避免角落过亮。",[this](int v){m_surface.highlight=v/100.;});
     auto *shade=slider(material,"背景压暗","liquidPanelShade",15,95,qRound(m_surface.opacity*100),"%","增加压暗，让图标和文字更突出。",[this](int v){m_surface.opacity=v/100.;});
     auto *chroma=slider(material,"壁纸色彩","liquidPanelChroma",0,130,qRound(m_chroma*100),"%","控制材质保留多少壁纸颜色。",[this](int v){m_chroma=v/100.;});
@@ -459,6 +459,12 @@ bool PanelController::eventFilter(QObject *obj,QEvent *e) {
             taskBackground|=parent->inherits("UKUITaskBar");
             button|=qobject_cast<QAbstractButton*>(parent)!=nullptr;
         }
+        // OEM task buttons deliberately ignore presses so the taskbar can
+        // start its native reorder drag. On propagation the receiver is a
+        // group/container, but the physical press still belongs to its icon.
+        if(!button)for(auto *hit=QApplication::widgetAt(static_cast<QMouseEvent*>(e)->globalPos());
+            hit&&hit!=w->window();hit=hit->parentWidget())
+            button|=hit->inherits("UKUITaskButton");
         // Interactive children handle their own events before propagation.
         // An otherwise empty Dock click has no action; letting the OEM panel
         // treat it as a panel drag repeatedly resets its fractional-DPI size.

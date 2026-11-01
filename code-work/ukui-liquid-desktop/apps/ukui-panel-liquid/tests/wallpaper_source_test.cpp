@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QPainter>
 #include <cstdlib>
 
 static void check(bool ok,const char *message) {
@@ -67,5 +68,26 @@ int main(int argc,char **argv) {
     qputenv("UKUI_LIQUID_WALLPAPER",still.toUtf8());settings.setValue("wallpaper/videoPath",second);settings.sync();
     source.reload();check(source.path()==still,"explicit wallpaper override keeps priority");
     qunsetenv("UKUI_LIQUID_WALLPAPER");check(source.reload() && center(source).blue()>200,"automatic source resumes after clearing override");
+    settings.remove("wallpaper/videoPath");settings.sync();
+    const QString large=root.path()+"/large.png";
+    {
+        QImage pixels(6000,4000,QImage::Format_RGB32);pixels.fill(QColor("#207030"));
+        QPainter painter(&pixels);painter.fillRect(3000,0,3000,4000,QColor("#304080"));painter.end();
+        check(pixels.save(large,"JPEG"),"large downloaded wallpaper fixture saved with mismatched suffix");
+    }
+    for(int mode:{0,1,2,3,4}) {
+        check(layout.open(QIODevice::WriteOnly|QIODevice::Truncate),"layout reopened");
+        layout.write(QJsonDocument(QJsonObject{{"wallpaperPath",large},{"wallpaperMode",mode}}).toJson());layout.close();
+        WallpaperBackdrop bounded,full;bounded.reload();full.reload(QSize{});
+        check(bounded.decodedSize().width()<=3840 && bounded.decodedSize().height()<=2160,
+              "panel wallpaper cache is bounded independently of file resolution");
+        const QRect screen(0,0,800,600),area(50,40,700,500);
+        const QImage a=bounded.sample(area,screen,1.5),b=full.sample(area,screen,1.5);
+        for(const QPoint point:{QPoint(150,150),QPoint(900,150),QPoint(600,600)}) {
+            const QColor x=a.pixelColor(point),y=b.pixelColor(point);
+            check(qAbs(x.red()-y.red())<8 && qAbs(x.green()-y.green())<8 && qAbs(x.blue()-y.blue())<8,
+                  "bounded decode preserves Fill/Fit/Stretch/Tile/Center logical placement");
+        }
+    }
     return 0;
 }

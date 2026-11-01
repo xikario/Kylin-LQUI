@@ -90,6 +90,7 @@ public:
         QDir().mkpath(artifacts);
         menu.grab().save(artifacts+QString("/menu-%1.png").arg(menu.devicePixelRatioF()));
         menu.hideMenu();
+        check(wait([&]{return !menu.isVisible();}),"launcher retraction finishes before hover preparation");
         menu.prewarmBackdrop();
         check(!menu.isVisible() && !menu.m_showPending,"hover prewarm never maps or activates the launcher");
         menu.showMenu();

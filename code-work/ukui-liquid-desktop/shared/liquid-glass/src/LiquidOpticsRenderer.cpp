@@ -198,21 +198,30 @@ void main() {
     // one bounded edge contribution, rather than extrapolating the glints and
     // adding a second bright caustic over the same upper-left corner.
     float glintWeight=surfaceFinish>0 ? clamp(highlightStrength,0.0,1.0) : highlightStrength;
-    rgb=mix(rgb,applyLiquidGlints(rgb,position,halfSize,radii,d,aa),glintWeight*mix(1.0,0.25,lightSurface));
+    if(surfaceFinish!=1)rgb=mix(rgb,applyLiquidGlints(rgb,position,halfSize,radii,d,aa),glintWeight*mix(1.0,0.25,lightSurface));
     // Inner caustic: directional, curved, fades inward rather than a flat frame.
     vec2 normal=gradSdRoundedBox(position,halfSize,panelRadius);
     float facing=pow(max(dot(normalize(normal+vec2(0.0001)),
         normalize(vec2(-0.65,0.76))),0.0),3.0);
     float caustic=exp(-pow((inside-4.0)/2.4,2.0));
     if(surfaceFinish==0)rgb+=vec3(0.105,0.12,0.14)*caustic*facing*highlightStrength*mix(1.0,0.25,lightSurface);
+    if(surfaceFinish==1) {
+        // Low-height clear glass: a curved, continuous rim instead of a
+        // broad corner hotspot. No refraction is needed for this finish.
+        float rim=exp(-pow((inside-1.35)/1.15,2.0));
+        float inner=exp(-pow((inside-4.2)/2.0,2.0));
+        float shine=clamp(highlightStrength,0.0,1.0)*(rim*(0.20+0.30*facing)+inner*0.06);
+        rgb=mix(rgb,vec3(0.98,0.995,1.0),shine);
+        rgb*=1.0-rim*(1.0-facing)*0.04;
+    }
     float coverage=1.0-smoothstep(-aa*0.5,aa*0.5,d);
     if(shaped>0) coverage=texture2D(shapeUnit,uv).b;
     // QOpenGLFramebufferObject::toImage returns premultiplied ARGB.
     // Straight RGB at alpha=0 caused coloured square-corner leaks in QPainter.
     gl_FragColor=vec4(clamp(rgb,0.0,1.0)*coverage,coverage);
 })GLSL";
-    if (!program.addShaderFromSourceCode(QOpenGLShader::Vertex,vertex)
-        || !program.addShaderFromSourceCode(QOpenGLShader::Fragment,fragment)
+    if (!program.addCacheableShaderFromSourceCode(QOpenGLShader::Vertex,vertex)
+        || !program.addCacheableShaderFromSourceCode(QOpenGLShader::Fragment,fragment)
         || !program.link()) {
         qWarning() << "[NextKdeGlass] shader fallback:" << program.log();
         context.doneCurrent();
@@ -260,11 +269,11 @@ void main() {
     program.setUniformValue("surfaceFinish",finish);
     program.setUniformValue("edgeSizePixels",control ? 5.5f : qMin(22.f,qMin(logical.width(),logical.height())*.24f));
     const bool dock=finish>0&&!control;
-    const float lens=dock ? (finish==3?0.f:qMin(1.f,liquidStrength)*(finish==2?.28f:1.f)) : 1.f;
+    const float lens=dock ? (finish==3?0.f:qMin(1.f,liquidStrength)*(finish==2?.28f:qMin(1.f,refraction/3.5f))) : 1.f;
     program.setUniformValue("refractionStrength",lens);
     program.setUniformValue("refractionNormalPow",dock?5.f:2.f);
     program.setUniformValue("refractionRGBFringing",dock?0.f:control ? 0.35f : 0.65f);
-    program.setUniformValue("refractionOffsetStrength",dock?0.f:control ? 0.55f : refraction*liquidStrength);
+    program.setUniformValue("refractionOffsetStrength",dock?(finish==1?refraction*liquidStrength:0.f):control ? 0.55f : refraction*liquidStrength);
     program.setUniformValue("liquidStrength",liquidStrength);
     program.setUniformValue("materialSoftness",dock?(finish==2?.65f:finish==3?1.f:0.f):0.f);
     program.setUniformValue("materialReflectionStrength",dock?(finish==3?.12f:0.f):control ? 0.28f : 0.14f);
@@ -423,6 +432,11 @@ QImage LiquidOpticsRenderer::renderSurface(const QRect &logicalRect, qreal radiu
             QLinearGradient line(inset,0,result.width()-inset,0);
             line.setColorAt(0,Qt::transparent);line.setColorAt(.5,QColor(245,250,255,qRound(80*m_highlight)));line.setColorAt(1,Qt::transparent);
             p.setPen(QPen(QBrush(line),.8*dpr));p.drawLine(QPointF(inset,1.2*dpr),QPointF(result.width()-inset,1.2*dpr));p.restore();
+            if(m_finish==Finish::Liquid) {
+                QLinearGradient rim(QPointF(),QPointF(result.width(),result.height()));
+                rim.setColorAt(0,QColor(245,250,255,qRound(180*m_highlight)));rim.setColorAt(.45,QColor(232,242,255,qRound(32*m_highlight)));rim.setColorAt(1,QColor(245,250,255,qRound(100*m_highlight)));
+                p.save();p.setClipPath(path);p.setBrush(Qt::NoBrush);p.setPen(QPen(QBrush(rim),1.2*dpr));p.drawPath(path);p.restore();
+            }
         }
         QImage mask(result.size(), QImage::Format_ARGB32_Premultiplied);
         mask.fill(Qt::transparent);

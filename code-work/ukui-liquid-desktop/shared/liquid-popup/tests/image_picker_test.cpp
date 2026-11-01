@@ -26,6 +26,8 @@ int main(int argc,char **argv){
     QImage image(1600,1000,QImage::Format_RGB32);image.fill(red);
     check(image.save(root.path()+"/00-picture.png"),"PNG fixture saved");
     image.fill(blue);check(image.save(root.path()+"/01-picture.jpg"),"JPEG fixture saved");
+    const QColor disguised("#bf23cf");image.fill(disguised);
+    check(image.save(root.path()+"/01-downloaded.png","JPEG"),"downloaded JPEG with PNG suffix saved");
     QFile svg(root.path()+"/02-icon.svg");svg.open(QIODevice::WriteOnly);
     svg.write("<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100'><circle cx='50' cy='50' r='45' fill='#23bf69'/></svg>");svg.close();
     QFile broken(root.path()+"/03-broken.png");broken.open(QIODevice::WriteOnly);broken.write("invalid image");broken.close();
@@ -33,17 +35,23 @@ int main(int argc,char **argv){
     QDir().mkpath(root.path()+"/sub");image.fill(QColor("#cd23cf"));image.save(root.path()+"/sub/only.png");
     LiquidDialog::FileDialog picker(nullptr,"选择图片",root.path(),"图片 (*.png *.jpg *.svg)");
     picker.setOption(QFileDialog::DontUseNativeDialog);picker.setFileMode(QFileDialog::ExistingFile);
-    LiquidDialog::install(&picker);LiquidDialog::installImageThumbnails(&picker);
+    LiquidDialog::Options surface;surface.settingsSurface=true;
+    LiquidDialog::install(&picker,surface);LiquidDialog::installImageThumbnails(&picker);
     picker.findChild<QTreeView *>("treeView")->sortByColumn(0,Qt::AscendingOrder);
     LiquidDialog::installImageThumbnails(&picker);
     check(picker.findChildren<QObject *>("liquidImageThumbnails").size()==1,"installation is idempotent");
     picker.show();auto *view=picker.findChild<QListView *>("listView");
+    check(picker.palette().color(QPalette::WindowText).lightness()<128
+          && picker.property("liquidDialogMaterialBytes").toLongLong()==0,
+          "settings image chooser uses a light surface without capturing the desktop");
     check(view&&view->viewMode()==QListView::IconMode,"image chooser opens as a thumbnail grid");
     check(until([&]{const auto rendered=view->viewport()->grab().toImage();return colorPixels(rendered,red)>300&&colorPixels(rendered,blue)>300&&colorPixels(rendered,QColor("#23bf69"))>200;}),"visible images finish asynchronous decoding");
     auto pixels=view->viewport()->grab().toImage();
     check(colorPixels(pixels,red)>300&&colorPixels(pixels,blue)>300,
           "real PNG and JPEG content replaces generic icons in the view");
     check(colorPixels(pixels,QColor("#23bf69"))>200,"transparent SVG thumbnail renders");
+    check(until([&]{return colorPixels(view->viewport()->grab().toImage(),disguised)>300;}),
+          "content sniffing renders downloaded wallpaper with a mismatched suffix");
     settle(300);const int loads=picker.property("liquidThumbnailLoads").toInt();
     check(loads<50,"large directory does not eagerly decode every image");
     settle(300);check(picker.property("liquidThumbnailLoads").toInt()==loads,"idle chooser submits no recurring work");

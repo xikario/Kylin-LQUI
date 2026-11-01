@@ -1,0 +1,47 @@
+{
+  "purpose": "Pinned offline styles and icon fonts for the on-demand Peony manager. Upstream licenses are included.",
+  "files": [
+    {
+      "path": "tailwind.min.css",
+      "url": "https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css",
+      "bytes": 2934019,
+      "sha256": "b6ad97402eddb903e7a5d7a73ee47a679204efbdda4521a391cbad9df509b932"
+    },
+    {
+      "path": "tailwind-LICENSE",
+      "url": "https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/LICENSE",
+      "bytes": 1140,
+      "sha256": "9e3e31668eee20e6583fa578f3b3cea76a94dbd80bf93043f98c123136b25907"
+    },
+    {
+      "path": "fontawesome/css/all.min.css",
+      "url": "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css",
+      "bytes": 102025,
+      "sha256": "1edb1725a9ea8ca4dcf2f5508cee183218aa1685e47c1b23056717f754f58ebf"
+    },
+    {
+      "path": "fontawesome/LICENSE.txt",
+      "url": "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/LICENSE.txt",
+      "bytes": 7427,
+      "sha256": "0aa8f86525273b2efa4f40f4272a188e187704252170e979dc06879adf68d43c"
+    },
+    {
+      "path": "fontawesome/webfonts/fa-solid-900.woff2",
+      "url": "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-solid-900.woff2",
+      "bytes": 150124,
+      "sha256": "7152a6933ee3d690ec2af3d09da9d701723d16aa3410a6d80f28ff8866f3b880"
+    },
+    {
+      "path": "fontawesome/webfonts/fa-regular-400.woff2",
+      "url": "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-regular-400.woff2",
+      "bytes": 24948,
+      "sha256": "8e7e5ea1b15f62ab14dbd41768e8fbcd21cc859a4ea5da812457ee714299fb35"
+    },
+    {
+      "path": "fontawesome/webfonts/fa-brands-400.woff2",
+      "url": "https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/webfonts/fa-brands-400.woff2",
+      "bytes": 108020,
+      "sha256": "748332090c4b8e20f95d0ff59f0be20fa9c889359d3b36d4b886d73376054207"
+    }
+  ]
+}

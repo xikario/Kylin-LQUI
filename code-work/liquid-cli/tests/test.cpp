@@ -85,6 +85,15 @@ private slots:
         QImage image(900,700,QImage::Format_RGB32);QPainter p(&image);QLinearGradient g(0,0,900,700);g.setColorAt(0,QColor("#73906d"));g.setColorAt(.4,QColor("#173f30"));g.setColorAt(1,QColor("#65846f"));p.fillRect(image.rect(),g);p.end();
         QVERIFY(image.save(root.path()+"/wallpaper.png"));QFile f(root.path()+"/config/kyfences/layout.json");QVERIFY(f.open(QIODevice::WriteOnly));f.write(QJsonDocument(QJsonObject{{"wallpaperPath",root.path()+"/wallpaper.png"}}).toJson());
     }
+    void wallpaperWithMismatchedSuffixMatchesTheDesktop(){
+        const QString path=root.path()+"/下载壁纸.png",layoutPath=root.path()+"/config/kyfences/layout.json";
+        QImage fixture(800,500,QImage::Format_RGB32);fixture.fill(QColor("#ca5030"));QVERIFY(fixture.save(path,"JPEG"));
+        const auto before=read(layoutPath);QFile layout(layoutPath);QVERIFY(layout.open(QIODevice::WriteOnly|QIODevice::Truncate));
+        layout.write(QJsonDocument(QJsonObject{{"wallpaperPath",path}}).toJson());layout.close();
+        const auto tile=drawerWallpaper(QRect(100,100,160,90),QRect(0,0,800,500),1.5);
+        QVERIFY(layout.open(QIODevice::WriteOnly|QIODevice::Truncate));layout.write(before);layout.close();
+        QCOMPARE(tile.size(),QSize(240,135));QVERIFY(qAbs(tile.pixelColor(120,60).red()-202)<6);
+    }
     void settingsRoundTripAndMigration(){
         auto s=config();s.width=90000;s.height=-10;s.liquid=900;s.animation="spring";s.permissions="bogus";s.contextLimitK=1;s.normalize();
         QCOMPARE(s.width,1000);QCOMPARE(s.height,420);QCOMPARE(s.liquid,100);QCOMPARE(s.animation,QString("float"));
@@ -181,6 +190,19 @@ private slots:
         d.Hide();QTRY_VERIFY_WITH_TIMEOUT(!d.isVisible(),1000);QVERIFY(d.windowOpacity()>.99);
         s.animation="slide";d.applySettings(s);d.Show();QTRY_COMPARE_WITH_TIMEOUT(d.pos(),d.targetGeometry().topLeft(),1000);
         s.width=680;s.height=850;s.liquid=35;const int builds=d.glassBuilds();d.applySettings(s);QCOMPARE(d.geometry(),d.targetGeometry());QVERIFY(d.glassBuilds()>builds);
+    }
+    void taskbarMotionPushesThroughAnchorAndReverses(){
+        auto s=config();s.animation="float";Drawer d(s,folder());const QRect screen=QGuiApplication::primaryScreen()->availableGeometry();
+        d.ToggleAt(screen.right()-45,screen.bottom()-35,32,32);const QRect target=d.targetGeometry();const int builds=d.glassBuilds();
+        QTest::qWait(65);QVERIFY(d.y()>target.y()+10);QVERIFY(!d.mask().isEmpty());
+        QVERIFY(d.mask().translated(d.pos()).boundingRect().intersected(target)==d.mask().translated(d.pos()).boundingRect());
+        d.Hide();QTest::qWait(25);d.Show();QTRY_COMPARE_WITH_TIMEOUT(d.progress(),1.,1000);QCOMPARE(d.geometry(),target);QVERIFY(d.mask().isEmpty());QCOMPARE(d.glassBuilds(),builds);
+        d.Hide();QTRY_VERIFY_WITH_TIMEOUT(!d.isVisible(),1000);QCOMPARE(d.glassBuilds(),builds);
+    }
+    void hiddenEdgeDoesNotPulseDuringBackgroundReply(){
+        Drawer d(config(),folder());auto *pulse=d.edgeWidget()->findChild<QTimer*>("edgeBusyPulse");QVERIFY(pulse);
+        d.submit("pulse fixture",{});QTRY_VERIFY(d.client()->busy());QVERIFY(pulse->isActive());
+        d.edgeWidget()->hide();QVERIFY(!pulse->isActive());d.edgeWidget()->show();QVERIFY(pulse->isActive());d.client()->stop();
     }
     void hoverDoesNotOpenClickStays(){
         auto s=config();s.hideDelay=200;Drawer d(s,folder());QWidget workspace;workspace.show();QApplication::setActiveWindow(&workspace);

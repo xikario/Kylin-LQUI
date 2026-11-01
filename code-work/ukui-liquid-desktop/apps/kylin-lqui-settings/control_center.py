@@ -13,6 +13,7 @@ class Job(QtCore.QRunnable):
     def run(self):
         try:result={'ok':True,'data':self.method()}
         except Exception as error:result={'ok':False,'error':service_error(error)}
+        self.method=None
         self.signals.finished.emit(result)
 
 class LunarCalendar(QtWidgets.QCalendarWidget):
@@ -33,6 +34,11 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
     def __init__(self,backend_factory=SystemBackend):
         super().__init__(None,QtCore.Qt.Tool|QtCore.Qt.FramelessWindowHint|QtCore.Qt.WindowStaysOnTopHint)
         self.ui_style=QtWidgets.QStyleFactory.create('Fusion');self.ui_style.setParent(self);self.setStyle(self.ui_style)
+        self.material_revision=0
+        self.material_loading=False;self.material_pending=None
+        self.material_pool=QtCore.QThreadPool(self);self.material_pool.setMaxThreadCount(1);self.material_pool.setExpiryTimeout(0)
+        self.popup_motion=QtCore.QVariantAnimation(self);self.popup_progress=0.;self.closing=False;self.popup_target=QtCore.QRect()
+        self.popup_motion.valueChanged.connect(self.popup_frame);self.popup_motion.finished.connect(self.popup_finished)
         self.setObjectName('lquiControlCenter');self.setWindowTitle('Kylin-LQUI 系统控制中心');self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setStyleSheet(FUSION_STYLE);self.backdrop=QtGui.QImage();self.native_glass=None
         palette=self.palette()
         for role in (QtGui.QPalette.WindowText,QtGui.QPalette.Text,QtGui.QPalette.ButtonText):palette.setColor(role,QtGui.QColor('#edf3fa'))
@@ -50,32 +56,85 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.tooltips=ReadableTooltips(self)
         self.show_page('home')
     def release_material(self):
+        self.material_revision+=1
+        self.material_pending=None
         material=self.native_glass;self.native_glass=None
         if material is not None:material.close()
+    def prepare_material(self,image,screen,region):
+        self.material_pending=(image,screen,region,self.material_revision)
+        self.start_material()
+    def start_material(self):
+        if self.material_loading or self.material_pending is None:return
+        image,screen,region,revision=self.material_pending;self.material_pending=None;self.material_loading=True
+        def prepare():
+            from native_glass import NativeGlass
+            if revision!=self.material_revision:return None
+            return NativeGlass(image,screen,region)
+        def ready(result):
+            self.material_loading=False;material=result.get('data') if result['ok'] else None
+            if material is not None:
+                if revision!=self.material_revision or not self.isVisible():material.close()
+                else:
+                    self.native_glass=material;self.backdrop=QtGui.QImage()
+                    for card in self.findChildren(GlassCard):card.update()
+            self.start_material()
+        # One active decode and only the latest pending crop. Rapid toggles
+        # cannot accumulate a queue of obsolete wallpaper reads.
+        self.job(prepare,ready,pool=self.material_pool)
     def event(self,event):
         if event.type()==QtCore.QEvent.WindowDeactivate:QtCore.QTimer.singleShot(100,self.dismiss_if_inactive)
         return super().event(event)
     def dismiss_if_inactive(self):
-        if self.isVisible() and not self.isActiveWindow() and not self.dialog_open and not QtWidgets.QApplication.activePopupWidget() and not QtWidgets.QApplication.activeModalWidget():self.hide()
-    def hideEvent(self,event):self.release_material();self.backdrop=QtGui.QImage();self.poll.stop();self.idle.start(60000);super().hideEvent(event)
-    def closeEvent(self,event):event.ignore();self.hide()
+        if self.isVisible() and not self.isActiveWindow() and not self.dialog_open and not QtWidgets.QApplication.activePopupWidget() and not QtWidgets.QApplication.activeModalWidget():self.dismiss()
+    def hideEvent(self,event):self.popup_motion.stop();self.popup_progress=0.;self.closing=False;self.clearMask();self.setWindowOpacity(1);self.release_material();self.backdrop=QtGui.QImage();self.poll.stop();self.idle.start(60000);super().hideEvent(event)
+    def closeEvent(self,event):event.ignore();self.dismiss()
     def keyPressEvent(self,event):
-        if event.key()==QtCore.Qt.Key_Escape:self.hide()
+        if event.key()==QtCore.Qt.Key_Escape:self.dismiss()
         else:super().keyPressEvent(event)
     def quit_if_idle(self):
         if self.isVisible():return
         if self.jobs:self.idle.start(10000)
         else:QtWidgets.QApplication.quit()
-    def job(self,method,callback):
+    def job(self,method,callback,pool=None):
         worker=Job(method);self.jobs.add(worker)
-        def finished(result):self.jobs.discard(worker);callback(result)
-        worker.signals.finished.connect(finished);QtCore.QThreadPool.globalInstance().start(worker)
+        def finished(result):
+            self.jobs.discard(worker)
+            try:callback(result)
+            finally:worker.signals.deleteLater()
+        worker.signals.finished.connect(finished);(pool or QtCore.QThreadPool.globalInstance()).start(worker)
     def open_at(self,page,x,y,width,height):
         page='calendar' if page=='calendar' else 'home'
-        if self.isVisible() and self.page==page:self.hide();return
+        if self.isVisible() and self.page==page:
+            if self.closing:self.closing=False;self.animate_popup(True);self.raise_();self.activateWindow();self.poll.start()
+            else:self.dismiss()
+            return
         if self.isVisible():self.hide()
-        self.anchor=QtCore.QRect(x,y,width,height);self.idle.stop();self.show_page(page)
-        self.set_position();self.release_material();self.capture_backdrop();self.show();self.raise_();self.activateWindow();self.refresh();self.poll.start()
+        self.anchor=QtCore.QRect(x,y,width,height);self.idle.stop()
+        if self.page!=page:self.show_page(page)
+        self.set_position();self.release_material();self.capture_backdrop();self.popup_target=self.geometry();self.popup_progress=0.;self.popup_frame(0.)
+        self.show();self.raise_();self.activateWindow();self.animate_popup(True);self.refresh();self.poll.start()
+    def popup_frame(self,value):
+        self.popup_progress=float(value);target=self.popup_target
+        if not target.isValid():return
+        top=self.anchor.center().y()<target.center().y();offset=round(target.height()*(1-self.popup_progress))*(-1 if top else 1)
+        self.move(target.topLeft()+QtCore.QPoint(0,offset))
+        if self.popup_progress>=1:self.clearMask()
+        else:
+            clip=target.translated(-self.pos()).intersected(self.rect())
+            self.setMask(QtGui.QRegion(clip if not clip.isEmpty() else QtCore.QRect(-2,-2,1,1)))
+        self.setWindowOpacity(min(1.,self.popup_progress*4))
+    def popup_finished(self):
+        if self.closing:QtWidgets.QWidget.hide(self)
+    def animate_popup(self,opening):
+        self.popup_motion.stop();end=1. if opening else 0.
+        reduced=QtCore.QSettings('org.ukui','style').value('reduceAnimation',False,type=bool) or QtCore.QSettings(str(Path.home()/'.config/ukui/liquid-panel.ini'),QtCore.QSettings.IniFormat).value('appearance/reducedMotion',False,type=bool)
+        if reduced:self.popup_frame(end);self.popup_finished();return
+        self.popup_motion.setDuration(max(40,round((260 if opening else 220)*abs(end-self.popup_progress))))
+        self.popup_motion.setEasingCurve(QtCore.QEasingCurve.OutCubic if opening else QtCore.QEasingCurve.InCubic)
+        self.popup_motion.setStartValue(self.popup_progress);self.popup_motion.setEndValue(end);self.popup_motion.start()
+    def dismiss(self):
+        if not self.isVisible() or self.closing:return
+        self.closing=True;self.poll.stop();self.animate_popup(False)
     @staticmethod
     def label(text,muted=False):
         result=QtWidgets.QLabel(text);result.setTextFormat(QtCore.Qt.PlainText);result.setWordWrap(True);result.setProperty('muted',muted);return result
@@ -98,7 +157,9 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             row=QtWidgets.QHBoxLayout();today=QtWidgets.QPushButton('今天');today.clicked.connect(lambda:self.calendar.setSelectedDate(QtCore.QDate.currentDate()));row.addWidget(today);system=QtWidgets.QPushButton('管理系统日程');system.clicked.connect(self.open_system_calendar);row.addWidget(system);box.addLayout(row)
             self.calendar.currentPageChanged.connect(self.load_calendar);self.calendar.selectionChanged.connect(self.update_calendar_day);self.load_calendar(self.calendar.yearShown(),self.calendar.monthShown())
         layout.addStretch();self.scroll.setWidget(content);content.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False);self.apply_snapshot();self.set_position()
-    def navigate(self,page):self.show_page(page);self.refresh()
+    def navigate(self,page):
+        self.hide();self.show_page(page);self.release_material();self.capture_backdrop();self.popup_target=self.geometry();self.popup_progress=1.
+        self.show();self.raise_();self.activateWindow();self.refresh();self.poll.start()
     @staticmethod
     def action_domain(operation):
         if operation in ('volume','mute','output'):return 'audio'
@@ -219,12 +280,12 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             bus=Gio.bus_get_sync(Gio.BusType.SESSION,None)
             bus.call_sync('org.ukui.calendar.Notifications','/org/ukui/calendar/Notifications','org.ukui.calendar.Notifications','OpenSchedule',GLib.Variant('(iii)',(day,month,year)),None,Gio.DBusCallFlags.NO_AUTO_START,2000,None)
         def done(result):
-            if result['ok']:self.hide()
+            if result['ok']:self.dismiss()
             else:self.status.setText('系统日程编辑器暂未响应；日历和已有日程仍可查看。')
         self.job(open_day,done)
     def launch(self,program):
-        QtCore.QProcess.startDetached(program,[]);self.hide()
-    def state(self):return {'page':self.page,'visible':self.isVisible(),'busy':self.changing,'reading':self.reading,'geometry':[self.x(),self.y(),self.width(),self.height()],'materialBackend':'launcher-cpu-refraction' if self.native_glass else 'blur-fallback','materialRenders':self.native_glass.render_count if self.native_glass else 0}
+        QtCore.QProcess.startDetached(program,[]);self.dismiss()
+    def state(self):return {'page':self.page,'visible':self.isVisible(),'closing':self.closing,'motionRunning':self.popup_motion.state()==QtCore.QAbstractAnimation.Running,'progress':self.popup_progress,'busy':self.changing,'reading':self.reading,'geometry':[self.x(),self.y(),self.width(),self.height()],'materialBackend':('snell-gpu' if self.native_glass.used_gpu else 'snell-cpu-fallback') if self.native_glass else 'blur-fallback','materialRenders':self.native_glass.render_count if self.native_glass else 0}
 
 class Adaptor(QtDBus.QDBusAbstractAdaptor):
     QtCore.Q_CLASSINFO('D-Bus Interface','org.kylin.Lqui.ControlCenter')
@@ -233,7 +294,7 @@ class Adaptor(QtDBus.QDBusAbstractAdaptor):
     @QtCore.pyqtSlot(result=str)
     def State(self):return json.dumps(self.parent().state())
     @QtCore.pyqtSlot()
-    def Dismiss(self):self.parent().hide()
+    def Dismiss(self):self.parent().dismiss()
 
 def main():
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling);QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps);app=QtWidgets.QApplication(sys.argv);app.setApplicationName('kylin-lqui-control-center');app.setWindowIcon(QtGui.QIcon(str(Path(__file__).with_name('icon.svg'))));app.setDesktopFileName('kylin-lqui-control-center');app.setQuitOnLastWindowClosed(False)

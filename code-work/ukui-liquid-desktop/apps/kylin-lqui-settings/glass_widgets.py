@@ -35,8 +35,11 @@ class GlassCard(QtWidgets.QFrame):
     def __init__(self,owner,radius=23):super().__init__();self.owner=owner;self.radius=radius;self.accent=False;self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setProperty('glass',True)
     def paintEvent(self,event):
         native=getattr(self.owner,'native_glass',None)
+        origin=self.mapToGlobal(QtCore.QPoint())
+        if hasattr(self.owner,'material_origin'):
+            origin+=self.owner.material_origin-self.owner.mapToGlobal(QtCore.QPoint())
         if native:
-            image=native.render(QtCore.QRect(self.mapToGlobal(QtCore.QPoint()),self.size()),self.devicePixelRatioF(),self.radius)
+            image=native.render(QtCore.QRect(origin,self.size()),self.devicePixelRatioF(),self.radius)
             if not image.isNull():
                 painter=QtGui.QPainter(self);painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform);painter.drawImage(self.rect(),image);return
         p=QtGui.QPainter(self);p.setRenderHints(QtGui.QPainter.Antialiasing|QtGui.QPainter.SmoothPixmapTransform);r=QtCore.QRectF(self.rect()).adjusted(.7,.7,-.7,-.7);clip=QtGui.QPainterPath();clip.addRoundedRect(r,self.radius,self.radius);p.setClipPath(clip)
@@ -44,7 +47,7 @@ class GlassCard(QtWidgets.QFrame):
         # Never expose live window text when capture is unavailable, a screen
         # moves, or the cached image does not cover the complete card.
         p.fillRect(self.rect(),QtGui.QColor('#485364'))
-        if not image.isNull():p.drawImage(self.rect(),image,QtCore.QRect(self.mapToGlobal(QtCore.QPoint())-getattr(self.owner,'backdrop_origin',QtCore.QPoint()),self.size()))
+        if not image.isNull():p.drawImage(self.rect(),image,QtCore.QRect(origin-getattr(self.owner,'backdrop_origin',QtCore.QPoint()),self.size()))
         # A light application may sit behind the card. Keep secondary text
         # readable too; connectivity state is expressed by the orb and rim.
         p.fillRect(self.rect(),QtGui.QColor(16,23,32,185))
@@ -54,8 +57,7 @@ class GlassCard(QtWidgets.QFrame):
         if not image.isNull():
             inner=QtGui.QPainterPath();inner.addRoundedRect(r.adjusted(4,4,-4,-4),max(1,self.radius-4),max(1,self.radius-4))
             p.save();p.setClipPath(clip.subtracted(inner))
-            origin=self.mapToGlobal(QtCore.QPoint())-getattr(self.owner,'backdrop_origin',QtCore.QPoint())
-            source=QtCore.QRectF(QtCore.QPointF(origin),QtCore.QSizeF(self.size())).adjusted(7,7,-7,-7)
+            source=QtCore.QRectF(QtCore.QPointF(origin-getattr(self.owner,'backdrop_origin',QtCore.QPoint())),QtCore.QSizeF(self.size())).adjusted(7,7,-7,-7)
             p.drawImage(r,image,source);p.fillRect(r,QtGui.QColor(28,39,54,145));p.restore()
         # Thin curved rim catches light; center remains diffuse for readability.
         rim=QtGui.QLinearGradient(r.topLeft(),r.bottomRight());rim.setColorAt(0,QtGui.QColor(245,245,245,95));rim.setColorAt(.32,QtGui.QColor(180,216,245,12));rim.setColorAt(.72,QtGui.QColor(160,198,235,8));rim.setColorAt(1,QtGui.QColor(230,230,230,85))
@@ -89,15 +91,23 @@ def diffuse_backdrop(full, size):
     painter=QtGui.QPainter(image);scene.render(painter,QtCore.QRectF(image.rect()),QtCore.QRectF(pad,pad,small.width(),small.height()));painter.end()
     return image.scaled(size,QtCore.Qt.IgnoreAspectRatio,QtCore.Qt.SmoothTransformation)
 
-def blurred_capture(owner):
-    screen=QtWidgets.QApplication.screenAt(owner.geometry().center()) or QtWidgets.QApplication.primaryScreen();full=screen.grabWindow(0)
+def blurred_capture(owner,async_native=False):
+    screen=QtWidgets.QApplication.screenAt(owner.geometry().center()) or QtWidgets.QApplication.primaryScreen()
+    area=screen.geometry();region=owner.geometry().intersected(area);offset=region.topLeft()-area.topLeft()
+    full=screen.grabWindow(0,offset.x(),offset.y(),region.width(),region.height())
     if full.isNull():return QtGui.QImage()
-    area=screen.geometry();owner.backdrop_origin=area.topLeft()
+    owner.backdrop_origin=region.topLeft()
+    if async_native:
+        # Show a diffused crop immediately; a slow wallpaper decoder never
+        # delays mapping or input, and obsolete completions cannot reopen it.
+        image=full.toImage()
+        owner.prepare_material(image,area,region)
+        return diffuse_backdrop(full,region.size())
     try:
         from native_glass import NativeGlass
-        owner.native_glass=NativeGlass(full.toImage(),area)
-    except (OSError,RuntimeError):owner.native_glass=None
-    return QtGui.QImage() if owner.native_glass else diffuse_backdrop(full,area.size())
+        owner.native_glass=NativeGlass(full.toImage(),area,region)
+    except (OSError,RuntimeError,AttributeError):owner.native_glass=None
+    return QtGui.QImage() if owner.native_glass else diffuse_backdrop(full,region.size())
 
 
 class CardChevron(QtWidgets.QAbstractButton):

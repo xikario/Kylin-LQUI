@@ -73,11 +73,31 @@ public:
     Surface(QWidget *window,const Options &options):QObject(window),window(window),options(options) {
         setObjectName("liquidDialogController");
         window->setProperty("liquidDialogInstalled",true);
-        if(options.material) {
+        if(options.material || options.settingsSurface) {
             window->setAttribute(Qt::WA_TranslucentBackground);
             window->setAutoFillBackground(false);
         }
-        if(options.colors) {
+        if(options.settingsSurface) {
+            QPalette palette=window->palette();
+            palette.setColor(QPalette::Window,QColor("#e7e9ed"));
+            palette.setColor(QPalette::Base,Qt::white);palette.setColor(QPalette::AlternateBase,QColor("#f5f6f9"));
+            palette.setColor(QPalette::Button,QColor("#f5f6f9"));
+            for(auto role:{QPalette::WindowText,QPalette::Text,QPalette::ButtonText})palette.setColor(role,QColor("#232833"));
+            palette.setColor(QPalette::Highlight,QColor("#d3e6ff"));palette.setColor(QPalette::HighlightedText,QColor("#214e89"));
+            window->setPalette(palette);
+            window->setProperty("liquidSettingsSurface",true);
+            window->setStyleSheet(window->styleSheet()+QStringLiteral(
+                "QWidget[liquidSettingsSurface=true]{background:transparent;color:#232833;}"
+                "QWidget[liquidSettingsSurface=true] QLabel{background:transparent;color:#232833;}"
+                "QWidget[liquidSettingsSurface=true] QPushButton{background:#f5f6f9;color:#262b34;border:1px solid #d1d7df;border-radius:8px;padding:6px 12px;}"
+                "QWidget[liquidSettingsSurface=true] QPushButton:hover{background:#dbeaff;}"
+                "QWidget[liquidSettingsSurface=true] QPushButton:disabled{color:#9aa1ad;}"
+                "QWidget[liquidSettingsSurface=true] QLineEdit,QWidget[liquidSettingsSurface=true] QComboBox,"
+                "QWidget[liquidSettingsSurface=true] QAbstractItemView{background:#fff;color:#262b34;border:1px solid #dce0e6;border-radius:8px;padding:4px;selection-background-color:#d3e6ff;selection-color:#214e89;}"
+                "QWidget[liquidSettingsSurface=true] QToolButton{background:transparent;color:#262b34;border:0;padding:5px;}"
+                "QWidget[liquidSettingsSurface=true] QToolButton:hover{background:#dbeaff;border-radius:6px;}"
+                "QWidget[liquidSettingsSurface=true] QDialogButtonBox{background:transparent;border:0;}"));
+        } else if(options.colors) {
             QPalette palette=window->palette();
             for(auto role:{QPalette::Window,QPalette::Button})palette.setColor(role,QColor("#243749"));
             for(auto role:{QPalette::Base,QPalette::AlternateBase})palette.setColor(role,QColor("#172b40"));
@@ -175,7 +195,7 @@ protected:
             // mapped. Keep its opening material: recapturing here includes
             // the dialog itself, and activation would override the WM's focus.
             if(event->spontaneous())return false;
-            if(options.material && LiquidPopup::isEnabled()) {
+            if(options.material && !options.settingsSurface && LiquidPopup::isEnabled()) {
                 const QRect area(window->mapToGlobal(QPoint()),window->size());
                 const qreal dpr=window->devicePixelRatioF();
                 const auto background=options.backdrop?options.backdrop(area,dpr):LiquidPopup::captureBackdrop(area,dpr);
@@ -203,12 +223,15 @@ protected:
                 motion.setDuration(LiquidPopup::theme().openMs);
                 motion.setEasingCurve(QEasingCurve::OutCubic);motion.start();
             }
-        } else if(event->type()==QEvent::Paint && options.material) {
+        } else if(event->type()==QEvent::Paint && (options.material || options.settingsSurface)) {
             QPainter painter(window);
             painter.setCompositionMode(QPainter::CompositionMode_Source);
             painter.fillRect(window->rect(),Qt::transparent);
             painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
-            if(LiquidPopup::isEnabled() && !material.isNull())painter.drawImage(window->rect(),material);
+            if(options.settingsSurface) {
+                painter.setRenderHint(QPainter::Antialiasing);painter.setPen(QPen(QColor("#d1d7df"),1));
+                painter.setBrush(QColor("#e7e9ed"));painter.drawRoundedRect(QRectF(window->rect()).adjusted(.5,.5,-.5,-.5),12,12);
+            } else if(LiquidPopup::isEnabled() && !material.isNull())painter.drawImage(window->rect(),material);
             else painter.fillRect(window->rect(),window->palette().color(QPalette::Window));
         } else if(event->type()==QEvent::Hide) {
             dragging=false;
@@ -424,7 +447,7 @@ QString chooseFile(QWidget *parent,const QString &title,const QString &dir,const
     picker->setAcceptMode(save?QFileDialog::AcceptSave:QFileDialog::AcceptOpen);
     picker->setFileMode(directory?QFileDialog::Directory:save?QFileDialog::AnyFile:QFileDialog::ExistingFile);
     if(selectedFilter && !selectedFilter->isEmpty())picker->selectNameFilter(*selectedFilter);
-    install(picker);
+    Options surfaceOptions;surfaceOptions.settingsSurface=images;install(picker,surfaceOptions);
     if(images)installImageThumbnails(picker);
     const int result=picker->exec();
     QString path;

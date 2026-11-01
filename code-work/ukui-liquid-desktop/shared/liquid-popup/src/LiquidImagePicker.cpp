@@ -74,7 +74,7 @@ private:
             // Readers use scaled decode where supported; other formats have a
             // conservative source pixel cap and never decode on the GUI thread.
             if(!info.isFile() || info.size()>64*1024*1024)return QImage();
-            QImageReader reader(path);reader.setAutoTransform(true);
+            QImageReader reader(path);reader.setDecideFormatFromContent(true);reader.setAutoTransform(true);
             const QSize source=reader.size();
             if(!source.isValid() || qint64(source.width())*source.height()>40000000)return QImage();
             reader.setScaledSize(source.scaled(pixels,Qt::KeepAspectRatio));
@@ -125,6 +125,11 @@ void installImageThumbnails(QFileDialog *picker) {
     if(!picker || picker->findChild<QObject *>("liquidImageThumbnails"))return;
     picker->setOption(QFileDialog::DontUseNativeDialog,true);
     picker->setViewMode(QFileDialog::List);
+    picker->setLabelText(QFileDialog::LookIn,QStringLiteral("位置："));
+    picker->setLabelText(QFileDialog::FileName,QStringLiteral("文件名："));
+    picker->setLabelText(QFileDialog::FileType,QStringLiteral("文件类型："));
+    picker->setLabelText(QFileDialog::Accept,QStringLiteral("打开"));
+    picker->setLabelText(QFileDialog::Reject,QStringLiteral("取消"));
     auto *thumbnails=new Thumbnails(picker);
     for(auto *view:picker->findChildren<QAbstractItemView *>()) {
         if(view->objectName()!="listView" && view->objectName()!="treeView")continue;

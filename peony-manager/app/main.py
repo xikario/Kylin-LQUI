@@ -13,7 +13,8 @@ if __name__ == "__main__" and not os.environ.get("LQUI_SETTINGS_LEGACY"):
     if os.path.isfile(launcher) and os.access(launcher, os.X_OK):
         os.execv(launcher, [launcher, "--page", "peony:general"])
 
-from PyQt5.QtCore import QUrl, QTimer
+from PyQt5.QtCore import QUrl, QTimer, QObject, pyqtSlot, Q_CLASSINFO
+from PyQt5.QtDBus import QDBusConnection,QDBusInterface
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage
 from PyQt5.QtWebChannel import QWebChannel
@@ -67,17 +68,30 @@ class MainWindow(QMainWindow):
         page.setWebChannel(self.channel)
         self.web_view.setPage(page)
 
-        QTimer.singleShot(500, self._load_page)
+        QTimer.singleShot(0, self._load_page)
 
     def _load_page(self):
         html_path = os.path.join(BASE_DIR, "peony_manager.html")
         self.web_view.load(QUrl.fromLocalFile(html_path))
 
 
+class ManagerControl(QObject):
+    Q_CLASSINFO('D-Bus Interface','org.kylin.Lqui.PeonyManager')
+    @pyqtSlot()
+    def Close(self):self.parent().close()
+    @pyqtSlot()
+    def Show(self):
+        window=self.parent();window.showNormal();window.raise_();window.activateWindow()
+
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setDesktopFileName("peony-manager")
+    bus=QDBusConnection.sessionBus()
+    if not bus.registerService('org.kylin.Lqui.PeonyManager'):
+        if bus.interface() and bus.interface().isServiceRegistered('org.kylin.Lqui.PeonyManager').value():
+            QDBusInterface('org.kylin.Lqui.PeonyManager','/Manager','org.kylin.Lqui.PeonyManager',bus).call('Show')
+            return 0
     try:
         app_icon = QIcon(APP_ICON_PATH)
         if app_icon.isNull():
@@ -88,6 +102,8 @@ def main():
         pass
 
     window = MainWindow()
+    control=ManagerControl(window)
+    bus.registerObject('/Manager',control,QDBusConnection.ExportAllSlots)
     if not app.windowIcon().isNull():
         window.setWindowIcon(app.windowIcon())
     window.show()

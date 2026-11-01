@@ -7,6 +7,8 @@
 #include "LiquidPopup.h"
 #include "../../../shared/icon-style/LiquidIconRenderer.h"
 #include "StartMenu.h"
+#include "DockPopupMotion.h"
+#include <QSettings>
 #include "SettingsBridge.h"
 #include "StartButton.h"
 #include "TaskbarDetector.h"
@@ -1530,6 +1532,12 @@ StartMenu::StartMenu(QWidget *parent)
     QTimer::singleShot(0, this, &StartMenu::applyX11Immunity);
 
     setupUi();
+    connect(&m_popupMotion,&QVariantAnimation::valueChanged,this,[this](const QVariant &value){
+        m_popupProgress=value.toReal();DockPopupMotion::apply(this,m_popupTarget,m_popupEdge,m_popupProgress);
+    });
+    connect(&m_popupMotion,&QVariantAnimation::finished,this,[this]{
+        if(!m_visible){hide();clearMask();setWindowOpacity(1);}
+    });
     m_nextKdeGlassView = new NextKdeGlassView(this);
     m_nextKdeGlassView->setRadius(26);
     QTimer::singleShot(0, this, [this] {
@@ -1564,6 +1572,13 @@ StartMenu::~StartMenu()
 
 bool StartMenu::eventFilter(QObject *watched, QEvent *event)
 {
+    if(event->type()==QEvent::Polish)if(auto *dialog=qobject_cast<QDialog*>(watched)) {
+        for(auto *owner=dialog->parentWidget();owner;owner=owner->parentWidget())if(owner==this) {
+            // A modal operation must own focus and the screen immediately;
+            // do not keep an always-on-top closing launcher over its prompt.
+            hideMenu();m_popupMotion.stop();hide();break;
+        }
+    }
     if (event->type() != QEvent::MouseMove && event->type() != QEvent::Show)
         return QWidget::eventFilter(watched, event);
     auto *widget = qobject_cast<QWidget *>(watched);
@@ -3532,6 +3547,10 @@ void StartMenu::showMenu()
     if (m_settingsOpen) return;
     // Repeated --show must never recapture the menu into its own backdrop.
     if (isVisible()) {
+        if(!m_visible){
+            m_visible=true;animatePopup(true);m_showTime.restart();m_searchEdit->setFocus();
+            QTimer::singleShot(350,this,[this]{if(m_visible)startOutsideWatch();});
+        }
         raise();
         activateWindow();
         return;
@@ -3556,8 +3575,8 @@ void StartMenu::finishShowMenu()
     m_showPending=false;
     applyX11Immunity();
 
-    const bool instantLiquid = m_skin == Skin::EcoLiquid;
-    setWindowOpacity(instantLiquid ? 1.0 : 0.0);
+    m_popupMotion.stop();m_popupProgress=0;
+    setWindowOpacity(0);
     show();
     raise();
     activateWindow();
@@ -3565,40 +3584,11 @@ void StartMenu::finishShowMenu()
     // Re-position after show to override window manager map positioning policies
     positionAboveStartButton();
 
-    const QPoint endPos = pos();
+    m_popupTarget=geometry();
     const TaskbarInfo info = TaskbarDetector::detect();
-    QPoint startOffset(0, 0);
-    if (info.detected) {
-        if (info.edge == 3) startOffset = QPoint(0, 12);
-        else if (info.edge == 2) startOffset = QPoint(0, -12);
-        else if (info.edge == 0) startOffset = QPoint(-12, 0);
-        else if (info.edge == 1) startOffset = QPoint(12, 0);
-    } else {
-        startOffset = QPoint(0, 12);
-    }
-
-    // A frozen backdrop must remain registered to its capture coordinates.
-    if (m_skin == Skin::EcoLiquid) startOffset = QPoint();
-    move(endPos + startOffset);
-
-    if (!instantLiquid) {
-        auto *fade = new QPropertyAnimation(this, "windowOpacity", this);
-        fade->setDuration(160);
-        fade->setStartValue(0.0);
-        fade->setEndValue(1.0);
-        fade->setEasingCurve(QEasingCurve::OutCubic);
-
-        auto *slide = new QPropertyAnimation(this, "pos", this);
-        slide->setDuration(180);
-        slide->setStartValue(endPos + startOffset);
-        slide->setEndValue(endPos);
-        slide->setEasingCurve(QEasingCurve::OutCubic);
-
-        fade->start(QAbstractAnimation::DeleteWhenStopped);
-        slide->start(QAbstractAnimation::DeleteWhenStopped);
-    }
-
+    m_popupEdge=info.detected?info.edge:3;
     m_visible = true;
+    animatePopup(true);
     m_showTime.start();
     m_pointerHasEnteredMenu = geometry().adjusted(-4, -4, 4, 4).contains(QCursor::pos());
     m_searchEdit->clear();
@@ -3620,7 +3610,20 @@ void StartMenu::hideMenu()
     m_visible = false;
     m_pointerHasEnteredMenu = false;
     m_showTime.invalidate();
-    hide();
+    if(isVisible())animatePopup(false);
+}
+
+void StartMenu::animatePopup(bool opening)
+{
+    m_popupMotion.stop();
+    const bool reduced=QSettings("org.ukui","style").value("reduceAnimation",false).toBool()
+        || QSettings(QDir::homePath()+"/.config/ukui/liquid-panel.ini",QSettings::IniFormat).value("appearance/reducedMotion",false).toBool();
+    const qreal end=opening?1.:0.;
+    if(reduced){m_popupProgress=end;DockPopupMotion::apply(this,m_popupTarget,m_popupEdge,end);if(!opening)hide();return;}
+    DockPopupMotion::apply(this,m_popupTarget,m_popupEdge,m_popupProgress);
+    m_popupMotion.setDuration(qMax(40,qRound((opening?DockPopupMotion::OpenMs:DockPopupMotion::CloseMs)*qAbs(end-m_popupProgress))));
+    m_popupMotion.setEasingCurve(opening?QEasingCurve::OutCubic:QEasingCurve::InCubic);
+    m_popupMotion.setStartValue(m_popupProgress);m_popupMotion.setEndValue(end);m_popupMotion.start();
 }
 
 void StartMenu::quitApp()
@@ -4263,6 +4266,7 @@ void StartMenu::showEvent(QShowEvent *e)
 
 void StartMenu::hideEvent(QHideEvent *e)
 {
+    m_popupMotion.stop();m_popupProgress=0;clearMask();setWindowOpacity(1);
     if (m_glassLightTimer) m_glassLightTimer->stop();
     m_glassControlDirty = {};
     m_lastGlassControl.clear();

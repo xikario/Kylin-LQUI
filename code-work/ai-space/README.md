@@ -1,6 +1,8 @@
+> 当前维护入口为 [Kylin-LQUI 统一仓库](../../README.md)，本目录保留 AI 空间的独立构建与运行能力。
+
 # AI空间
 
-独立的 Qt 5 本地文件检索应用，面向银河麒麟 V10 / UKUI X11。由 [UKUI Liquid Desktop](https://github.com/xikario/ukui-liquid-desktop) 的智能空间拆出，保留本地索引、OCR、结构化文档提取、知识库与独立界面；无需启动或安装 Fences。
+独立的 Qt 5 本地文件检索应用，面向银河麒麟 V10 / UKUI X11。由 [桌面框架模块](../ukui-liquid-desktop) 的智能空间拆出，保留本地索引、OCR、结构化文档提取、知识库与独立界面；无需启动或安装 Fences。
 
 当前版本 **0.1.1**。这是独立应用的初始版本，不是远程 AI 聊天客户端。默认检索和建库均在本机进行；用户显式配置的 Command / HTTP / D-Bus Provider 可调用外部程序或服务。
 

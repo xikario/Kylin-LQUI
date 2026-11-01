@@ -554,6 +554,8 @@
     "evidence": "docs/INTERACTION_PERFORMANCE_20261101.md",
     "originalFindings": 54,
     "knownOpenRegressions": 0,
-    "nightStabilityAudit": "scheduled"
+    "nightStabilityAudit": "completed",
+    "nightStabilityEvidence": "docs/evidence/20261101-interactions/night-stability-audit.json",
+    "automationStatus": "PAUSED"
   }
 }

@@ -1,0 +1,207 @@
+{
+  "verifiedAt": "2026-11-02T00:57:17.748511+08:00",
+  "nativeCommit": "8b78f849a6978b5f3d776ec4a6ebe943d52680da",
+  "settingsCleanupCommit": "f960541",
+  "mainDeploymentAt": "2026-11-01T23:59:55.724071+08:00",
+  "settingsReleaseAt": "2026-11-02T00:18:37+08:00",
+  "sampleStartAt": "2026-11-02T00:53:20.477874+08:00",
+  "mainDeploymentAgeSecondsAtSampleStart": 3204.753803,
+  "settingsReleaseAgeSecondsAtSampleStart": 2083.477874,
+  "durationSeconds": 20.104994986992097,
+  "baseline": "idle-after.json",
+  "sample": "idle-night-audit.json",
+  "resourceComparison": [
+    {
+      "id": "settings",
+      "pssMiB": 0,
+      "deltaPssMiB": 0,
+      "cpuPercent": 0.0,
+      "deltaCpuPercentagePoints": 0.0,
+      "samplePssRangeMiB": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "control-center",
+      "pssMiB": 0,
+      "deltaPssMiB": 0,
+      "cpuPercent": 0.0,
+      "deltaCpuPercentagePoints": 0.0,
+      "samplePssRangeMiB": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "fences",
+      "pssMiB": 170.1669921875,
+      "deltaPssMiB": 0.388671875,
+      "cpuPercent": 2.396274939081433,
+      "deltaCpuPercentagePoints": -0.26450015181784003,
+      "samplePssRangeMiB": [
+        170.1669921875,
+        170.1669921875
+      ]
+    },
+    {
+      "id": "launcher",
+      "pssMiB": 76.0,
+      "deltaPssMiB": 0.0,
+      "cpuPercent": 0.0,
+      "deltaCpuPercentagePoints": 0.0,
+      "samplePssRangeMiB": [
+        76.0,
+        76.0
+      ]
+    },
+    {
+      "id": "panel",
+      "pssMiB": 106.828125,
+      "deltaPssMiB": 4.0830078125,
+      "cpuPercent": 0.5671676614631934,
+      "deltaCpuPercentagePoints": -0.04450113051703963,
+      "samplePssRangeMiB": [
+        106.828125,
+        106.828125
+      ]
+    },
+    {
+      "id": "ai-station",
+      "pssMiB": 54.048828125,
+      "deltaPssMiB": -0.0146484375,
+      "cpuPercent": 0.0,
+      "deltaCpuPercentagePoints": 0.0,
+      "samplePssRangeMiB": [
+        54.048828125,
+        54.048828125
+      ]
+    },
+    {
+      "id": "input-ui",
+      "pssMiB": 103.046875,
+      "deltaPssMiB": 0.0439453125,
+      "cpuPercent": 0.0,
+      "deltaCpuPercentagePoints": 0.0,
+      "samplePssRangeMiB": [
+        103.046875,
+        103.046875
+      ]
+    },
+    {
+      "id": "peony-manager",
+      "pssMiB": 0,
+      "deltaPssMiB": 0,
+      "cpuPercent": 0.0,
+      "deltaCpuPercentagePoints": 0.0,
+      "samplePssRangeMiB": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "ai-space",
+      "pssMiB": 0,
+      "deltaPssMiB": 0,
+      "cpuPercent": 0.0,
+      "deltaCpuPercentagePoints": 0.0,
+      "samplePssRangeMiB": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "native-desktop",
+      "pssMiB": 69.166015625,
+      "deltaPssMiB": -0.0009765625,
+      "cpuPercent": 0.051334249779860376,
+      "deltaCpuPercentagePoints": -0.017188148578488084,
+      "samplePssRangeMiB": [
+        69.166015625,
+        69.166015625
+      ]
+    },
+    {
+      "id": "compositor",
+      "pssMiB": 126.7421875,
+      "deltaPssMiB": -0.0009765625,
+      "cpuPercent": 0.3574060172252425,
+      "deltaCpuPercentagePoints": 0.016182716827513988,
+      "samplePssRangeMiB": [
+        126.7421875,
+        126.7421875
+      ]
+    },
+    {
+      "id": "input-engine",
+      "pssMiB": 75.7470703125,
+      "deltaPssMiB": 0.0,
+      "cpuPercent": 0.0,
+      "deltaCpuPercentagePoints": 0.0,
+      "samplePssRangeMiB": [
+        75.7470703125,
+        75.7470703125
+      ]
+    }
+  ],
+  "checks": {
+    "engineBeforeUnchanged": true,
+    "kwinBeforeUnchanged": true,
+    "inputFrontendUnchanged": true,
+    "deployedProcessesUnchanged": true,
+    "allFiveWidgetStatesPreserved": true,
+    "widgetsCacheAndGeometryUnchangedDuringAudit": true,
+    "widgetGpuAndCacheMatchPostDeploy": true,
+    "panelAnchorsAndGeometryPreserved": true,
+    "hiddenAiNoNewGlassBuilds": true,
+    "hiddenAiIdle": true,
+    "chatPrefixPreserved": true,
+    "chatThreadPreserved": true,
+    "chatCount": 50,
+    "nativePanelLayoutAndPinsBytePreserved": true,
+    "launcherPinsBytePreserved": true,
+    "fencesLayoutBytePreserved": true,
+    "launcherMappedVisibleWindows": 0,
+    "aiMappedVisibleWindows": 0,
+    "onDemandServicesAbsent": true
+  },
+  "widgetGpuAndMaterialCounters": {
+    "activityDesklet": {
+      "gpu": true,
+      "materialBuilds": 1
+    },
+    "calendarDesklet": {
+      "gpu": true,
+      "materialBuilds": 1
+    },
+    "clockDesklet": {
+      "gpu": true,
+      "materialBuilds": 1,
+      "faceGpu": true,
+      "faceMaterialBuilds": 2
+    },
+    "musicDesklet": {
+      "gpu": true,
+      "materialBuilds": 1
+    }
+  },
+  "cacheObservationSeconds": 67.137081,
+  "hiddenAiGlassBuilds": [
+    2,
+    2
+  ],
+  "controlCenterIdleExitPreviouslyVerified": {
+    "exitCode": 0,
+    "secondsAfterDismiss": 60.29,
+    "gpu": "snell-gpu"
+  },
+  "controlCenterStillAbsent": true,
+  "repeatedDeployments": 0,
+  "restartedProcesses": 0,
+  "newRegressionsObserved": 0,
+  "automation": {
+    "id": "kylin-lqui",
+    "status": "PAUSED"
+  },
+  "limits": "Read-only idle sampling and retained-state checks; no model inference or indexing was started. A 4.08 MiB Dock increase versus the earlier sample was flat throughout this sample and alone does not demonstrate a leak. Previously passed functional suites were not rerun without a new failure."
+}

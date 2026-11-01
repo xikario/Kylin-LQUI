@@ -1,5 +1,6 @@
 #include "SpacePresentation.h"
 #include <QDir>
+#include <QFileInfo>
 namespace AiSpaceUi
 {
 QString normalizedPath(QString path)
@@ -12,9 +13,20 @@ QString normalizedPath(QString path)
 
 bool pathIsInside(const QString &path, const QString &folder)
 {
-    const QString child = normalizedPath(path);
-    const QString parent = normalizedPath(folder);
-    return child == parent || child.startsWith(parent + QLatin1Char('/'));
+    auto canonical=[](QString value){
+        value=QFileInfo(value).absoluteFilePath();QStringList suffix;
+        while(!QFileInfo(value).exists()&&!QFileInfo(value).isSymLink()) {
+            const QFileInfo current(value);suffix.prepend(current.fileName());
+            const QString up=current.absolutePath();if(up==value)break;value=up;
+        }
+        const QString resolved=QFileInfo(value).canonicalFilePath();if(!resolved.isEmpty())value=resolved;
+        for(const auto &part:suffix)value=QDir(value).filePath(part);
+        return normalizedPath(value);
+    };
+    if(path.isEmpty()||folder.isEmpty())return false;
+    const QString child = canonical(path);
+    const QString parent = canonical(folder);
+    return !parent.isEmpty() && (child == parent || child.startsWith(parent == QLatin1String("/") ? parent : parent + QLatin1Char('/')));
 }
 
 QString categoryTitle(const QString &category)

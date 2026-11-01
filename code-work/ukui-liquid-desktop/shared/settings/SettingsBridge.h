@@ -25,6 +25,7 @@ public:
 public slots:
     Q_SCRIPTABLE QString Catalog();
     Q_SCRIPTABLE QString Page(const QString &page);
+    Q_SCRIPTABLE QString Discard(const QString &page);
     Q_SCRIPTABLE QString Set(const QString &page,const QString &control,const QString &json);
     Q_SCRIPTABLE QString Activate(const QString &page,const QString &control);
 private:

@@ -16,6 +16,8 @@ if '--restart' in sys.argv:
     for proc in Path('/proc').iterdir():
         if not proc.name.isdigit():continue
         try:
+            if proc.stat().st_uid!=os.getuid():continue
+            if ('DISPLAY='+os.environ.get('DISPLAY','')).encode() not in (proc/'environ').read_bytes().split(b'\0'):continue
             if os.readlink(str(proc/'exe'))=='/usr/bin/ukui-panel' and 'libukuiliquidpanel.so' in (proc/'maps').read_text():os.kill(int(proc.name),signal.SIGTERM)
         except OSError:pass
     time.sleep(1)

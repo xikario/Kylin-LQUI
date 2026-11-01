@@ -91,6 +91,25 @@ class ControlUi(unittest.TestCase):
         self.window.show_page('wifi');self.window.pending_network=('/other',__import__('time').monotonic());self.window.update_pending_network();self.window.apply_snapshot()
         self.assertIn('正在连接',self.window.status.text());self.assertTrue(any('连接中' in b.text() for b in self.window.scroll.findChildren(QtWidgets.QPushButton)))
 
+    def test_bluetooth_scan_does_not_block_audio_and_latest_slider_wins(self):
+        jobs=[];self.window.job=lambda work,done:jobs.append((work,done))
+        self.window.action('bluetooth-scan',{});self.window.action('volume',{'value':30});self.window.action('volume',{'value':80})
+        self.assertEqual(len(jobs),2);self.assertTrue(self.window.volume.isEnabled());self.assertTrue(self.window.brightness.isEnabled())
+        result=jobs[1][0]();jobs[1][1]({'ok':True,'data':result});self.assertEqual(len(jobs),3)
+        result=jobs[2][0]();jobs[2][1]({'ok':True,'data':result})
+        self.assertEqual(Fixture.calls[-1],('volume',{'value':80}));self.assertTrue(self.window.is_busy('bluetooth'));self.assertFalse(self.window.is_busy('audio'))
+        jobs[0][1]({'ok':True,'data':copy.deepcopy(SAMPLE)})
+        self.assertFalse(self.window.changing)
+    def test_same_media_art_is_replayed_when_home_is_rebuilt(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            image=QtGui.QImage(43,43,QtGui.QImage.Format_RGB32);image.fill(QtCore.Qt.red);path=Path(folder)/'cover.png';image.save(str(path))
+            self.window.data['media']['player']['art']=QtCore.QUrl.fromLocalFile(str(path)).toString();self.window.apply_snapshot()
+            for page in ('sound','home','bluetooth','home'):
+                self.window.show_page(page)
+                if page=='home':self.assertEqual(self.window.media_cover.pixmap().toImage().pixelColor(10,10),QtGui.QColor('red'))
+
+
 class Adapter(unittest.TestCase):
     def test_pulseaudio_legacy_format(self):
         b=SystemBackend();b.command=lambda argv:'Default Sink: test\n' if argv[-1]=='info' else 'Sink #0\n Name: test\n Description: Speakers\n Mute: yes\n Volume: front-left: 32768 / 50% / -18.06 dB, front-right: 32768 / 50% / -18.06 dB\n'

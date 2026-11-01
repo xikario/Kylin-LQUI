@@ -55,7 +55,7 @@ add_dependencies(ai-space ai-space-runtime)
 install(TARGETS ai-space RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(PROGRAMS ${APP}/scripts/smart_space_indexer.py ${APP}/scripts/smart_space_knowledge.py
     ${APP}/scripts/smart_space_extract.py ${APP}/scripts/legacy_ppt.py ${APP}/scripts/knowledge_library.py
-    ${APP}/scripts/knowledge_jobs.py ${APP}/scripts/knowledge_maintenance.py ${APP}/scripts/job_recovery.py ${APP}/scripts/ocr_budget.py ${APP}/scripts/provider_policy.py ${APP}/scripts/text_safety.py ${APP}/scripts/xml_safety.py ${APP}/scripts/ocr_environment.py ${APP}/scripts/gvariant_json.py ${APP}/scripts/failure_store.py ${APP}/scripts/ocr_cache.py ${APP}/scripts/rtf_text.py ${APP}/scripts/snapshot_io.py DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/ai-space)
+    ${APP}/scripts/knowledge_jobs.py ${APP}/scripts/knowledge_maintenance.py ${APP}/scripts/job_recovery.py ${APP}/scripts/ocr_budget.py ${APP}/scripts/provider_policy.py ${APP}/scripts/text_safety.py ${APP}/scripts/xml_safety.py ${APP}/scripts/ocr_environment.py ${APP}/scripts/gvariant_json.py ${APP}/scripts/failure_store.py ${APP}/scripts/ocr_cache.py ${APP}/scripts/rtf_text.py ${APP}/scripts/snapshot_io.py ${APP}/scripts/local_path_policy.py DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/ai-space)
 install(DIRECTORY ${APP}/scripts/_vendor/ DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/ai-space/_vendor
     PATTERN "__pycache__" EXCLUDE PATTERN "*.pyc" EXCLUDE)
 install(FILES ${APP}/packaging/ai-space.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
@@ -185,7 +185,7 @@ set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "poppler-utils, tesseract-ocr, tesseract-ocr
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 include(CPack)
 
-set(LQUI_SETTINGS_SOURCE "${CMAKE_SOURCE_DIR}/vendor/lqui-settings" CACHE PATH "Versioned settings bridge source")
+set(LQUI_SETTINGS_SOURCE "${CMAKE_SOURCE_DIR}/../ukui-liquid-desktop/shared/settings" CACHE PATH "Canonical settings bridge source")
 add_subdirectory("${LQUI_SETTINGS_SOURCE}" lqui-settings)
 target_link_libraries(ai-space-core PUBLIC lqui-settings-bridge)
 
@@ -194,3 +194,10 @@ get_property(LQUI_EXISTING_TESTS DIRECTORY PROPERTY TESTS)
 foreach(LQUI_TEST IN LISTS LQUI_EXISTING_TESTS)
   set_property(TEST ${LQUI_TEST} APPEND PROPERTY ENVIRONMENT "LQUI_SETTINGS_LEGACY=1")
 endforeach()
+
+if(BUILD_TESTING)
+    add_executable(ai-space-skill-export-test ${APP}/tests/skill_export_test.cpp)
+    target_link_libraries(ai-space-skill-export-test PRIVATE ai-space-core)
+    add_test(NAME ai-space-skill-export COMMAND ai-space-skill-export-test)
+    add_test(NAME ai-space-review-20261101 COMMAND ${Python3_EXECUTABLE} ${APP}/tests/test_review_20261101.py)
+endif()

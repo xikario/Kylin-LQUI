@@ -13,6 +13,33 @@ import re
 import configparser
 import base64
 import fcntl
+import contextlib
+import functools
+import threading
+
+_settings_mutex=threading.RLock()
+_settings_active=set()
+@contextlib.contextmanager
+def settings_lock(config_home):
+    root=Path(config_home).resolve()/'fcitx';root.mkdir(parents=True,exist_ok=True)
+    with _settings_mutex:
+        if root in _settings_active:
+            yield
+            return
+        with (root/'.liquid-settings.lock').open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            _settings_active.add(root)
+            try:yield
+            finally:_settings_active.remove(root)
+
+def locked_preference(function):
+    @functools.wraps(function)
+    def wrapped(value,config_home=None):
+        config_home=config_home or CONFIG_HOME
+        with settings_lock(config_home):
+            _recover_settings_transaction(config_home)
+            return function(value,config_home)
+    return wrapped
 
 def _atomic_bytes(path, value):
     path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
@@ -27,6 +54,9 @@ def _atomic_bytes(path, value):
         if os.path.exists(temporary):os.unlink(temporary)
 
 def recover_settings_transaction(config_home):
+    with settings_lock(config_home):_recover_settings_transaction(config_home)
+
+def _recover_settings_transaction(config_home):
     root=Path(config_home)/'fcitx';journal=root/'.liquid-settings-transaction.json'
     if not journal.exists():return
     data=json.loads(journal.read_text())
@@ -47,9 +77,8 @@ def apply_settings_transaction(payload, config_home=None):
     if not isinstance(appearance,str) or not appearance or len(appearance)>65536:raise ValueError('外观配置无效')
     parser=configparser.ConfigParser(interpolation=None);parser.read_string(appearance)
     names=['rime/default.custom.yaml','rime/rime_ice.custom.yaml','liquid-panel.conf']
-    with (root/'.liquid-settings.lock').open('a') as lock:
-        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
-        recover_settings_transaction(config_home)
+    with settings_lock(config_home):
+        _recover_settings_transaction(config_home)
         before={name:(root/name).read_bytes() if (root/name).exists() else None for name in names}
         # Validate and transform both Rime files in a disposable config root.
         # No live file is changed if either parser/validation fails.
@@ -65,6 +94,9 @@ def apply_settings_transaction(payload, config_home=None):
         if any(((root/name).read_bytes() if (root/name).exists() else None)!=before[name] for name in names):raise ValueError('配置已被其他程序修改，请刷新后再保存')
         journal=root/'.liquid-settings-transaction.json'
         record={name:{'before':None if before[name] is None else base64.b64encode(before[name]).decode(),'after':base64.b64encode(after[name]).decode()} for name in names}
+        backup=root/'liquid-settings-backups'/datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+        for name,value in before.items():
+            if value is not None:_atomic_bytes(backup/name,value)
         _atomic_bytes(journal,json.dumps(record).encode())
         try:
             for name in names:
@@ -117,6 +149,7 @@ def install_branding():
         text=AUTOSTART.read_text()
         AUTOSTART.write_text(re.sub(r'(?m)^Name=.*$', 'Name=RIME液态输入法',text))
 
+@locked_preference
 def set_rime_page_size(count, config_home=CONFIG_HOME):
     """Change the real Rime page size, retaining every unrelated patch key."""
     import yaml
@@ -138,9 +171,10 @@ def set_rime_page_size(count, config_home=CONFIG_HOME):
     # Preserve comments/format for the usual single flat preference. Fall back
     # to a safe YAML round trip for nested configurations and new patch keys.
     pattern=r'(?m)^(\s+menu/page_size:\s*)\d+(\s*(?:#.*)?)$'
-    if len(re.findall(pattern,original))==1 and not nested:
+    if len(re.findall(pattern,original))==1 and not nested and 'menu/page_size' in (yaml.safe_load(original) or {}).get('patch',{}):
         updated=re.sub(pattern,lambda m:m.group(1)+str(count)+m.group(2),original)
     else:updated=yaml.safe_dump(data,allow_unicode=True,sort_keys=False)
+    if yaml.safe_load(updated)!=data:updated=yaml.safe_dump(data,allow_unicode=True,sort_keys=False)
     # Back up only when a change is necessary. Write and replace atomically.
     target.parent.mkdir(parents=True,exist_ok=True)
     if target.exists():
@@ -155,6 +189,11 @@ def set_rime_page_size(count, config_home=CONFIG_HOME):
     print('Rime page size:',count)
 
 def ensure_config():
+    with settings_lock(CONFIG_HOME):
+        _recover_settings_transaction(CONFIG_HOME)
+        _ensure_config_locked()
+
+def _ensure_config_locked():
     USER_CONFIG.parent.mkdir(parents=True, exist_ok=True)
     if not USER_CONFIG.exists():
         if not CONFIG_TEMPLATE.is_file():
@@ -162,6 +201,7 @@ def ensure_config():
         shutil.copy2(CONFIG_TEMPLATE, USER_CONFIG)
         print('Created:', USER_CONFIG)
 
+@locked_preference
 def set_rime_pinyin(enabled, config_home=CONFIG_HOME):
     """Expose the engine's own dictionary pronunciation; retain compatibility fixes."""
     import yaml
@@ -194,6 +234,9 @@ def set_rime_pinyin(enabled, config_home=CONFIG_HOME):
     return True
 
 def sync_rime_pinyin():
+    with settings_lock(CONFIG_HOME):_sync_rime_pinyin_locked()
+
+def _sync_rime_pinyin_locked():
     recover_settings_transaction(CONFIG_HOME)
     if not (CONFIG_HOME/'fcitx/rime/rime_ice.schema.yaml').exists():return
     settings=configparser.RawConfigParser();settings.read(str(USER_CONFIG),encoding='utf-8')

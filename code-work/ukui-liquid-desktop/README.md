@@ -1,5 +1,6 @@
 > 本组件已纳入 [Kylin-LQUI 统一仓库](../../README.md)。以下版本链接保留为历史记录；新开发、构建与反馈以仓库根目录说明为准。
 
+以下相对命令均在桌面组件目录 `code-work/ukui-liquid-desktop/` 执行。若当前位于统一仓库根目录，请先运行 `cd code-work/ukui-liquid-desktop`。
 # Kylin-LQUI
 
 面向国产化硬件的 UKUI 视觉与交互层；保留系统服务。组件内部 ID 保持兼容。完整评估见 [Kylin-LQUI 系统方案](docs/KYLIN_LQUI_SYSTEM_PLAN.md)。

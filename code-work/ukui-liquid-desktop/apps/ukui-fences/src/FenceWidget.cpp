@@ -1983,8 +1983,10 @@ void FenceWidget::showRenameDialog()
 void FenceWidget::sortItems(SortMode mode)
 {
     clearReorderPreview(false);
+    QHash<DesktopIcon*,QDateTime> modified;
+    if(mode==SortMode::ModifiedTime)for(auto *icon:m_icons)modified.insert(icon,QFileInfo(icon->item().filePath).lastModified());
     std::sort(m_icons.begin(), m_icons.end(),
-        [mode](DesktopIcon *a, DesktopIcon *b) {
+        [mode,&modified](DesktopIcon *a, DesktopIcon *b) {
             const DesktopItem &ia = a->item();
             const DesktopItem &ib = b->item();
             switch (mode) {
@@ -1993,8 +1995,7 @@ void FenceWidget::sortItems(SortMode mode)
                     return ia.mimeType < ib.mimeType;
                 return ia.displayName.localeAwareCompare(ib.displayName) < 0;
             case SortMode::ModifiedTime:
-                return QFileInfo(ia.filePath).lastModified()
-                    > QFileInfo(ib.filePath).lastModified();
+                return modified.value(a)>modified.value(b);
             case SortMode::Name:
             default:
                 return ia.displayName.localeAwareCompare(ib.displayName) < 0;

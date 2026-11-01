@@ -1,0 +1,545 @@
+{
+  "baseline": "c511b99",
+  "date": "2026-11-01",
+  "delivery": "source-only; no live desktop rollout",
+  "findings": [
+    {
+      "id": "CLI-01",
+      "priority": "P1",
+      "title": "忙时收紧 Codex 权限不会更新后续轮次的实际授权",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "忙时拒绝更改后台、目录、命令和权限；设置表单在写盘前拒绝，空闲修改会断开后恢复线程。",
+      "source_paths": [],
+      "validation_group": "cli"
+    },
+    {
+      "id": "CLI-02",
+      "priority": "P1",
+      "title": "ACP 审批丢弃长工具参数的后半部分",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "ACP 完整保留对象、数组、字符串原始参数，审批详情可滚动和复制。",
+      "source_paths": [],
+      "validation_group": "cli"
+    },
+    {
+      "id": "CLI-03",
+      "priority": "P1",
+      "title": "后台重启后旧审批卡可能授权同号的新请求",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "审批使用连接代次与唯一令牌；验证合法决定，断线/轮次结束关闭全部旧卡；ACP 同样绑定代次。",
+      "source_paths": [],
+      "validation_group": "cli"
+    },
+    {
+      "id": "CLI-04",
+      "priority": "P2",
+      "title": "任意恢复错误都会覆盖旧会话入口并自动使用新上下文",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "恢复失败保留原会话 ID 并停止发送；新上下文必须由设置中的明确新建操作触发。",
+      "source_paths": [],
+      "validation_group": "cli"
+    },
+    {
+      "id": "CLI-05",
+      "priority": "P2",
+      "title": "Codex 标准输出缓冲没有字节上限",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "两种客户端均限制 64 MiB 协议缓冲；stderr 和错误通知同时限制条数与每条长度；迟到 turn/start 回执按轮次代次丢弃。",
+      "source_paths": [],
+      "validation_group": "cli"
+    },
+    {
+      "id": "CLI-06",
+      "priority": "P3",
+      "title": "模块构建说明引用不存在的入口脚本",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "替换不存在的 build.sh，列出可执行的 CMake/CTest 命令与实际登录常驻设置。",
+      "source_paths": [],
+      "validation_group": "cli"
+    },
+    {
+      "id": "CLI-N01",
+      "priority": "P2",
+      "title": "聊天记录加载失败后仍可用空历史覆盖原文件",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "现有聊天读取/解析失败进入写保护；拒绝发送与覆盖；明确新建时先保存唯一恢复副本，备份失败则拒绝清空。",
+      "source_paths": [],
+      "validation_group": "cli"
+    },
+    {
+      "id": "CLI-N03",
+      "priority": "P2",
+      "title": "安装失败只回退 current，已覆盖的桌面入口没有事务回滚",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "安装入口、图标、desktop、自启动和 current 统一记录并回滚；提交记录写失败同样回滚，release 名增加唯一后缀。",
+      "source_paths": [],
+      "validation_group": "cli"
+    },
+    {
+      "id": "SPACE-01",
+      "priority": "P1",
+      "title": "HTTP Provider 返回的路径能绕过明确排除目录读取本地正文",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "Provider 只使用返回正文，不凭路径读取本地文件；来源跨 JSON/二进制清单保留。合并和建库都执行 canonical 根/排除检查，显式排除还撤销已有库内副本。",
+      "source_paths": [],
+      "validation_group": "space"
+    },
+    {
+      "id": "SPACE-02",
+      "priority": "P3",
+      "title": "兼容 CLI 在缺少 OCR 语言时丢失文件元数据条目",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "OCR 语言/依赖错误保留文件元数据并显示 unavailable 与原因，不能作为“无文字且已完成”。",
+      "source_paths": [],
+      "validation_group": "space"
+    },
+    {
+      "id": "SPACE-FULL-01",
+      "priority": "P1",
+      "title": "符号链接资料根与排除路径的解析不一致，使显式排除失效",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "资料根、排除路径和候选路径统一 canonical 语义，支持符号链接别名及尚不存在的子路径。",
+      "source_paths": [],
+      "validation_group": "space"
+    },
+    {
+      "id": "SPACE-FULL-02",
+      "priority": "P2",
+      "title": "中文放宽查询在片段合格检查前去重，漏掉同文档后续有效命中",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "片段满足中文覆盖条件后才把文档加入已接受集合，保留原候选数与时间预算。",
+      "source_paths": [],
+      "validation_group": "space"
+    },
+    {
+      "id": "SPACE-CPP-01",
+      "priority": "P2",
+      "title": "打开设置页绕过流式保护，在 GUI 线程无界读取整个索引",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "设置页只使用已加载条目数和文件修改时间，不再读取、解析完整 index.json。",
+      "source_paths": [],
+      "validation_group": "space"
+    },
+    {
+      "id": "SPACE-CPP-02",
+      "priority": "P2",
+      "title": "将 Skill 导出到源目录内部会递归复制自身",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "导出拒绝源内/别名目标与符号链接，设置文件数/字节预算；后台暂存、失败清理、原子替换、取消与旧目录恢复。",
+      "source_paths": [],
+      "validation_group": "space"
+    },
+    {
+      "id": "SPACE-CPP-03",
+      "priority": "P2",
+      "title": "根目录包含判断错误，保存设置时静默丢弃已有排除规则",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "目录包含函数处理根目录与 canonical 别名；保存无关设置不再静默删除原排除规则。",
+      "source_paths": [],
+      "validation_group": "space"
+    },
+    {
+      "id": "FENCE-01",
+      "priority": "P2",
+      "title": "活动历史读取失败后仍可能用空账本覆盖原文件",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "区分初次缺文件与已有文件读失败；读失败禁写，非法数据先成功备份才允许替换。",
+      "source_paths": [
+        "code-work/ukui-liquid-desktop/apps/ukui-fences/src/ActivityRecorder.h"
+      ],
+      "validation_group": "fences"
+    },
+    {
+      "id": "FENCE-02",
+      "priority": "P2",
+      "title": "非回收站撤销只记录路径而不验证对象身份",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "创建、改名、复制、拖入统一记录 lstat 的设备/inode 身份；拒绝撤销替代对象，失败保留原撤销记录。",
+      "source_paths": [],
+      "validation_group": "fences"
+    },
+    {
+      "id": "FENCE-03",
+      "priority": "P2",
+      "title": "悬空符号链接的复制撤销误报成功而保留链接",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "使用链接本身的存在/身份语义；悬空链接仍进入桌面数据模型并可被撤销移至回收站。",
+      "source_paths": [],
+      "validation_group": "fences"
+    },
+    {
+      "id": "FENCE-04",
+      "priority": "P2",
+      "title": "静态壁纸选择与预览仍在 GUI 线程同步解码",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "静态图片验证/预览改为可合并后台任务，预览独立限制在 1280×720；旧结果不能覆盖新选择，未验证图片不能应用。",
+      "source_paths": [
+        "code-work/ukui-liquid-desktop/apps/ukui-fences/src/DesktopCanvas.cpp"
+      ],
+      "validation_group": "fences"
+    },
+    {
+      "id": "FENCE-05",
+      "priority": "P3",
+      "title": "设置桥接映射持续保留已销毁控件的空条目",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "控件销毁时同步移除桥接 ID；AI 隐藏表单增加离页/关闭 Discard 生命周期。",
+      "source_paths": [
+        "code-work/ukui-liquid-desktop/apps/ukui-fences/src/FencesSettingsWindow.cpp"
+      ],
+      "validation_group": "fences"
+    },
+    {
+      "id": "FENCE-06",
+      "priority": "P2",
+      "title": "进程 CPU 与内存排序谓词不满足严格弱序",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "CPU 按精确值降序，再按 RSS 排序，去掉会形成比较环的两两差值阈值。",
+      "source_paths": [],
+      "validation_group": "fences"
+    },
+    {
+      "id": "FENCE-07",
+      "priority": "P2",
+      "title": "两类集成测试吞掉非致命断言失败，可能让 CI 假绿",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "两类测试均按实际 failures 返回；修复由此暴露的旧组件序号/数量断言，刷新动画测试使用确定的动画进度验证像素。",
+      "source_paths": [],
+      "validation_group": "fences"
+    },
+    {
+      "id": "FENCE-08",
+      "priority": "P2",
+      "title": "桌面图标销毁后，打开的右键菜单仍保留悬空对象捕获",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "右键动作连接绑定 DesktopIcon 上下文；图标销毁会关闭仍打开的菜单。",
+      "source_paths": [],
+      "validation_group": "fences"
+    },
+    {
+      "id": "SHARED-01",
+      "priority": "P2",
+      "title": "拖放生产端接受接收端必定拒收的大文本，原样重试仍失败",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "生产端按真实 UTF-8 JSON 字节预算校验，与接收端共用 4 MiB 常量，接收也有界读取。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "PF-01",
+      "priority": "P2",
+      "title": "Fcitx 事务恢复不遵守保存锁而回滚在途事务",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "保存、恢复、两个 Rime 写入口、启动同步及默认配置创建共用同一把可重入锁。",
+      "source_paths": [],
+      "validation_group": "input/peony"
+    },
+    {
+      "id": "PF-02",
+      "priority": "P2",
+      "title": "GUI 保存把配置备份留在随即删除的临时目录",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "事务开始前把原始配置写到持久备份目录，不再仅保留临时 staging 里的副本。",
+      "source_paths": [],
+      "validation_group": "input/peony"
+    },
+    {
+      "id": "PF-03",
+      "priority": "P2",
+      "title": "页大小文本替换未绑定正确 YAML 键路径",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "格式保留替换必须对应准确 patch 键，转换后再校验语义树，否则安全序列化。",
+      "source_paths": [],
+      "validation_group": "input/peony"
+    },
+    {
+      "id": "PF-04",
+      "priority": "P2",
+      "title": "复制路径插件在菜单构建时记录完整用户路径",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "移除菜单构建时记录完整文件 URI 和用户选择的日志。",
+      "source_paths": [],
+      "validation_group": "input/peony"
+    },
+    {
+      "id": "PF-05",
+      "priority": "P2",
+      "title": "安装器未验证所有权就改写同名自启动条目",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "改写自启动前要求项目 marker；拒绝未托管/损坏/链接条目。",
+      "source_paths": [],
+      "validation_group": "input/peony"
+    },
+    {
+      "id": "PF-06",
+      "priority": "P2",
+      "title": "安装替换未托管启动器且失败回滚不完整",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "拒绝未托管启动器，入口与 current、自启动统一事务回滚；失败首装不保留激活链接。",
+      "source_paths": [],
+      "validation_group": "input/peony"
+    },
+    {
+      "id": "PF-N01",
+      "priority": "P3",
+      "title": "CLI本地开关覆盖宿主未知状态，误显示已启用",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "本地开关不再把宿主 unknown/disabled 覆盖成 enabled。",
+      "source_paths": [],
+      "validation_group": "input/peony"
+    },
+    {
+      "id": "PF-N02",
+      "priority": "P2",
+      "title": "旧版管理界面用开发构建状态阻止已就绪系统插件安装",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "暴露 packagedPayloadReady/helperReady/installable；界面安装按钮依据系统载荷，不依赖开发 build。",
+      "source_paths": [],
+      "validation_group": "input/peony"
+    },
+    {
+      "id": "PF-N03",
+      "priority": "P2",
+      "title": "Peony退出命令失败仍被报告为重启成功",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "Peony -q 非零立即报失败并禁止拉起新实例；安装/卸载反馈分别表示插件结果和重启结果。",
+      "source_paths": [],
+      "validation_group": "input/peony"
+    },
+    {
+      "id": "INT-01",
+      "priority": "P1",
+      "title": "桌面启动失败后的恢复重试没有事件循环执行",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "启动异常后仍运行恢复主循环；仅确认原生桌面恢复后结束守护；恢复状态与重试计时器互斥。",
+      "source_paths": [],
+      "validation_group": "integration"
+    },
+    {
+      "id": "INT-02",
+      "priority": "P2",
+      "title": "FTG340 设备启动规则会重新激活已 disable 的策略服务",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "设备规则通过持久 enable 链接门禁启动/应用；disable 后不能被 add 规则重新启动。设备已消失时 stop 仍清掉激活标记。",
+      "source_paths": [
+        "code-work/ukui-liquid-desktop/extras/ukui-desktop-performance/90-ukui-ftg340-responsiveness.rules"
+      ],
+      "validation_group": "integration"
+    },
+    {
+      "id": "INT-03",
+      "priority": "P2",
+      "title": "FTG340 安装不是事务性的且失败后直接重试被阻挡",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "同目录原子写与全文件回滚，安装写入与策略/试验共享锁；服务失败恢复原启用/运行状态，故障后可重试。",
+      "source_paths": [],
+      "validation_group": "integration"
+    },
+    {
+      "id": "INT-04",
+      "priority": "P2",
+      "title": "Peony blur 服务的 ExecStart 没有正确转义安装路径",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "按 systemd 参数语法引用脚本路径，并处理反斜线、引号、百分号和变量符号。",
+      "source_paths": [
+        "code-work/ukui-liquid-desktop/integration/peony/install-user.py"
+      ],
+      "validation_group": "integration"
+    },
+    {
+      "id": "INT-05",
+      "priority": "P3",
+      "title": "合仓文档仍将组件相对路径称为仓库根目录命令",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "说明命令实际执行于 code-work/ukui-liquid-desktop 组件目录。",
+      "source_paths": [],
+      "validation_group": "integration"
+    },
+    {
+      "id": "INT-06",
+      "priority": "P2",
+      "title": "临时频率试验仅以值相同判断所有权，覆盖较新的停用或电池策略",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "所有策略事件推进代次；试验开始/清理持短锁，清理同时验证代次和频率，不能覆盖同值的新策略。",
+      "source_paths": [],
+      "validation_group": "integration"
+    },
+    {
+      "id": "SHELL-01",
+      "priority": "P2",
+      "title": "迟到的设置保存回执覆盖随后输入的新草稿",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "保存回执验证页面代次、编辑器对象及提交文本；新草稿和重建的编辑器均不会被旧回执覆盖。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-02",
+      "priority": "P2",
+      "title": "用户层 Hidden 或 NoDisplay 覆盖不能屏蔽系统同名应用",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "按目录优先级先占 desktop-file ID，再解析 Hidden/NoDisplay；保留 ID 大小写与子目录语义。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-03",
+      "priority": "P2",
+      "title": "Wi Fi 仅以 SSID 关联配置而混淆不同安全类型的接入点",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "按原始 SSID、安全类型、设备、接口与 BSSID 选择兼容配置，保留多个候选。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-04",
+      "priority": "P2",
+      "title": "通知历史可保存为启动时拒绝读取的超限文件",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "通知写入前按 UTF-8 总字节淘汰旧记录，读写上限一致；兼容有界迁移先前较大的合法历史。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-N01",
+      "priority": "P2",
+      "title": "设置安装失败仅回退current，未恢复其他已发布入口",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "设置安装将入口、desktop、alias 与 current 一起备份/回滚，首装失败删除新增入口。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-N02",
+      "priority": "P2",
+      "title": "Wi-Fi以有损显示文本去重，隐藏原始SSID不同的网络",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "原始 SSID hex 构成身份，不按有损显示文本去重；非 UTF-8 字节用转义形式区分。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-N03",
+      "priority": "P3",
+      "title": "从详情返回首页后媒体封面丢失，直到封面URL变化",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "重建首页会重放同一封面 URL，避免数据缓存命中却遗漏新控件初始化。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-N04",
+      "priority": "P3",
+      "title": "模块集成测试缺少隔离环境与服务归属检查，可能误测现有实例",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "模块测试默认重启到独立 Xvfb/D-Bus，隔离 HOME/XDG/runtime，调用前核验服务 owner PID。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-N05",
+      "priority": "P2",
+      "title": "重复打开开始按钮右键菜单可在成员清零后调用deleteLater",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "关闭旧开始按钮菜单前保存 QPointer 并清空成员，避免同步 aboutToHide 清零后再解引用。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-N06",
+      "priority": "P2",
+      "title": "垂直任务栏的旧版开始按钮覆盖层被定位到任务栏中部",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "垂直栏开始按钮偏移按栏宽计算，水平栏按栏高计算。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-N07",
+      "priority": "P2",
+      "title": "仅凭desktop同名推断卸载来源，可误移走无关文件夹版应用",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "卸载目录只接受可验证的 canonical desktop 归属，不再按用户快捷方式同名推断。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "SHELL-N08",
+      "priority": "P2",
+      "title": "侧栏右键菜单保留旧索引，目录刷新后可越界或操作错误应用",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "侧栏菜单保存条目身份与副本，返回后按路径重新定位，失效目标不执行动作。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "PANEL-N01",
+      "priority": "P2",
+      "title": "面板恢复脚本会终止同用户其他DISPLAY的液态面板",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "恢复脚本只终止同用户、同 DISPLAY、真实加载液态插件的面板。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "PANEL-N02",
+      "priority": "P2",
+      "title": "面板主Qt回归测试仍断言旧控件数量与旧材质预设",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "用必需 objectName 替代控件总数；初始化默认值和恢复推荐预设分别验证，预设对齐共享契约。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    },
+    {
+      "id": "CONFIG-01",
+      "priority": "P2",
+      "title": "Fences 与 Panel 使用不同配置路径导致视频首帧同步失效",
+      "status": "源码修复完成；验证范围见证据与限制",
+      "fix": "Fences 明确采用 NativeFormat，先一次性导入 .ini 并保留较新的 .conf；Panel 显式读取/监听同一契约；测试使用生产迁移入口。",
+      "source_paths": [],
+      "validation_group": "shell/panel"
+    }
+  ],
+  "verification": {
+    "panel": {
+      "registered": 75,
+      "passed": 74,
+      "skipped": 1
+    },
+    "launcher": {
+      "registered": 19,
+      "passed": 18,
+      "skipped": 1
+    },
+    "fences": {
+      "registered": 108,
+      "passed": 106,
+      "skipped": 2
+    },
+    "ai_space": {
+      "registered": 42,
+      "passed": 42
+    },
+    "cli": {
+      "scaled_suites": 3,
+      "passed": 3
+    },
+    "fcitx": {
+      "registered": 2,
+      "passed": 2
+    },
+    "settings_ui": 14,
+    "control_center": 22,
+    "glass_backend": 7,
+    "native_glass": 3,
+    "input_preferences": 15,
+    "installer_fault_suites": 7,
+    "recovery": 4,
+    "gpu_policy": 6,
+    "peony_units": 6,
+    "restore_display": 1,
+    "ai_space_added_boundary_suites": 7,
+    "module_scalar_roundtrips": 116,
+    "module_rendered_views": 32
+  }
+}

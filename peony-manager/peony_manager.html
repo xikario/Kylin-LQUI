@@ -902,18 +902,11 @@
                             <span>构建状态</span>
                         </button>
                         <button 
-                            onclick="chooseAndInstallCopyPathPlugin()"
-                            class="px-2.5 py-1.5 bg-white hover:bg-blue-50 text-blue-700 border border-blue-100 rounded text-xs transition-all font-medium focus:outline-none"
-                            title="选择 libpeony-copy-path.so 并提权安装"
-                        >
-                            <span>选择 .so</span>
-                        </button>
-                        <button 
                             onclick="installBuiltCopyPathPlugin()"
                             class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 rounded text-xs transition-all font-medium shadow-sm focus:outline-none"
-                            title="安装项目内置构建产物"
+                            title="启用已安装系统插件包中的扩展"
                         >
-                            <span>${plugin.installed ? '重装内置' : '安装内置'}</span>
+                            <span>${plugin.installed ? '更新扩展' : '启用扩展'}</span>
                         </button>
                     </div>
             `
@@ -1083,7 +1076,7 @@
                   <p class="text-xs text-gray-500 mt-2" style="word-break:break-all">配置：${escapeCliHtml(result.configPath)}</p>
                   <div class="flex flex-wrap gap-2 mt-4">
                     <button class="cli-primary" onclick="saveCliPanelSettings()">保存配置</button>
-                    <button onclick="installCliPanelPlugin()" ${result.built ? '' : 'disabled'}>${result.installed ? '更新插件' : '安装插件'}</button>
+                    <button onclick="installCliPanelPlugin()" ${result.installable ? '' : 'disabled'}>${result.installed ? '更新插件' : '安装插件'}</button>
                     ${result.installed ? '<button onclick="removeCliPanelPlugin()">移除入口</button>' : ''}
                   </div>
                   <p id="cli-result" role="status" class="text-xs text-gray-500 mt-3"></p>
@@ -1290,35 +1283,11 @@
             });
     }
 
-    function chooseAndInstallCopyPathPlugin() {
-        showToast("请选择已编译的 libpeony-copy-path.so");
-        bridgeCall("chooseAndInstallCopyPathPlugin").then(function(result) {
-            if (result.success) {
-                showToast("复制完整路径插件已加载，Peony 已重启");
-                return bridgeCall("scanPlugins");
-            }
-            if (result.code !== "cancelled") {
-                showToast(result.error || "加载失败", true);
-            }
-            return null;
-        }).then(function(data) {
-            if (!data) return;
-            plugins = (data.plugins || []).map(normalizePlugin);
-            selectedPluginId = "peony-copy-path";
-            renderCategories();
-            showMainInterface();
-            updateFooterStats();
-            checkPendingRestartRequirements();
-        }).catch(function(err) {
-            showToast("加载失败: " + err.message, true);
-        });
-    }
-
     function installBuiltCopyPathPlugin() {
         showToast("正在安装内置复制完整路径插件...");
         bridgeCall("installCopyPathPlugin", [""]).then(function(result) {
             if (result.success) {
-                showToast("复制完整路径插件已安装，Peony 已重启");
+                showToast(result.requiresRestart ? "扩展已安装；文管未能重启，请稍后手动重启。" : "复制完整路径插件已安装，Peony 已重启", !!result.requiresRestart);
                 return bridgeCall("scanPlugins");
             }
             showToast(result.error || "安装失败", true);
@@ -1340,7 +1309,7 @@
         showToast("正在移除复制完整路径插件...");
         bridgeCall("removeCopyPathPlugin").then(function(result) {
             if (result.success) {
-                showToast("复制完整路径插件已移除，Peony 已重启");
+                showToast(result.requiresRestart ? "扩展已移除；请稍后手动重启文管。" : "复制完整路径插件已移除，Peony 已重启", !!result.requiresRestart);
                 return bridgeCall("scanPlugins");
             }
             showToast(result.error || "移除失败", true);

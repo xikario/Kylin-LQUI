@@ -55,7 +55,7 @@ QList<QAction *> CopyPathPlugin::menuActions(Peony::MenuPluginInterface::Types t
                                              const QStringList &selectionUris)
 {
     QList<QAction *> actions;
-    qDebug() << "Peony::CopyPathPlugin::menuActions" << types << uri << selectionUris;
+    // Menu construction must not persist users' file selections in logs.
     if (!m_enabled) {
         return actions;
     }

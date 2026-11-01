@@ -168,7 +168,7 @@ private:
         QVector<double> frequencies, loads;
         double diskTotal = 0, diskUsed = 0, diskPercent = 0;
         struct FrameworkInfo {
-            QString name, status;
+            QString id, name, status;
             QVector<int> pids;
             double cpu=0, rss=0, pss=0, swap=0;
             bool cpuValid=false, memoryValid=false, warning=false;

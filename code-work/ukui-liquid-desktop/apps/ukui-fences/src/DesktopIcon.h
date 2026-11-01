@@ -80,6 +80,7 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    friend struct DesktopRefreshTestAccess;
     void updateToolTip();
     void requestFolderDetails();
     QString m_folderDetails;

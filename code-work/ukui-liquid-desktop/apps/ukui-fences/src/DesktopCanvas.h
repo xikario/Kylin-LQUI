@@ -49,6 +49,7 @@ class DesktopCanvas : public QWidget
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface", "org.ukui.fences")
     friend class FenceWidget;
+    friend struct UndoIdentityTestAccess;
     friend class SystemMonitor;
     friend class AiSpaceClient;
     friend class FencesSettingsWindow;
@@ -238,6 +239,7 @@ private:
         QStringList fenceIds;
         QMap<QString, QPoint> loosePositions;
         QMap<QString, FileClipboard::TrashEntry> trashEntries;
+        QMap<QString,QByteArray> identities;
         bool move = false;
     };
 

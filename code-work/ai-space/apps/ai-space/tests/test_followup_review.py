@@ -166,7 +166,7 @@ class FollowupReview(unittest.TestCase):
         ), contextlib.redirect_stdout(
             output
         ):
-            worker.build_locked(args)
+            worker.build_locked(args,{})
         return json.loads(output.getvalue().splitlines()[-1])
 
     def test_legacy_media_ocr_is_reused_and_signature_upgraded(self):
@@ -593,7 +593,7 @@ raise SystemExit(jobs.main())
             worker.time, "monotonic", side_effect=lambda: clock[0]
         ), contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaises(InterruptedError):
-                worker.build_locked(args)
+                worker.build_locked(args,{})
         self.assertEqual(lib.stats(self.path)["documents"], 2)
 
     def test_real_sqlite_quota_failure_preserves_text_and_explains_upgrade(self):

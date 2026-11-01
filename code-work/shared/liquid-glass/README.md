@@ -1,3 +1,5 @@
+> 历史实现，仅供对照。当前输入法与桌面构建统一使用 `code-work/ukui-liquid-desktop/shared/` 中的规范实现。
+
 # 公共光学材质
 
 从本地已验证的 FenceGlassRenderer 提取，源自开始菜单 NextKdeGlassView 适配器。Shader 为 xikario/NextKde-kylinos commit 0dcd60cbd8723a6da95349a82fbc63385081c22a 中的 glass.glsl、snells-glass.glsl 原样副本；GPL v3 许可证保留在 vendor/nextkde-glass/LICENSE。

@@ -5,7 +5,7 @@
 #include <QtMath>
 #include "../../../shared/async-work/BackgroundTask.h"
 #include "LiquidPopup.h"
-#include "../../ukui-fences/src/LiquidIconRenderer.h"
+#include "../../../shared/icon-style/LiquidIconRenderer.h"
 #include "StartMenu.h"
 #include "SettingsBridge.h"
 #include "StartButton.h"
@@ -437,7 +437,6 @@ QString folderBundleForDesktop(const QString &desktopPath)
     if (desktopName.isEmpty())
         return {};
 
-    const bool mayUseMatchingBundle = isUserDesktopShortcut(desktopPath);
     for (const QString &rootPath : localAppRoots()) {
         QDir root(rootPath);
         if (!root.exists())
@@ -449,8 +448,9 @@ QString folderBundleForDesktop(const QString &desktopPath)
             const QString bundleRoot = child.absoluteFilePath();
             const QString expectedDesktop = bundleRoot
                 + "/usr/share/applications/" + desktopName;
-            if (QDir::cleanPath(desktopPath) == QDir::cleanPath(expectedDesktop)
-                || (mayUseMatchingBundle && QFileInfo::exists(expectedDesktop))) {
+            const QString actual=QFileInfo(desktopPath).canonicalFilePath();
+            const QString expected=QFileInfo(expectedDesktop).canonicalFilePath();
+            if (!actual.isEmpty() && actual == expected) {
                 return bundleRoot;
             }
         }
@@ -3040,7 +3040,8 @@ int StartMenu::railDropIndexAt(const QPoint &pos) const
 void StartMenu::handleRailContextMenu(const QPoint &pos)
 {
     const int appIndex = railAppIndexAt(pos);
-    if (appIndex >= 0) {
+    if (appIndex >= 0 && appIndex < m_railApps.size()) {
+        const AppEntry selected=m_railApps[appIndex];
         QMenu menu(this);
         StartMenuTheme::applySharedMenuStyle(&menu);
         QAction *openAction = menu.addAction(
@@ -3050,10 +3051,13 @@ void StartMenu::handleRailContextMenu(const QPoint &pos)
             themedIcon({"list-remove", "edit-delete", "user-trash"}),
             QString::fromUtf8("从侧栏移除"));
         QAction *chosen = menu.exec(mapToGlobal(pos));
-        if (chosen == openAction)
-            launchAppEntry(m_railApps[appIndex]);
+        int current=-1;
+        for(int i=0;i<m_railApps.size();++i)if(m_railApps[i].desktopPath==selected.desktopPath){current=i;break;}
+        if(current<0)return;
+        if (chosen == openAction && QFileInfo::exists(selected.desktopPath))
+            launchAppEntry(selected);
         else if (chosen == removeAction)
-            removeRailApp(appIndex);
+            removeRailApp(current);
         return;
     }
 

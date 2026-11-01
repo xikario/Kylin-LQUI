@@ -85,4 +85,27 @@ class PreferencesTest(unittest.TestCase):
         with self.assertRaises(ValueError):manager.set_rime_pinyin(True,self.root)
         self.assertEqual(target.read_text(),text)
 
+    def test_nested_other_page_size_does_not_replace_the_wrong_key(self):
+        self.file.write_text('patch:\n  other:\n    menu/page_size: 6\n')
+        manager.set_rime_page_size(9,self.root);data=yaml.safe_load(self.file.read_text())
+        self.assertEqual(data['patch']['other']['menu/page_size'],6);self.assertEqual(data['patch']['menu/page_size'],9)
+    def test_transaction_keeps_durable_original_backups(self):
+        self.file.write_text('patch:\n  menu/page_size: 6\n');before=self.file.read_bytes()
+        manager.apply_settings_transaction({'pageSize':9,'pinyin':True,'appearance':'[General]\nfontSize=19\n'},self.root)
+        backups=list((self.root/'fcitx/liquid-settings-backups').glob('*/rime/default.custom.yaml'))
+        self.assertEqual(len(backups),1);self.assertEqual(backups[0].read_bytes(),before)
+    def test_recovery_cannot_acquire_another_process_save_lock(self):
+        import fcntl
+        lock_path=self.root/'fcitx/.liquid-settings.lock'
+        with lock_path.open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):manager.recover_settings_transaction(self.root)
+
+    def test_startup_config_creation_uses_the_same_save_lock(self):
+        import fcntl
+        from unittest.mock import patch
+        with (self.root/'fcitx/.liquid-settings.lock').open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            with patch.object(manager,'CONFIG_HOME',self.root),self.assertRaises(BlockingIOError):manager.ensure_config()
+
 if __name__=='__main__':unittest.main()

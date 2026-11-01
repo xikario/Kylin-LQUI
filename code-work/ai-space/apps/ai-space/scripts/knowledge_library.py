@@ -1111,7 +1111,6 @@ def search_one(path, query, limit=20, budget_ms=1800, body_only=False):
                     ).fetchone()
                     if not row or row[0] != advertised_document:
                         continue
-                    seen.add(row[0])
                     doc_id, origin, name, category, modified, size, ordinal, locator, content, state, digest = (
                         row
                     )
@@ -1123,6 +1122,7 @@ def search_one(path, query, limit=20, budget_ms=1800, body_only=False):
                     ]
                     if grams and len(matched) < max(2, (len(grams) + 1) // 2):
                         continue
+                    seen.add(doc_id)
                     low = not matched
                     output["results"].append(
                         dict(

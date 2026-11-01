@@ -1,3 +1,4 @@
+#include "../../../shared/settings/FencesSettings.h"
 #include "LiquidPopup.h"
 #include "../../../shared/async-work/BackgroundTask.h"
 #include <QApplication>
@@ -131,6 +132,7 @@ int main(int argc, char *argv[])
     app.setApplicationName("ukui-fences");
     app.setApplicationDisplayName("ukui-fences");
     app.setOrganizationName("kylin");
+    QString settingsError;if(!initializeFencesSettings(&settingsError))qWarning()<<settingsError;
     app.setApplicationVersion("0.7.0");
     app.setDesktopFileName("ukui-fences");
 

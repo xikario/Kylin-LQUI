@@ -52,6 +52,8 @@ def restart_peony(kill_only: bool = False) -> dict:
             capture_output=True, text=True, timeout=10,
         )
 
+        if result.returncode:
+            return {"success":False,"error":"Peony 关闭失败："+(result.stderr or str(result.returncode)).strip()}
         if not kill_only:
             # 重新打开 Peony
             subprocess.Popen(
@@ -145,6 +147,7 @@ def install_copy_path_plugin(source_path: str = "") -> dict:
 
     restart_result = restart_peony(kill_only=False)
     helper_result["restart"] = restart_result
+    helper_result["requiresRestart"] = not restart_result.get("success",False)
     return helper_result
 
 
@@ -156,6 +159,7 @@ def remove_copy_path_plugin() -> dict:
 
     restart_result = restart_peony(kill_only=False)
     helper_result["restart"] = restart_result
+    helper_result["requiresRestart"] = not restart_result.get("success",False)
     return helper_result
 
 

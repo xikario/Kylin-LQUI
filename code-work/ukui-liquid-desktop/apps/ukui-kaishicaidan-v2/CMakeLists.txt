@@ -63,9 +63,8 @@ set(LAUNCHER_SOURCES
     src/AppRegistry.cpp
     src/RecentFiles.cpp
     src/SettingsDialog.cpp
-    src/NextKdeGlassView.cpp
     # Reuse Fences' cached icon/plate renderer, without a second implementation.
-    ../ukui-fences/src/LiquidIconRenderer.cpp
+    ../../shared/icon-style/LiquidIconRenderer.cpp
     src/glass.qrc
     ../../shared/desktop-launch/DesktopLaunchCompat.cpp
 )
@@ -94,7 +93,7 @@ target_link_libraries(ukui-kaishicaidan-v2 PRIVATE
 option(BUILD_GLASS_TESTS "Build isolated glass rendering regression checks" OFF)
 if(BUILD_GLASS_TESTS)
     add_executable(glass-render-test tests/glass-render-test.cpp
-        src/NextKdeGlassView.cpp src/glass.qrc)
+        src/glass.qrc)
     target_include_directories(glass-render-test PRIVATE src ${KAISHICAIDAN_GL_INCLUDE_DIR})
     target_link_libraries(glass-render-test PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets)
 endif()

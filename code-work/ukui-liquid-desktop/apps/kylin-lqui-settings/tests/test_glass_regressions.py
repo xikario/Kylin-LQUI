@@ -56,4 +56,19 @@ class GlassRegression(unittest.TestCase):
             error=Gio.dbus_error_new_for_dbus_error('org.freedesktop.NetworkManager.'+code,'private-password-123')
             text=service_error(error);self.assertIn(word,text);self.assertNotIn('private-password',text)
 
+    def test_wifi_raw_identity_and_security_profile_match(self):
+        b=SystemBackend()
+        def call(service,path,interface,method,*args):
+            if method=='GetDevices':return (['/device'],)
+            return ({'802-11-wireless':{'ssid':b'Cafe'},'802-11-wireless-security':{'key-mgmt':'wpa-psk'}},)
+        b.call=call
+        def props(service,path,interface):
+            if path==NMP:return {'WirelessEnabled':True,'WirelessHardwareEnabled':True}
+            if interface.endswith('.Wireless'):return {'AccessPoints':['/open','/secure','/bad1','/bad2']}
+            if interface.endswith('.Device'):return {'DeviceType':2,'State':30,'AvailableConnections':['/profile']}
+            return {'Ssid':b'Cafe'+(b'\xff' if path=='/bad1' else b'\xfe' if path=='/bad2' else b''),'RsnFlags':256 if path=='/secure' else 0,'Flags':1 if path=='/secure' else 0,'Strength':80}
+        b.props=props;items={item['id']:item for item in b.wifi()['networks']}
+        self.assertEqual(len(items),4);self.assertEqual(items['/open']['profile'],'');self.assertEqual(items['/secure']['profile'],'/profile')
+        self.assertNotEqual(items['/bad1']['rawSsid'],items['/bad2']['rawSsid'])
+
 if __name__=='__main__':unittest.main()

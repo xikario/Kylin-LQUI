@@ -2,8 +2,12 @@
 """Run freshly built modules on a disposable display, bus, HOME and config."""
 import json, os, shlex, subprocess, sys, tempfile, time
 from pathlib import Path
+if '--isolated' not in sys.argv:
+    raise SystemExit(subprocess.call(['xvfb-run','-a','-s','-screen 0 1920x1080x24','dbus-run-session','--',sys.executable,str(Path(__file__).resolve()),'--isolated']))
 ROOT=Path(__file__).resolve().parents[3]
 WORK=ROOT.parent
+BUILDS=Path(os.environ['LQUI_TEST_BUILD_ROOT']) if os.environ.get('LQUI_TEST_BUILD_ROOT') else None
+def build_path(name,default):return BUILDS/name if BUILDS else default
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from PyQt5 import QtCore,QtWidgets,QtDBus,QtTest
 from backend import Backend
@@ -11,20 +15,23 @@ from main import SettingsWindow
 
 with tempfile.TemporaryDirectory(prefix='lqui-module-fixture-') as folder:
     home=Path(folder)
-    for name in ('config','data','cache','Desktop'): (home/name).mkdir()
-    os.environ.update(HOME=folder,XDG_CONFIG_HOME=str(home/'config'),XDG_DATA_HOME=str(home/'data'),XDG_CACHE_HOME=str(home/'cache'),GSETTINGS_BACKEND='memory',LQUI_SETTINGS_LEGACY='1',UKUI_LIQUID_GLASS_NO_GL='1',UKUI_FENCES_GLASS_NO_GL='1',AI_SPACE_TEST_NO_BOOTSTRAP='1',QT_QPA_PLATFORMTHEME='')
+    for name in ('config','data','cache','runtime','Desktop'): (home/name).mkdir()
+    (home/'runtime').chmod(0o700)
+    os.environ.update(XDG_RUNTIME_DIR=str(home/'runtime'),AI_SPACE_ACCOUNT_HOME_FALLBACK='0',HOME=folder,XDG_CONFIG_HOME=str(home/'config'),XDG_DATA_HOME=str(home/'data'),XDG_CACHE_HOME=str(home/'cache'),GSETTINGS_BACKEND='memory',LQUI_SETTINGS_LEGACY='1',UKUI_LIQUID_GLASS_NO_GL='1',UKUI_FENCES_GLASS_NO_GL='1',AI_SPACE_TEST_NO_BOOTSTRAP='1',QT_QPA_PLATFORMTHEME='')
     (home/'config/liquid-cli').mkdir()
-    (home/'config/liquid-cli/settings.json').write_text(json.dumps({'command':shlex.quote(str(WORK/'liquid-cli/build/cli-fixture'))+' '+shlex.quote(str(home/'cli-marker')),'directory':folder,'animation':'none'}))
+    (home/'config/liquid-cli/settings.json').write_text(json.dumps({'command':shlex.quote(str(build_path('liquid-cli',WORK/'liquid-cli/build')/'cli-fixture'))+' '+shlex.quote(str(home/'cli-marker')),'directory':folder,'animation':'none'}))
     app=QtWidgets.QApplication([])
     modules={
-        'ai':([str(WORK/'liquid-cli/build/liquid-cli'),'--resident'],'org.ukui.LiquidCli'),
-        'input':([str(WORK/'fcitx-liquid-panel/build/fcitx-liquid-panel')],'org.kde.impanel'),
-        'launcher':([str(ROOT/'apps/ukui-kaishicaidan-v2/build-v2/ukui-kaishicaidan-v2'),'--autostart'],'org.ukui.kaishicaidan.v2'),
-        'fences':([str(ROOT/'apps/ukui-fences/build/ukui-fences')],'org.ukui.fences'),
-        'space':([str(WORK/'ai-space/build/ai-space'),'--settings-service'],'io.github.xikario.AiSpace'),
+        'ai':([str(build_path('liquid-cli',WORK/'liquid-cli/build')/'liquid-cli'),'--resident'],'org.ukui.LiquidCli'),
+        'input':([str(build_path('fcitx',WORK/'fcitx-liquid-panel/build')/'fcitx-liquid-panel')],'org.kde.impanel'),
+        'launcher':([str(build_path('launcher',ROOT/'apps/ukui-kaishicaidan-v2/build-v2')/'ukui-kaishicaidan-v2'),'--autostart'],'org.ukui.kaishicaidan.v2'),
+        'fences':([str(build_path('fences',ROOT/'apps/ukui-fences/build')/'ukui-fences')],'org.ukui.fences'),
+        'space':([str(build_path('ai-space',WORK/'ai-space/build')/'ai-space'),'--settings-service'],'io.github.xikario.AiSpace'),
     }
-    processes=[];report={};backend=Backend()
+    processes=[];process_by_module={};report={};backend=Backend()
     def call(module,method,args):
+        process=process_by_module[module];owner=QtDBus.QDBusConnection.sessionBus().interface().servicePid(modules[module][1])
+        assert process.poll() is None and owner.isValid() and owner.value()==process.pid, (module,'wrong service owner')
         result=[];backend.call(module,method,args,result.append)
         deadline=time.monotonic()+6
         while not result and time.monotonic()<deadline:QtTest.QTest.qWait(20)
@@ -33,7 +40,17 @@ with tempfile.TemporaryDirectory(prefix='lqui-module-fixture-') as folder:
     try:
         for module,(argv,service) in modules.items():
             process=subprocess.Popen(argv,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);processes.append(process)
+            process_by_module[module]=process
             deadline=time.monotonic()+12
+            bus=QtDBus.QDBusConnection.sessionBus().interface()
+            while time.monotonic()<deadline:
+                assert process.poll() is None,(module,'exited before registering')
+                owner=bus.servicePid(service)
+                if owner.isValid():
+                    assert owner.value()==process.pid,(module,'another instance owns the name')
+                    break
+                QtTest.QTest.qWait(50)
+            else:raise AssertionError((module,'service registration timeout'))
             catalog={}
             while time.monotonic()<deadline:
                 catalog=call(module,'Catalog',[])

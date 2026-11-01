@@ -19,7 +19,8 @@ public:
     void useBackend(const QString &id);
     bool load();
     bool save(QString *error=nullptr) const;
-    void clear();
+    bool clear();
+    bool canSave() const{return writable;}
     const QVector<ChatMessage> &messages() const{return items;}
     int append(const ChatMessage &message);
     void replace(int index,const ChatMessage &message);
@@ -30,4 +31,5 @@ public:
 private:
     QString base,root;
     QVector<ChatMessage> items;
+    bool writable=true;
 };

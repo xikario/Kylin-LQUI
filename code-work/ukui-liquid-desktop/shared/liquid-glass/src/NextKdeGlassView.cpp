@@ -1,7 +1,7 @@
-#include "../../../shared/liquid-glass/src/LiquidMaterial.h"
+#include "LiquidMaterial.h"
 #include "NextKdeGlassView.h"
 #include "CohesiveGlass.h"
-#include "../../../shared/async-work/BackgroundTask.h"
+#include "../../async-work/BackgroundTask.h"
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QPainter>

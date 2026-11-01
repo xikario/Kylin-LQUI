@@ -5,6 +5,8 @@ Does not change persistent policy, governor, maximum, or polling interval.
 Run in a local terminal with sudo; Ctrl+C also restores the original floor.
 """
 import argparse
+import fcntl
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -14,6 +16,17 @@ import time
 NODE = Path('/sys/class/devfreq/PHYT0048:00')
 STATE = Path('/var/lib/ukui-ftg340-responsiveness/original.json')
 
+
+@contextlib.contextmanager
+def policy_lock():
+    path=STATE.parent/'policy.lock';path.parent.mkdir(parents=True,exist_ok=True)
+    with path.open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        yield
+
+def generation():
+    path=STATE.with_suffix('.generation')
+    return path.read_bytes() if path.exists() else None
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -27,12 +40,15 @@ def main():
         raise SystemExit('Expected FTG340 device not found')
     if (NODE / 'governor').read_text().strip() != 'simple_ondemand':
         raise SystemExit('Expected simple_ondemand governor; no change made')
-    saved = int(json.loads(STATE.read_text())['min_freq'])
-    previous = int((NODE / 'min_freq').read_text())
-    maximum = int((NODE / 'max_freq').read_text())
-    available = list(map(int, (NODE / 'available_frequencies').read_text().split()))
-    if saved not in available or not 0 < saved < previous <= maximum:
-        raise SystemExit('Saved floor is not a supported lower setting; no change made')
+    with policy_lock():
+        owner=generation()
+        saved = int(json.loads(STATE.read_text())['min_freq'])
+        previous = int((NODE / 'min_freq').read_text())
+        maximum = int((NODE / 'max_freq').read_text())
+        available = list(map(int, (NODE / 'available_frequencies').read_text().split()))
+        if saved not in available or not 0 < saved < previous <= maximum:
+            raise SystemExit('Saved floor is not a supported lower setting; no change made')
+        (NODE / 'min_freq').write_text(str(saved) + '\n')
     stopped = False
     def stop(signum, frame):
         nonlocal stopped
@@ -40,7 +56,6 @@ def main():
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, stop)
     try:
-        (NODE / 'min_freq').write_text(str(saved) + '\n')
         if int((NODE / 'min_freq').read_text()) != saved:
             raise RuntimeError('Driver rejected the test floor')
         print(f'Temporary GPU floor: {previous} -> {saved}. Restore in {args.seconds}s, or Ctrl+C.', flush=True)
@@ -52,14 +67,15 @@ def main():
                 print('Another power-policy event changed the floor; ending the test.', flush=True)
                 break
     finally:
-        current = int((NODE / 'min_freq').read_text())
-        if current == saved:
-            (NODE / 'min_freq').write_text(str(previous) + '\n')
-            if int((NODE / 'min_freq').read_text()) != previous:
-                raise RuntimeError('Could not restore original frequency floor')
-            print(f'Restored GPU floor: {previous}. Persistent policy unchanged.', flush=True)
-        else:
-            print(f'Preserved concurrent power-policy setting: {current}.', flush=True)
+        with policy_lock():
+            current = int((NODE / 'min_freq').read_text())
+            if current == saved and generation()==owner:
+                (NODE / 'min_freq').write_text(str(previous) + '\n')
+                if int((NODE / 'min_freq').read_text()) != previous:
+                    raise RuntimeError('Could not restore original frequency floor')
+                print(f'Restored GPU floor: {previous}. Persistent policy unchanged.', flush=True)
+            else:
+                print(f'Preserved concurrent power-policy setting: {current}.', flush=True)
 
 
 if __name__ == '__main__':

@@ -53,7 +53,7 @@ int main(int argc, char **argv) {
         if (chdir(cwd.c_str()) != 0) { perror("无法进入工作目录"); return 1; }
         execl("/usr/bin/systemd-run", "systemd-run", "--user", "--scope", "--quiet", "--collect",
               "--property=TimeoutStopSec=2s", "--property=KillMode=control-group", "--unit", argv[2],
-              "--", "/bin/bash", "-lc", command.c_str(), static_cast<char *>(nullptr));
+              "--", "/usr/bin/env", "-u", "BASH_ENV", "-u", "ENV", "/bin/bash", "--noprofile", "--norc", "-c", command.c_str(), static_cast<char *>(nullptr));
         perror("无法启动终端会话"); return 1;
     }
     if (std::strcmp(argv[1], "--guard") != 0 || !validUnit(argv[4])) return 2;

@@ -31,4 +31,11 @@ class TemporaryFloorTest(unittest.TestCase):
     def test_concurrent_policy_change_is_not_overwritten(self):
         self.assertEqual(self.exercise(lambda node:(node/'min_freq').write_text('400000')),'400000')
 
+    def test_same_value_stop_event_revokes_trial_ownership(self):
+        spec=importlib.util.spec_from_file_location('policy_same_value',Path(__file__).with_name('ftg340-responsiveness.py'))
+        policy=importlib.util.module_from_spec(spec);spec.loader.exec_module(policy)
+        def event(node):
+            policy.NODE=node;policy.STATE=node.parent/'state.json';policy.MARKER=node.parent/'active';policy.MARKER.touch();policy.run('stop');raise KeyboardInterrupt
+        self.assertEqual(self.exercise(event),'200000')
+
 if __name__=='__main__':unittest.main()

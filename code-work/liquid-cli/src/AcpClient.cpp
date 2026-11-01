@@ -65,7 +65,7 @@ void AcpClient::launch() {
             process->setProcessEnvironment(env);
             connect(process,&QProcess::readyReadStandardOutput,this,&AcpClient::readLines);
             connect(process,&QProcess::readyReadStandardError,this,[this]{
-                for(const auto &line:QString::fromUtf8(process->readAllStandardError()).split('\n',QString::SkipEmptyParts))stderrTail<<line.trimmed();
+                for(const auto &line:QString::fromUtf8(process->readAllStandardError().right(8192)).split('\n',QString::SkipEmptyParts))stderrTail<<line.trimmed().left(1024);
                 while(stderrTail.size()>8)stderrTail.removeFirst();
             });
             connect(process,QOverload<int,QProcess::ExitStatus>::of(&QProcess::finished),this,[this]{processGone(settings.cliName+" 已退出；请检查 CLI 安装和登录配置");});
@@ -107,13 +107,11 @@ void AcpClient::openSession() {
     QString method;
     if(sessionCaps.value("resume").isObject())method="session/resume";
     else if(capabilities.value("loadSession").toBool())method="session/load";
-    else {fresh();return;}
+    else {processGone("当前 CLI 不支持恢复旧会话；请在设置中明确开始新对话。");return;}
     auto resume=params;resume["sessionId"]=session;
-    request(method,resume,[this,fresh](const QJsonObject &result,const QJsonObject &error){
+    request(method,resume,[this](const QJsonObject &result,const QJsonObject &error){
         if(error.isEmpty()){sessionOpened(result,true);return;}
-        const QString reason=error.value("message").toString();
-        if(error.value("code").toInt()==-32601||reason.contains("not found",Qt::CaseInsensitive)||reason.contains("unknown session",Qt::CaseInsensitive)||reason.contains("does not exist",Qt::CaseInsensitive))fresh();
-        else processGone("恢复会话失败："+failure(error));
+        processGone("恢复会话失败，原会话已保留："+failure(error));
     });
 }
 QJsonObject AcpClient::option(const QString &category) const {
@@ -235,7 +233,7 @@ void AcpClient::request(const QString &method,const QJsonObject &params,Reply do
 void AcpClient::write(QJsonObject message){if(process&&process->state()!=QProcess::NotRunning){message["jsonrpc"]="2.0";process->write(QJsonDocument(message).toJson(QJsonDocument::Compact)+'\n');}}
 void AcpClient::readLines() {
     buffer+=process->readAllStandardOutput();
-    if(buffer.size()>64*1024*1024){processGone("CLI 协议数据过大，连接已关闭");return;}
+    if(buffer.size()>64*1024*1024){stop();emit status("CLI 协议数据过大，连接已关闭");return;}
     int nl;
     while(process&&(nl=buffer.indexOf('\n'))>=0) {
         const auto line=buffer.left(nl).trimmed();buffer.remove(0,nl+1);if(line.isEmpty())continue;
@@ -276,7 +274,7 @@ void AcpClient::notification(const QString &method,const QJsonObject &params) {
 }
 QList<QPair<QString,QString>> AcpClient::approvalOptions(const QJsonValue &id) const {
     QList<QPair<QString,QString>> out;
-    for(const auto &v:permissions.value(key(id)).options){const auto o=v.toObject();out.append({o.value("name").toString(),o.value("optionId").toString()});}
+    for(const auto &v:permissions.value(id.toString()).options){const auto o=v.toObject();out.append({o.value("name").toString(),o.value("optionId").toString()});}
     return out;
 }
 void AcpClient::serverRequest(const QJsonValue &id,const QString &method,const QJsonObject &params) {
@@ -284,21 +282,26 @@ void AcpClient::serverRequest(const QJsonValue &id,const QString &method,const Q
     if(params.value("sessionId").toString()!=session||cancelled||!promptActive){write({{"id",id},{"result",QJsonObject{{"outcome",QJsonObject{{"outcome","cancelled"}}}}}});return;}
     const auto options=params.value("options").toArray();
     if(options.isEmpty()){write({{"id",id},{"result",QJsonObject{{"outcome",QJsonObject{{"outcome","cancelled"}}}}}});return;}
-    permissions.insert(key(id),{id,options});
+    const QString token=unit+":"+QString::number(++approvalSerial);
+    permissions.insert(token,{id,options});
     const auto tool=params.value("toolCall").toObject();QString detail=tool.value("title").toString("运行工具");
-    if(tool.value("rawInput").isObject())detail+="\n"+QString::fromUtf8(QJsonDocument(tool.value("rawInput").toObject()).toJson(QJsonDocument::Compact)).left(600);
-    emit approvalRequested(id,settings.cliName+" 请求授权",detail);
+    const auto raw=tool.value("rawInput");
+    if(!raw.isUndefined()) {
+        const auto encoded=QJsonDocument(QJsonArray{raw}).toJson(QJsonDocument::Compact);
+        detail+="\n"+QString::fromUtf8(encoded.mid(1,encoded.size()-2));
+    }
+    emit approvalRequested(token,settings.cliName+" 请求授权",detail);
 }
 void AcpClient::answerApproval(const QJsonValue &id,const QString &decision) {
-    const QString k=key(id);if(!permissions.contains(k))return;
+    const QString k=id.toString();if(!permissions.contains(k))return;
     bool valid=false;for(const auto &v:permissions.value(k).options)if(v.toObject().value("optionId").toString()==decision)valid=true;
     if(!valid)return;
-    write({{"id",id},{"result",QJsonObject{{"outcome",QJsonObject{{"outcome","selected"},{"optionId",decision}}}}}});
+    write({{"id",permissions.value(k).id},{"result",QJsonObject{{"outcome",QJsonObject{{"outcome","selected"},{"optionId",decision}}}}}});
     permissions.remove(k);emit approvalClosed(id);
 }
 void AcpClient::cancelPermissions() {
     const auto pending=permissions;permissions.clear();
-    for(const auto &p:pending){write({{"id",p.id},{"result",QJsonObject{{"outcome",QJsonObject{{"outcome","cancelled"}}}}}});emit approvalClosed(p.id);}
+    for(auto it=pending.cbegin();it!=pending.cend();++it){write({{"id",it.value().id},{"result",QJsonObject{{"outcome",QJsonObject{{"outcome","cancelled"}}}}}});emit approvalClosed(it.key());}
 }
 void AcpClient::interrupt() {
     if(!busy())return;cancelled=true;cancelPermissions();

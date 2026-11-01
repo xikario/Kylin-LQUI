@@ -37,7 +37,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         palette=self.palette()
         for role in (QtGui.QPalette.WindowText,QtGui.QPalette.Text,QtGui.QPalette.ButtonText):palette.setColor(role,QtGui.QColor('#edf3fa'))
         palette.setColor(QtGui.QPalette.Base,QtGui.QColor('#263a50'));self.setPalette(palette)
-        self.backend_factory=backend_factory;self.data={};self.jobs=set();self.reading=False;self.changing=False;self.dialog_open=False;self.page='home';self.anchor=QtCore.QRect();self.calendar_result={};self.calendar_revision=0;self.state_revision=0;self.pending_network=None
+        self.backend_factory=backend_factory;self.data={};self.jobs=set();self.reading=False;self.changing=False;self.busy_domains=set();self.domain_revisions={};self.pending_actions={};self.dialog_open=False;self.page='home';self.anchor=QtCore.QRect();self.calendar_result={};self.calendar_revision=0;self.state_revision=0;self.pending_network=None
         layout=QtWidgets.QVBoxLayout(self);layout.setContentsMargins(6,6,6,6);layout.setSpacing(6)
         self.header_frame=GlassCard(self,17);header=QtWidgets.QHBoxLayout(self.header_frame);header.setContentsMargins(8,3,8,3);self.back=QtWidgets.QPushButton('‹');self.back.setFixedWidth(28);self.back.clicked.connect(lambda:self.show_page('home'));header.addWidget(self.back)
         self.title=QtWidgets.QLabel('控制中心');self.title.setObjectName('centerTitle');header.addWidget(self.title,1)
@@ -49,13 +49,15 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.release_material)
         self.tooltips=ReadableTooltips(self)
         self.show_page('home')
-    def release_material(self):self.native_glass=None
+    def release_material(self):
+        material=self.native_glass;self.native_glass=None
+        if material is not None:material.close()
     def event(self,event):
         if event.type()==QtCore.QEvent.WindowDeactivate:QtCore.QTimer.singleShot(100,self.dismiss_if_inactive)
         return super().event(event)
     def dismiss_if_inactive(self):
         if self.isVisible() and not self.isActiveWindow() and not self.dialog_open and not QtWidgets.QApplication.activePopupWidget() and not QtWidgets.QApplication.activeModalWidget():self.hide()
-    def hideEvent(self,event):self.native_glass=None;self.backdrop=QtGui.QImage();self.poll.stop();self.idle.start(60000);super().hideEvent(event)
+    def hideEvent(self,event):self.release_material();self.backdrop=QtGui.QImage();self.poll.stop();self.idle.start(60000);super().hideEvent(event)
     def closeEvent(self,event):event.ignore();self.hide()
     def keyPressEvent(self,event):
         if event.key()==QtCore.Qt.Key_Escape:self.hide()
@@ -71,8 +73,9 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
     def open_at(self,page,x,y,width,height):
         page='calendar' if page=='calendar' else 'home'
         if self.isVisible() and self.page==page:self.hide();return
+        if self.isVisible():self.hide()
         self.anchor=QtCore.QRect(x,y,width,height);self.idle.stop();self.show_page(page)
-        self.set_position();self.capture_backdrop();self.show();self.raise_();self.activateWindow();self.refresh();self.poll.start()
+        self.set_position();self.release_material();self.capture_backdrop();self.show();self.raise_();self.activateWindow();self.refresh();self.poll.start()
     @staticmethod
     def label(text,muted=False):
         result=QtWidgets.QLabel(text);result.setTextFormat(QtCore.Qt.PlainText);result.setWordWrap(True);result.setProperty('muted',muted);return result
@@ -96,24 +99,44 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             self.calendar.currentPageChanged.connect(self.load_calendar);self.calendar.selectionChanged.connect(self.update_calendar_day);self.load_calendar(self.calendar.yearShown(),self.calendar.monthShown())
         layout.addStretch();self.scroll.setWidget(content);content.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False);self.apply_snapshot();self.set_position()
     def navigate(self,page):self.show_page(page);self.refresh()
+    @staticmethod
+    def action_domain(operation):
+        if operation in ('volume','mute','output'):return 'audio'
+        if operation in ('scan','connect','wifi-enabled'):return 'wifi'
+        if operation.startswith('bluetooth'):return 'bluetooth'
+        if operation.startswith('notification') or operation=='dnd':return 'notifications'
+        if operation.startswith('media'):return 'media'
+        if operation=='power-profile':return 'power'
+        return operation
+    def is_busy(self,domain):return domain in self.busy_domains
+    def merge_snapshot(self,data,revisions):
+        for domain,value in data.items():
+            if revisions.get(domain,0)==self.domain_revisions.get(domain,0):self.data[domain]=value
     def refresh(self):
-        if self.reading or self.changing:return
-        self.reading=True;revision=self.state_revision
+        if self.reading:return
+        self.reading=True;revisions=dict(self.domain_revisions)
         def done(result):
             self.reading=False
-            if result['ok'] and revision==self.state_revision and not self.changing:self.data=result['data'];self.update_pending_network();self.apply_snapshot()
+            if result['ok']:self.merge_snapshot(result['data'],revisions);self.update_pending_network();self.apply_snapshot()
         self.job(lambda:self.backend_factory().snapshot(),done)
     def action(self,operation,values):
-        if self.changing:return
-        self.changing=True;self.state_revision+=1;self.status.show();self.status.setText('正在处理…');self.apply_snapshot()
+        domain=self.action_domain(operation)
+        if self.is_busy(domain):
+            if operation in ('volume','brightness'):self.pending_actions[domain]=(operation,dict(values))
+            return
+        values=dict(values);self.busy_domains.add(domain);self.changing=True
+        self.state_revision+=1;self.domain_revisions[domain]=self.domain_revisions.get(domain,0)+1
+        revisions=dict(self.domain_revisions);self.status.show();self.status.setText('正在处理…');self.apply_snapshot()
         def done(result):
-            self.changing=False
+            self.busy_domains.discard(domain);self.changing=bool(self.busy_domains)
             if result['ok']:
-                self.data=result['data'];self.status.setText('')
+                self.merge_snapshot(result['data'],revisions);self.status.setText('正在处理…' if self.changing else '')
                 if operation=='connect':self.pending_network=(values.get('id'),time.monotonic());self.network_signature=None
                 self.update_pending_network();self.apply_snapshot();self.status.setVisible(bool(self.status.text()))
             else:self.status.setText(result['error']);self.apply_snapshot();self.refresh()
             values.clear()
+            pending=self.pending_actions.pop(domain,None)
+            if pending:self.action(*pending)
         self.job(lambda:self.backend_factory().action(operation,values),done)
     def update_pending_network(self):
         if not self.pending_network:return
@@ -124,18 +147,18 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
     def apply_detail_snapshot(self):
         audio=self.data.get('audio',{});selected=audio.get('selected') or {};wifi=self.data.get('wifi',{});power=self.data.get('power',{})
         if self.volume:
-            self.volume.setEnabled(bool(audio.get('available')) and not self.changing);self.mute.setEnabled(bool(audio.get('available')) and not self.changing)
-            if not self.volume.isSliderDown():
+            self.volume.setEnabled(bool(audio.get('available')));self.mute.setEnabled(bool(audio.get('available')) and not self.is_busy('audio'))
+            if not self.volume.isSliderDown() and not self.is_busy('audio') and 'audio' not in self.pending_actions:
                 blocker=QtCore.QSignalBlocker(self.volume);self.volume.setValue(min(100,selected.get('volume',0)));del blocker;self.volume_label.setText(str(selected.get('volume',0))+'%' if audio.get('available') else '音频未就绪')
             self.mute.setText('取消静音' if selected.get('muted') else '静音')
         if self.output is not None and not self.output.view().isVisible():
             blocker=QtCore.QSignalBlocker(self.output);self.output.clear()
             for item in audio.get('outputs',[]):self.output.addItem(item['name'],item['id'])
-            self.output.setCurrentIndex(self.output.findData(selected.get('id')));del blocker;self.output.setEnabled(not self.changing and bool(audio.get('available')))
+            self.output.setCurrentIndex(self.output.findData(selected.get('id')));del blocker;self.output.setEnabled(not self.is_busy('audio') and bool(audio.get('available')))
         if self.summary:
             current=next((n['ssid'] for n in wifi.get('networks',[]) if n['connected']), '网络服务未就绪' if not wifi.get('available') else '未连接' if wifi.get('enabled') else 'Wi-Fi 已关闭');self.summary.setText(current+'  ·  '+self.power_summary(power))
         if self.wifi_toggle:
-            blocker=QtCore.QSignalBlocker(self.wifi_toggle);self.wifi_toggle.setChecked(wifi.get('enabled',False));del blocker;self.wifi_toggle.setEnabled(bool(wifi.get('available') and wifi.get('hardwareEnabled')) and not self.changing)
+            blocker=QtCore.QSignalBlocker(self.wifi_toggle);self.wifi_toggle.setChecked(wifi.get('enabled',False));del blocker;self.wifi_toggle.setEnabled(bool(wifi.get('available') and wifi.get('hardwareEnabled')) and not self.is_busy('wifi'))
             networks=wifi.get('networks',[]) if wifi.get('enabled') else []
             ids={n['id'] for n in networks}
             for ident in list(self.network_buttons):
@@ -153,7 +176,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
                 button.setText(network['ssid'].replace('&','&&')+'  ·  '+('已连接' if network['connected'] else '连接中…' if network.get('connecting') or self.pending_network and self.pending_network[0]==ident else str(network['strength'])+'%'))
                 if button.property('accent')!=network['connected']:
                     button.setProperty('accent',network['connected']);button.style().unpolish(button);button.style().polish(button)
-                button.setEnabled(not (network['connected'] or network.get('connecting') or self.changing or self.pending_network));button.setToolTip(network['ssid'])
+                button.setEnabled(not (network['connected'] or network.get('connecting') or self.is_busy('wifi') or self.pending_network));button.setToolTip(network['ssid'])
         if self.power_text:
             text=self.power_summary(power)
             seconds=power.get('timeToEmpty') if power.get('onBattery') else power.get('timeToFull')

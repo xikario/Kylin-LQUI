@@ -28,7 +28,7 @@ def process_identity(pid):
     try:
         if proc.stat().st_uid != os.getuid():
             return None
-        fields = (proc/"stat").read_text().split(") ", 1)[1].split()
+        fields = (proc/"stat").read_text().rsplit(") ", 1)[1].split()
         if fields[0] == "Z":
             return None
         if ("DISPLAY="+DISPLAY).encode() not in (proc/"environ").read_bytes().split(b"\0"):
@@ -217,8 +217,9 @@ class Trial:
         self.failures = 0
 
     def restore(self, reason):
-        if self.finished:
+        if self.finished or getattr(self, "restoring", False) or getattr(self, "recovery_retry", False):
             return False
+        self.restoring = True
         self.state.update(active=False, phase="restoring", reason=reason)
         def persist():
             try:write_state(self.state)
@@ -231,6 +232,7 @@ class Trial:
             self.session.restore_native()
             self.state.update(phase="restored", nativeAfter=native_desktops())
         except Exception as error:
+            self.restoring = False
             self.state.update(phase="recovery-required", error=str(error))
             persist()
             if not getattr(self,"recovery_retry",False):
@@ -242,12 +244,13 @@ class Trial:
                 GLib.timeout_add_seconds(3,retry)
             return False
         self.finished = True
+        self.restoring = False
         persist()
         self.loop.quit()
         return False
 
     def check(self):
-        if self.finished:
+        if self.finished or self.state.get("phase") in ("restoring", "recovery-required"):
             return False
         if self.session.owner("org.ukui.fences") != self.owner or process_identity(self.fences["pid"]) != self.fences:
             return self.restore("fences-exited")
@@ -294,6 +297,10 @@ class Trial:
         except Exception as error:
             self.state["error"] = str(error)
             self.restore("error")
+            # A failed start still owns recovery. Run queued retries until a
+            # native surface is confirmed, retaining the process lock meanwhile.
+            if not self.finished:
+                self.loop.run()
             raise
 
 

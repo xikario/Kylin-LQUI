@@ -24,7 +24,7 @@ QString errorText(const QJsonObject &error){return error.value("message").toStri
 CodexClient::CodexClient(QObject *parent):AgentClient(parent) {
     idle.setSingleShot(true);
     connect(&idle,&QTimer::timeout,this,[this]{
-        if(phase==Stopped||busy()||compactActive||pendingApprovals)return;
+        if(phase==Stopped||busy()||compactActive||!approvals.isEmpty())return;
         // The thread is persisted by Codex; the next send resumes it.
         stop();emit status(QStringLiteral("已休眠释放内存 · 发消息自动接上"));
     });
@@ -66,7 +66,15 @@ void CodexClient::interrupt() {
     }
 }
 void CodexClient::answerApproval(const QJsonValue &id,const QString &decision) {
-    write({{"id",id},{"result",QJsonObject{{"decision",decision}}}});
+    const QString token=id.toString();
+    if(!approvals.contains(token)||(decision!="accept"&&decision!="acceptForSession"&&decision!="decline"))return;
+    const auto requestId=approvals.take(token);
+    write({{"id",requestId},{"result",QJsonObject{{"decision",decision}}}});
+    emit approvalClosed(id);armIdle();
+}
+void CodexClient::closeApprovals() {
+    const auto pending=approvals;approvals.clear();
+    for(auto it=pending.cbegin();it!=pending.cend();++it)emit approvalClosed(it.key());
 }
 
 void CodexClient::launch() {
@@ -88,7 +96,7 @@ void CodexClient::launch() {
             process->setProcessEnvironment(env);
             connect(process,&QProcess::readyReadStandardOutput,this,&CodexClient::readLines);
             connect(process,&QProcess::readyReadStandardError,this,[this]{
-                for(const auto &line:QString::fromUtf8(process->readAllStandardError()).split('\n',QString::SkipEmptyParts))stderrTail<<line.trimmed();
+                for(const auto &line:QString::fromUtf8(process->readAllStandardError().right(8192)).split('\n',QString::SkipEmptyParts))stderrTail<<line.trimmed().left(1024);
                 while(stderrTail.size()>kStderrLines)stderrTail.removeFirst();
             });
             connect(process,QOverload<int,QProcess::ExitStatus>::of(&QProcess::finished),this,[this]{
@@ -157,9 +165,10 @@ void CodexClient::openThread() {
     };
     if(thread.isEmpty()){fresh();return;}
     QJsonObject resume=params;resume["threadId"]=thread;resume["excludeTurns"]=true;
-    request("thread/resume",resume,[ready,fresh,this](const QJsonObject &result,const QJsonObject &error){
+    request("thread/resume",resume,[ready,this](const QJsonObject &result,const QJsonObject &error){
         const QString id=result.value("thread").toObject().value("id").toString();
-        if(error.isEmpty()&&!id.isEmpty())ready(id,true);else{thread.clear();fresh();}
+        if(error.isEmpty()&&!id.isEmpty())ready(id,true);
+        else processGone("恢复会话失败，原会话已保留，可重试或在设置中开始新对话："+errorText(error));
     });
 }
 void CodexClient::runQueued() {
@@ -173,7 +182,7 @@ void CodexClient::runQueued() {
     }
 }
 void CodexClient::startTurn() {
-    queued=None;turnActive=true;turn.clear();order.clear();texts.clear();phases.clear();
+    queued=None;turnActive=true;const quint64 epoch=++turnEpoch;turn.clear();order.clear();texts.clear();phases.clear();
     commands=edits=searches=tools=0;clock.start();
     QJsonArray input;
     if(!queuedText.isEmpty())input<<QJsonObject{{"type","text"},{"text",queuedText},{"text_elements",QJsonArray()}};
@@ -181,8 +190,8 @@ void CodexClient::startTurn() {
     emit status(QStringLiteral("输入中…"));
     // Read effective defaults for every send: returning to "follow CLI" must
     // also replace overrides previously stored on the resumed thread.
-    request("config/read",{{"includeLayers",false},{"cwd",settings.directory}},[this,input](const QJsonObject &result,const QJsonObject &error){
-        if(!turnActive)return;
+    request("config/read",{{"includeLayers",false},{"cwd",settings.directory}},[this,input,epoch](const QJsonObject &result,const QJsonObject &error){
+        if(!turnActive||epoch!=turnEpoch)return;
         if(!error.isEmpty()){endTurn("failed","无法读取 Codex 模型配置："+errorText(error));return;}
         const auto config=result.value("config").toObject();
         QString model=settings.model.isEmpty()?config.value("model").toString():settings.model;
@@ -192,7 +201,8 @@ void CodexClient::startTurn() {
         if(effort.isEmpty())for(const auto &v:models)if(v.toObject().value("model").toString()==model){effort=v.toObject().value("defaultReasoningEffort").toString();break;}
         QJsonObject params{{"threadId",thread},{"input",input}};
         if(!model.isEmpty())params["model"]=model;if(!effort.isEmpty())params["effort"]=effort;
-        request("turn/start",params,[this](const QJsonObject &result,const QJsonObject &error){
+        request("turn/start",params,[this,epoch](const QJsonObject &result,const QJsonObject &error){
+            if(!turnActive||epoch!=turnEpoch)return;
             if(!error.isEmpty()){endTurn("failed",errorText(error));return;}
             const QString id=result.value("turn").toObject().value("id").toString();
             if(turn.isEmpty())turn=id;
@@ -215,8 +225,9 @@ void CodexClient::write(const QJsonObject &message) {
 }
 void CodexClient::readLines() {
     buffer+=process->readAllStandardOutput();
+    if(buffer.size()>64*1024*1024){stop();emit status("Codex 协议数据超过 64 MiB，连接已关闭，可重试。");return;}
     int newline;
-    while((newline=buffer.indexOf('\n'))>=0) {
+    while(process&&(newline=buffer.indexOf('\n'))>=0) {
         const QByteArray line=buffer.left(newline).trimmed();buffer.remove(0,newline+1);
         const auto message=QJsonDocument::fromJson(line).object();
         if(message.isEmpty())continue;
@@ -245,10 +256,15 @@ void CodexClient::handleNotification(const QString &method,const QJsonObject &pa
     if(method=="error") {
         const QString message=params.value("error").toObject().value("message").toString();
         if(params.value("willRetry").toBool())emit status("连接不稳定，正在重试…");
-        else if(!message.isEmpty())stderrTail<<message;
+        else if(!message.isEmpty()){stderrTail<<message.left(1024);while(stderrTail.size()>kStderrLines)stderrTail.removeFirst();}
         return;
     }
-    if(method=="serverRequest/resolved"){pendingApprovals=qMax(0,pendingApprovals-1);emit approvalClosed(params.value("requestId"));return;}
+    if(method=="serverRequest/resolved"){
+        for(auto it=approvals.begin();it!=approvals.end();) {
+            if(it.value()==params.value("requestId")){const QString token=it.key();it=approvals.erase(it);emit approvalClosed(token);}else ++it;
+        }
+        armIdle();return;
+    }
     if(method=="turn/completed") {
         const auto t=params.value("turn").toObject();
         const QString state=t.value("status").toString();QString error=t.value("error").toObject().value("message").toString();
@@ -260,15 +276,23 @@ void CodexClient::handleNotification(const QString &method,const QJsonObject &pa
     }
 }
 void CodexClient::handleServerRequest(const QJsonValue &id,const QString &method,const QJsonObject &params) {
+    if(!turnActive||(!params.value("threadId").toString().isEmpty()&&params.value("threadId").toString()!=thread)||
+       (!turn.isEmpty()&&!params.value("turnId").toString().isEmpty()&&params.value("turnId").toString()!=turn)) {
+        write({{"id",id},{"error",QJsonObject{{"code",-32600},{"message","请求已失效"}}}});return;
+    }
+    auto approve=[this,id](const QString &title,const QString &detail){
+        const QString token=unit+":"+QString::number(++approvalSerial);
+        approvals.insert(token,id);emit approvalRequested(token,title,detail);
+    };
     const QString reason=params.value("reason").toString();
     if(method=="item/commandExecution/requestApproval") {
         QString detail=params.value("command").toString();if(!reason.isEmpty())detail+=(detail.isEmpty()?"":"\n")+reason;
-        ++pendingApprovals;emit approvalRequested(id,QStringLiteral("Codex 想运行命令"),detail);return;
+        approve(QStringLiteral("Codex 想运行命令"),detail);return;
     }
     if(method=="item/fileChange/requestApproval") {
         QString detail=reason.isEmpty()?QStringLiteral("修改工作目录中的文件"):reason;
         const QString root=params.value("grantRoot").toString();if(!root.isEmpty())detail+="\n"+root;
-        ++pendingApprovals;emit approvalRequested(id,QStringLiteral("Codex 想修改文件"),detail);return;
+        approve(QStringLiteral("Codex 想修改文件"),detail);return;
     }
     // Interactive forms, attestations and account flows are not part of this
     // chat. Reply instead of leaving the turn waiting forever.
@@ -299,7 +323,7 @@ void CodexClient::endTurn(const QString &state,const QString &error) {
     bool anyVisible=false;
     for(const auto &id:order)if(phases.value(id)!="commentary"&&!texts.value(id).trimmed().isEmpty())anyVisible=true;
     if(!anyVisible)for(int i=order.size()-1;i>=0;--i)if(!texts.value(order[i]).trimmed().isEmpty()){emit answer(texts.value(order[i]).trimmed());break;}
-    turnActive=false;turn.clear();
+    turnActive=false;turn.clear();closeApprovals();
     const QString failure=error.isEmpty()&&state=="failed"&&!stderrTail.isEmpty()?stderrTail.last():error;
     emit status(state=="completed"?QStringLiteral("就绪"):state=="interrupted"?QStringLiteral("已停止"):QStringLiteral("出错了"));
     emit turnFinished(state,failure,summary());
@@ -317,7 +341,7 @@ QString CodexClient::summary() const {
 }
 void CodexClient::processGone(const QString &reason) {
     const bool wasRunning=phase!=Stopped;
-    phase=Stopped;replies.clear();buffer.clear();idle.stop();pendingApprovals=0;
+    phase=Stopped;replies.clear();buffer.clear();idle.stop();closeApprovals();
     if(discoveryOnly){discoveryOnly=false;emit modelsFailed(reason);}
     if(process){process->disconnect(this);process->deleteLater();process=nullptr;}
     if(guard){guard->close();guard->deleteLater();guard=nullptr;}

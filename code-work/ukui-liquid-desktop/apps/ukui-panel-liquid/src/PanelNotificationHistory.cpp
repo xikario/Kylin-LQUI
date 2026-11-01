@@ -10,9 +10,14 @@
 #include <QSaveFile>
 #include <QDateTime>
 #include <QApplication>
+namespace {constexpr int kHistoryBytes=2*1024*1024;constexpr int kMigrationBytes=16*1024*1024;}
 PanelNotificationHistory::PanelNotificationHistory(QObject *parent):QObject(parent){
     path=QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)+"/kylin-lqui/notifications.json";
-    QFile file(path);if(file.open(QIODevice::ReadOnly)&&file.size()<2*1024*1024)entries=QJsonDocument::fromJson(file.readAll()).array();
+    QFile file(path);if(file.open(QIODevice::ReadOnly)&&file.size()<=kMigrationBytes) {
+        QJsonParseError error;const auto doc=QJsonDocument::fromJson(file.readAll(),&error);
+        if(error.error==QJsonParseError::NoError&&doc.isArray())entries=doc.array();
+        else {file.close();QFile::copy(path,path+".invalid-"+QString::number(QDateTime::currentMSecsSinceEpoch()));}
+    }
     while(entries.size()>200)entries.removeFirst();
     pending.setSingleShot(true);pending.setInterval(250);connect(&pending,&QTimer::timeout,this,&PanelNotificationHistory::save);
     auto bus=QDBusConnection::sessionBus();bus.registerObject("/org/kylin/Lqui/Notifications",this,QDBusConnection::ExportScriptableSlots);
@@ -33,5 +38,7 @@ void PanelNotificationHistory::received(const QDBusMessage &message){
     while(entries.size()>200)entries.removeFirst();pending.start();
 }
 void PanelNotificationHistory::save(){
-    QDir().mkpath(QFileInfo(path).absolutePath());QSaveFile file(path);if(!file.open(QIODevice::WriteOnly))return;file.setPermissions(QFile::ReadOwner|QFile::WriteOwner);file.write(QJsonDocument(entries).toJson(QJsonDocument::Compact));file.commit();
+    QByteArray payload=QJsonDocument(entries).toJson(QJsonDocument::Compact);
+    while(payload.size()>=kHistoryBytes&&!entries.isEmpty()){entries.removeFirst();payload=QJsonDocument(entries).toJson(QJsonDocument::Compact);}
+    QDir().mkpath(QFileInfo(path).absolutePath());QSaveFile file(path);if(!file.open(QIODevice::WriteOnly))return;file.setPermissions(QFile::ReadOwner|QFile::WriteOwner);if(file.write(payload)==payload.size())file.commit();
 }

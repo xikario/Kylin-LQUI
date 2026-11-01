@@ -61,7 +61,7 @@ private:
     QProcess *process=nullptr;
     QLocalServer *server=nullptr;
     QPointer<QLocalSocket> guard;
-    qint64 guardPid=0,nextId=1,turnEpoch=0;
+    qint64 guardPid=0,nextId=1,turnEpoch=0,approvalSerial=0;
     Phase phase=Stopped;
     QString session,unit,socketPath,queuedText,output,compactCommand,baselineModel,baselineEffort;
     QStringList queuedImages,stderrTail;

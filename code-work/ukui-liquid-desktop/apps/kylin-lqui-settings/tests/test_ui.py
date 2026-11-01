@@ -73,6 +73,26 @@ class UiTest(unittest.TestCase):
         text=' '.join(x.text() for x in self.window.findChildren(QtWidgets.QLabel))
         self.assertIn('登录启动：已启用',text);self.assertIn('运行中',text)
 
+    def test_late_save_acknowledgement_preserves_new_text(self):
+        callbacks=[];original=self.fixture.call
+        def call(module,method,args,callback):
+            if method=='Set':callbacks.append(callback)
+            else:original(module,method,args,callback)
+        self.fixture.call=call
+        edit=self.window.fields['6']['control'];edit.setPlainText('first save');edit.document().setModified(True)
+        self.window.mutate('6','first save');self.assertEqual(len(callbacks),1)
+        edit.setPlainText('NEW UNSAVED EDIT');edit.document().setModified(True)
+        callbacks[0](self.fixture.page)
+        self.assertEqual(edit.toPlainText(),'NEW UNSAVED EDIT');self.assertTrue(edit.document().isModified());self.assertFalse(self.window.busy)
+
+
+    def test_save_acknowledgement_cannot_replace_a_recreated_editor(self):
+        callbacks=[];self.fixture.call=lambda module,method,args,callback:callbacks.append(callback)
+        self.window.mutate('6','old submission');self.window.render_fields(self.fixture.page['fields'])
+        current=self.window.fields['6']['control'];current.setPlainText('new editor draft');current.document().setModified(True)
+        callbacks[0](self.fixture.page)
+        self.assertEqual(current.toPlainText(),'new editor draft');self.assertTrue(current.document().isModified())
+
 class DelayedFixture(Fixture):
     def call(self,module,method,args,callback):
         self.calls.append((module,method,args))

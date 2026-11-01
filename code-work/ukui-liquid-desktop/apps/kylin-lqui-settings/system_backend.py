@@ -53,11 +53,11 @@ class SystemBackend(DesktopControls):
             device=self.props(NM,path,NM+'.Device')
             if device.get('DeviceType')!=2:continue
             wireless=self.props(NM,path,NM+'.Device.Wireless');interfaces.append(path);active=wireless.get('ActiveAccessPoint','/')
-            saved={}
+            saved=[]
             for connection in device.get('AvailableConnections',[]):
                 try:
                     settings=self.call(NM,connection,NM+'.Settings.Connection','GetSettings')[0]
-                    if '802-11-wireless' in settings:saved[bytes(settings['802-11-wireless'].get('ssid',[]))]=connection
+                    if '802-11-wireless' in settings:saved.append((connection,settings))
                 except GLib.Error:pass
             for ap in wireless.get('AccessPoints',[]):
                 # Access points can expire between the device list and GetAll.
@@ -70,9 +70,22 @@ class SystemBackend(DesktopControls):
                 if not ssid:continue
                 flags=int(properties.get('RsnFlags',0))|int(properties.get('WpaFlags',0));secure=bool(properties.get('Flags',0)&1)
                 security='enterprise' if flags&0x200 else 'sae' if flags&0x400 and not flags&0x100 else 'psk' if flags&0x100 else 'unsupported' if secure else 'open'
-                networks.append({'id':ap,'device':path,'ssid':ssid.decode('utf-8','replace'),'strength':int(properties.get('Strength',0)),'connected':ap==active and device.get('State')==100,'connecting':ap==active and 40<=device.get('State',0)<100,'profile':saved.get(ssid,''),'security':security})
+                profile=''
+                for connection,settings in saved:
+                    wireless_settings=settings['802-11-wireless'];section=settings.get('802-11-wireless-security',{});key=section.get('key-mgmt','')
+                    if bytes(wireless_settings.get('ssid',[]))!=ssid:continue
+                    if wireless_settings.get('mode','infrastructure')!='infrastructure':continue
+                    wanted_interface=settings.get('connection',{}).get('interface-name')
+                    if wanted_interface and wanted_interface!=device.get('Interface'):continue
+                    bssid=wireless_settings.get('bssid')
+                    if bssid:
+                        configured=bssid.upper() if isinstance(bssid,str) else ':'.join('%02X'%n for n in bssid)
+                        if configured!=str(properties.get('HwAddress','')).upper():continue
+                    compatible=(security=='open' and not section) or (key=='wpa-psk' and bool(flags&0x100)) or (key=='sae' and bool(flags&0x400)) or (key in ('wpa-eap','wpa-eap-suite-b-192','ieee8021x') and security=='enterprise')
+                    if compatible:profile=connection;break
+                networks.append({'id':ap,'device':path,'rawSsid':ssid.hex(),'ssid':ssid.decode('utf-8','backslashreplace'),'strength':int(properties.get('Strength',0)),'connected':ap==active and device.get('State')==100,'connecting':ap==active and 40<=device.get('State',0)<100,'profile':profile,'security':security})
         unique={}
-        for item in sorted(networks,key=lambda x:(x['connected'],x['strength']),reverse=True):unique.setdefault((item['ssid'],item['security']),item)
+        for item in sorted(networks,key=lambda x:(x['connected'],x['strength']),reverse=True):unique.setdefault((item['device'],item['rawSsid'],item['security']),item)
         return {'available':bool(interfaces),'enabled':bool(manager.get('WirelessEnabled')),'hardwareEnabled':bool(manager.get('WirelessHardwareEnabled')),'devices':interfaces,'networks':list(unique.values())[:32],'state':int(manager.get('State',0))}
     def power(self):
         service='org.freedesktop.UPower';path='/org/freedesktop/UPower';root=self.props(service,path,service)

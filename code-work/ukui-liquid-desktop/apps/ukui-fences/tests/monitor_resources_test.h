@@ -20,16 +20,20 @@ struct SystemMonitorTestAccess {
         ProcessInfo ownFixture;ownFixture.pid=getpid();ownFixture.startTicks=own.startTicks;
         ownFixture.executablePath="/fixture/ukui-fences";ownFixture.uid=getuid();ownFixture.state="S";
         auto framework=SystemMonitor::readFrameworkSnapshot({ownFixture});
-        check(framework.size()==8&&framework.first().pids.contains(getpid()),"framework catalog identifies exact main executable and current user");
-        check(!framework.first().cpuValid&&framework.first().memoryValid&&framework.first().pss>0,"first CPU sample is unknown while proportional memory is measured");
-        check(framework[5].status=="按需启动"&&framework[5].pids.isEmpty(),"optional manager is on demand, not a failed service");
+        const auto byId=[](const auto &rows,const QString &id){for(const auto &row:rows)if(row.id==id)return row;return SystemMonitor::Sample::FrameworkInfo();};
+        int fencesIndex=-1;for(int i=0;i<framework.size();++i)if(framework[i].id=="fences")fencesIndex=i;
+        check(fencesIndex>=0,"framework retains the stable Fences component id");
+        for(const QString &id:QStringList{"settings","control-center","fences","launcher","panel","ai-station","input-ui","peony-manager","ai-space","native-desktop"})check(!byId(framework,id).name.isEmpty(),qPrintable("catalog component: "+id));
+        check(byId(framework,"fences").pids.contains(getpid()),"framework catalog identifies exact main executable and current user");
+        check(!byId(framework,"fences").cpuValid&&byId(framework,"fences").memoryValid&&byId(framework,"fences").pss>0,"first CPU sample is unknown while proportional memory is measured");
+        check(byId(framework,"peony-manager").status=="按需启动"&&byId(framework,"peony-manager").pids.isEmpty(),"optional manager is on demand, not a failed service");
         ownFixture.uid=getuid()+1;
-        check(SystemMonitor::readFrameworkSnapshot({ownFixture}).first().pids.isEmpty(),"other users' processes are excluded");
+        check(byId(SystemMonitor::readFrameworkSnapshot({ownFixture}),"fences").pids.isEmpty(),"other users' processes are excluded");
         ownFixture.uid=getuid();++ownFixture.startTicks;
-        check(SystemMonitor::readFrameworkSnapshot({ownFixture}).first().pids.isEmpty(),"PID reuse between common and memory samples is rejected");
+        check(byId(SystemMonitor::readFrameworkSnapshot({ownFixture}),"fences").pids.isEmpty(),"PID reuse between common and memory samples is rejected");
         --ownFixture.startTicks;ownFixture.state="T";ownFixture.cpuValid=true;ownFixture.cpuPercent=235.;
         framework=SystemMonitor::readFrameworkSnapshot({ownFixture});
-        check(framework.first().warning&&framework.first().status=="已暂停"&&framework.first().cpu==235.,"stopped process status and multi-core CPU are preserved");
+        check(byId(framework,"fences").warning&&byId(framework,"fences").status=="已暂停"&&byId(framework,"fences").cpu==235.,"stopped process status and multi-core CPU are preserved");
         for(bool compact:{false,true}) {
             monitor.m_compact=compact;monitor.resize(monitor.baseSize());
             for(int cores:{1,8,16,32,64}) {
@@ -45,13 +49,13 @@ struct SystemMonitorTestAccess {
         monitor.m_topProcs={{"多核应用","/fixture/application",230.,768.,99,123,true},{"第二应用","/fixture/second",15.,256.,100,124,true}};
         monitor.grab();
         monitor.m_framework=framework;monitor.grab();
-        check(monitor.m_frameworkRowRects.size()==8,"all framework components have a status row");
+        check(monitor.m_frameworkRowRects.size()==framework.size(),"all framework components have a status row");
         for(const auto &row:monitor.m_frameworkRowRects)check(monitor.m_overviewRect.contains(row)&&!row.intersects(monitor.m_copyRect),"framework rows fit without clipping or overlapping actions");
-        monitor.m_framework<<framework.first()<<framework.last();monitor.grab();
+        monitor.m_framework=framework.mid(0,8);monitor.m_framework<<framework.first()<<framework.last();monitor.grab();
         check(monitor.m_frameworkRowRects.size()==10,"ten framework components remain visible");
         for(const auto &row:monitor.m_frameworkRowRects)check(!row.intersects(monitor.m_copyRect)&&!row.intersects(monitor.m_detailsRect),"ten-row framework list reserves its action footer");
         monitor.m_framework=framework;monitor.grab();
-        check(monitor.tooltipAt(monitor.m_frameworkRowRects.first().center()).contains("换出"),"framework hover explains swapped and proportional memory");
+        check(monitor.tooltipAt(monitor.m_frameworkRowRects.value(fencesIndex).center()).contains("换出"),"framework hover explains swapped and proportional memory");
         check(monitor.m_processRowRects.size()==2,"wider resource table shows native process rows");
         for(const auto &row:monitor.m_processRowRects)check(!row.intersects(monitor.m_overviewRect),"process rows and local overview do not overlap");
         check(monitor.m_overviewRect.contains(monitor.m_copyRect)&&monitor.m_overviewRect.contains(monitor.m_detailsRect),"snapshot actions fit within the local overview");
@@ -81,6 +85,6 @@ struct SystemMonitorTestAccess {
         monitor.hide();check(!monitor.m_timer.isActive(),"hidden monitor stops sampling");monitor.show();check(monitor.m_timer.isActive(),"showing monitor resumes sampling");monitor.m_timer.stop();
         QDir().mkpath("artifacts/monitor-resources");monitor.grab().save("artifacts/monitor-resources/expanded.png");
         monitor.setCompact(true);monitor.grab().save("artifacts/monitor-resources/compact.png");
-        return 0;
+        return failures ? 1 : 0;
     }
 };

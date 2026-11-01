@@ -17,4 +17,16 @@ class RecoveryErrors(unittest.TestCase):
             trial.restore('test');self.assertFalse(trial.finished);trial.loop.quit.assert_not_called()
             schedule.call_args[0][1]();self.assertTrue(trial.finished);self.assertEqual(trial.session.restore_native.call_count,2)
 
+    def test_run_startup_failure_retries_in_the_actual_event_loop(self):
+        trial=self.trial();trial.loop=bridge.GLib.MainLoop();trial.state={'nativeBefore':[],'seconds':30}
+        trial.session.module.return_value=True;trial.session.fences.side_effect=RuntimeError('startup failed')
+        trial.session.restore_native.side_effect=[RuntimeError('not ready'),None]
+        timeout=bridge.GLib.timeout_add
+        with patch.object(bridge,'require_desktop_only'),patch.object(bridge,'native_desktops',return_value=[]),patch.object(bridge,'write_state'),patch.object(bridge.signal,'signal'),patch.object(bridge.GLib,'timeout_add_seconds',side_effect=lambda seconds,fn,*args:timeout(10,fn,*args)):
+            with self.assertRaisesRegex(RuntimeError,'startup failed'):trial.run()
+        self.assertEqual(trial.session.restore_native.call_count,2);self.assertTrue(trial.finished);self.assertEqual(trial.state['phase'],'restored')
+    def test_check_stops_after_recovery_has_been_scheduled(self):
+        trial=self.trial();trial.state['phase']='recovery-required'
+        self.assertFalse(trial.check());trial.session.owner.assert_not_called()
+
 if __name__=='__main__':unittest.main()

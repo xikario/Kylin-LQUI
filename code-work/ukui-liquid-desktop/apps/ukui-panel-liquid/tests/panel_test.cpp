@@ -1,4 +1,5 @@
 #include <QApplication>
+#include "../../../shared/liquid-glass/src/CohesiveGlass.h"
 #include <QWidget>
 #include <QPainter>
 #include <QPaintEvent>
@@ -399,8 +400,8 @@ int main(int argc,char **argv) {
         follow->setChecked(true);settle();
         check(panel.property("liquidMaterialReady").toBool() && panel.grab().toImage()!=before,
               "reenabling adaptation asynchronously loads latest wallpaper");
-        auto sliders=dialogs.first()->findChildren<QSlider *>();
-        check(sliders.size()==10,"layout, material, pointer light and tray sliders exist");
+        for(const QString &name:QStringList{"liquidPanelClarity","liquidPanelStrength","liquidPanelHighlight","liquidPanelShade","liquidPanelChroma","liquidPanelTransparency","liquidPanelPointerHighlight","liquidPanelRadius","liquidTrayMaxColumns"})
+            check(dialogs.first()->findChild<QSlider *>(name),qPrintable("named setting exists: "+name));
         dialogs.first()->findChild<QSlider *>("liquidPanelShade")->setValue(72);settle();saved.sync();
         check(qAbs(saved.value("appearance/opacity").toDouble()-.72)<.001,"slider changes persist after the bounded debounce");
         dialogs.first()->findChild<QSlider *>("liquidPanelChroma")->setValue(35);settle();saved.sync();
@@ -463,8 +464,8 @@ int main(int argc,char **argv) {
         currentDialog->findChild<QPushButton *>("liquidMaterialPreset_liquid")->click();settle();
         currentDialog->findChild<QSlider *>("liquidPanelHighlight")->setValue(70);
         currentDialog->findChild<QPushButton *>("liquidPanelResetMaterial")->click();settle();saved.sync();
-        check(qAbs(saved.value("appearance/highlight").toDouble()-.32)<.001 &&
-                  qAbs(saved.value("appearance/clarity").toDouble()-.65)<.001,"restore material returns to the restrained clear preset");
+        check(qAbs(saved.value("appearance/highlight").toDouble()-CohesiveGlass::Highlight)<.001 &&
+                  qAbs(saved.value("appearance/clarity").toDouble()-CohesiveGlass::Clarity)<.001,"restore material returns to the restrained clear preset");
         check(panel.geometry()==nativeGeometry && saved.value("tray/maxColumns").toInt()==8,
               "material presets leave layout, tray and original task widgets intact");
         check(QApplication::primaryScreen()->availableGeometry().contains(currentDialog->geometry()),"appearance settings stay within the available screen");
@@ -499,7 +500,7 @@ int main(int argc,char **argv) {
             QSaveFile file(folder+"/poster.png");check(file.open(QIODevice::WriteOnly),"poster file opened");
             check(image.save(&file,"PNG") && file.commit(),"video poster atomically committed");
         };
-        QSettings fences(dir.path()+"/kylin/ukui-fences.ini",QSettings::IniFormat);
+        QSettings fences(QSettings::NativeFormat,QSettings::UserScope,"kylin","ukui-fences");
         const auto firstVideo=makeVideo("/first.mp4");
         fences.setValue("wallpaper/videoPath",firstVideo);fences.sync();settle();
         const QImage staticPixels=panel.grab().toImage();

@@ -616,7 +616,7 @@ void PanelController::updateWallpaperWatchers() {
     if(!m_followWallpaper){m_wallpaperRefresh.stop();return;}
     const QString cfg=QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
     const auto paths=m_wallpaper.sourceWatchPaths()+QStringList{
-        cfg+"/kyfences/layout.json",cfg+"/kylin/ukui-fences.ini",cfg+"/dconf/user"};
+        cfg+"/kyfences/layout.json",QSettings(QSettings::NativeFormat,QSettings::UserScope,"kylin","ukui-fences").fileName(),cfg+"/dconf/user"};
     for(const QString &path:paths) {
         if(path.isEmpty())continue;
         if(QFile::exists(path))m_wallpaperWatcher.addPath(path);

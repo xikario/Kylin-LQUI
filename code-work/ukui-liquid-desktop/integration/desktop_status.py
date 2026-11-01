@@ -55,8 +55,8 @@ def snapshot(source_root=None):
         source_root=source_root or ROOT
         entry.update(source=str((source_root/source).resolve()) if source else None,sourceExists=(source_root/source).exists() if source else None,
             processes=[{k:p[k] for k in ('pid','name','pssKiB','rssKiB','swapPssKiB')} for p in matches],
-            pssKiB=sum(p['pssKiB'] for p in matches) if all(p['pssKiB'] is not None for p in matches) else None,
-            swapPssKiB=sum(p['swapPssKiB'] for p in matches) if all(p['swapPssKiB'] is not None for p in matches) else None,
+            pssKiB=sum(p['pssKiB'] for p in matches) if matches and all(p['pssKiB'] is not None for p in matches) else None,
+            swapPssKiB=sum(p['swapPssKiB'] for p in matches) if matches and all(p['swapPssKiB'] is not None for p in matches) else None,
             services={name:owner(name) for name in component.get('services',[])},
             configuration=[{'path':str(Path(path).expanduser()),'exists':Path(path).expanduser().exists()} for path in component.get('configuration',[])])
         output.append(entry)

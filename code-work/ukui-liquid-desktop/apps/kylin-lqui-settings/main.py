@@ -111,6 +111,10 @@ class SettingsWindow(QtWidgets.QMainWindow):
         else:self.collapsed.add(group)
         self.filter_search(self.search.text())
 
+    def closeEvent(self,event):
+        if self.current.startswith('ai:'):self.backend.call('ai','Discard',[self.current.split(':',1)[1]],lambda result:None)
+        super().closeEvent(event)
+
     def eventFilter(self,watched,event):
         if watched==self.navigation and event.type()==QtCore.QEvent.KeyPress and event.key() in (QtCore.Qt.Key_Return,QtCore.Qt.Key_Enter,QtCore.Qt.Key_Space):
             item=self.navigation.currentItem()
@@ -172,6 +176,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         self.raise_();self.activateWindow()
 
     def activate_page(self,key,title):
+        if self.current.startswith('ai:') and self.current!=key:self.backend.call('ai','Discard',[self.current.split(':',1)[1]],lambda result:None)
         # A page owns its request state. Late responses from the previous page
         # cannot retain the busy flag or overwrite the newly selected content.
         for entry in self.fields.values():
@@ -375,10 +380,18 @@ class SettingsWindow(QtWidgets.QMainWindow):
         visible=key==self.current
         if visible:self.revision+=1;self.request_serial+=1;self.busy=True
         revision=self.revision
+        submitted_control=entry['control'] if entry else None
+        submitted_text=submitted_control.toPlainText() if isinstance(submitted_control,QtWidgets.QPlainTextEdit) else submitted_control.text() if isinstance(submitted_control,QtWidgets.QLineEdit) else None
         def done(result):
-            if result.get('ok') and draft_key:self.drafts.pop(draft_key,None)
             if not visible or generation!=self.generation or revision!=self.revision:return
             self.busy=False
+            current_entry=self.fields.get(fid)
+            current_control=current_entry['control'] if current_entry else None
+            if submitted_text is not None:
+                if current_control is not submitted_control:return
+                current_text=current_control.toPlainText() if isinstance(current_control,QtWidgets.QPlainTextEdit) else current_control.text()
+                if current_text!=submitted_text:return
+            if result.get('ok') and draft_key and self.drafts.get(draft_key,submitted_text)==submitted_text:self.drafts.pop(draft_key,None)
             if not result.get('ok'):self.message.setText(result.get('error','保存失败'));return
             entry=self.fields.get(fid)
             if entry:

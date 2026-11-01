@@ -1,3 +1,5 @@
+#include "SkillExport.h"
+#include "BackgroundTask.h"
 #include "SmartSpaceWidget.h"
 #include "SettingsBridge.h"
 #include "SpacePresentation.h"
@@ -94,42 +96,6 @@
 #include <QSaveFile>
 #include <algorithm>
 using namespace AiSpaceUi;
-namespace
-{
-bool copyDirectoryTree(const QString &sourcePath, const QString &targetPath, QString *error)
-{
-    const QDir source(sourcePath);
-    if (!source.exists()) {
-        if (error)
-            *error = QStringLiteral("源目录不存在");
-        return false;
-    }
-    if (!QDir().mkpath(targetPath)) {
-        if (error)
-            *error = QStringLiteral("无法创建目标目录");
-        return false;
-    }
-    const QFileInfoList entries =
-        source.entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries | QDir::Hidden | QDir::System,
-                             QDir::DirsFirst | QDir::Name);
-    for (const QFileInfo &entry : entries) {
-        const QString target = QDir(targetPath).filePath(entry.fileName());
-        if (entry.isDir()) {
-            if (!copyDirectoryTree(entry.absoluteFilePath(), target, error))
-                return false;
-            continue;
-        }
-        QFile::remove(target);
-        if (!QFile::copy(entry.absoluteFilePath(), target)) {
-            if (error)
-                *error = QStringLiteral("无法复制文件：%1").arg(entry.fileName());
-            return false;
-        }
-    }
-    return true;
-}
-
-} // namespace
 void SmartSpaceWidget::showSettingsDialog()
 {
     if(LquiSettings::open("space:general"))return;
@@ -435,15 +401,10 @@ QWidget *SmartSpaceWidget::createSettingsPage(QWidget *parent)
     indexNow->setChecked(false);
     updateLayout->addWidget(indexNow);
     QString snapshotText = QStringLiteral("当前没有索引快照。");
-    QFile snapshot(indexPath());
-    if (snapshot.open(QIODevice::ReadOnly)) {
-        const QJsonObject object = QJsonDocument::fromJson(snapshot.readAll()).object();
-        snapshotText = QStringLiteral("已保存快照：%1 项 · %2")
-                           .arg(object.value(QStringLiteral("items")).toArray().size())
-                           .arg(object.value(QStringLiteral("generatedAt"))
-                                    .toString()
-                                    .left(19)
-                                    .replace(QLatin1Char('T'), QLatin1Char(' ')));
+    // The background loader owns the inventory. Settings never reparses it.
+    if (QFileInfo::exists(indexPath())) {
+        snapshotText = QStringLiteral("当前已加载：%1 项 · 快照修改于 %2")
+            .arg(m_entries.size()).arg(QFileInfo(indexPath()).lastModified().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
     }
     auto *snapshotLabel = new QLabel(snapshotText, updateTab);
     snapshotLabel->setWordWrap(true);
@@ -673,7 +634,7 @@ QWidget *SmartSpaceWidget::createSettingsPage(QWidget *parent)
         QApplication::clipboard()->setText(path);
         skillStatus->setText(QStringLiteral("Skill 路径已复制到剪贴板。"));
     });
-    connect(exportSkill, &QPushButton::clicked, &dialog, [this, &dialog, skillPath, skillStatus] {
+    connect(exportSkill, &QPushButton::clicked, &dialog, [this, &dialog, skillPath, skillStatus, exportSkill] {
         const QString source = skillPath->text().trimmed();
         if (source.isEmpty() || !QDir(source).exists()) {
             skillStatus->setText(QStringLiteral("Skill 目录不存在，无法导出。"));
@@ -684,7 +645,8 @@ QWidget *SmartSpaceWidget::createSettingsPage(QWidget *parent)
         if (destination.isEmpty())
             return;
         const QString target = QDir(destination).filePath(QStringLiteral("ai-space-index-query"));
-        if (QDir::cleanPath(source) == QDir::cleanPath(target)) {
+        const QString resolvedTarget=QFileInfo(target).exists()?QFileInfo(target).canonicalFilePath():QDir(destination).canonicalPath()+"/ai-space-index-query";
+        if (pathIsInside(resolvedTarget,QFileInfo(source).canonicalFilePath())) {
             skillStatus->setText(QStringLiteral("目标目录就是当前 Skill，无需导出。"));
             return;
         }
@@ -696,23 +658,14 @@ QWidget *SmartSpaceWidget::createSettingsPage(QWidget *parent)
             if (answer != QMessageBox::Yes)
                 return;
         }
-        QString error;
-        if (!copyDirectoryTree(source, target, &error)) {
-            skillStatus->setText(QStringLiteral("Skill 导出失败：%1").arg(error));
-            return;
-        }
-        const QString runtime =
-            QDir(target).filePath(QStringLiteral("scripts/knowledge_library.py"));
-        if (QFileInfo::exists(runtime))
-            QFile::remove(runtime);
-        if (!QFile::copy(QFileInfo(knowledgeWorkerPath())
-                             .dir()
-                             .filePath(QStringLiteral("knowledge_library.py")),
-                         runtime)) {
-            skillStatus->setText(QStringLiteral("无法导出独立检索运行时，请检查目标目录权限"));
-            return;
-        }
-        skillStatus->setText(QStringLiteral("Skill 已导出到：%1").arg(target));
+        exportSkill->setEnabled(false);skillStatus->setText(QStringLiteral("正在导出…"));
+        const QString runtime=QFileInfo(knowledgeWorkerPath()).dir().filePath(QStringLiteral("knowledge_library.py"));
+        auto cancelled=std::make_shared<std::atomic_bool>(false);
+        connect(&dialog,&QObject::destroyed,[cancelled]{cancelled->store(true);});
+        BackgroundTask::run(&dialog,[source,target,runtime,cancelled]{return SkillExport::publish(source,target,runtime,cancelled);},
+            [exportSkill,skillStatus,target](const QString &error){
+                exportSkill->setEnabled(true);skillStatus->setText(error.isEmpty()?QStringLiteral("Skill 已导出到：%1").arg(target):QStringLiteral("Skill 导出失败：%1").arg(error));
+            });
     });
     tabs->addTab(skillTab, QStringLiteral("Skill"));
 
@@ -913,14 +866,8 @@ QWidget *SmartSpaceWidget::createSettingsPage(QWidget *parent)
         QStringList excludedFolders;
         for (int row = 0; row < excludeList->count(); ++row) {
             const QString path = normalizedPath(excludeList->item(row)->text());
-            bool valid = false;
-            for (const QString &root : roots) {
-                if (path != normalizedPath(root) && pathIsInside(path, root)) {
-                    valid = true;
-                    break;
-                }
-            }
-            if (valid && !excludedFolders.contains(path))
+            // Detached/missing roots must not silently discard a user's rule.
+            if (!excludedFolders.contains(path))
                 excludedFolders << path;
         }
         std::sort(

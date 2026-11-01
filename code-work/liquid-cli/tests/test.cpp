@@ -372,12 +372,73 @@ private slots:
         QVERIFY(requests(marker,"turn/start").isEmpty());
         QTest::qWait(200);QVERIFY(!d.client()->busy());
     }
-    void unrecoverableThreadStartsFresh(){
+    void failedResumePreservesThread(){
         const QString dir=folder();QDir().mkpath(dir);QFile f(dir+"/conversation.json");QVERIFY(f.open(QIODevice::WriteOnly));
         f.write(QJsonDocument(QJsonObject{{"threadId","gone"},{"messages",QJsonArray{QJsonObject{{"role","user"},{"text","旧消息"}}}}}).toJson());f.close();
         QString marker;Drawer d(config(&marker),dir);QCOMPARE(d.chat()->rowCount(),1);d.submit("新消息",{});
-        QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);QVERIFY(allText(d).contains("之前的模型上下文无法恢复"));
-        QVERIFY(d.conversation().threadId.startsWith("fixture-thread-"));QVERIFY(allText(d).contains("user:旧消息"));
+        QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        QCOMPARE(d.conversation().threadId,QString("gone"));QVERIFY(allText(d).contains("user:旧消息"));
+        QVERIFY(requests(marker,"thread/start").isEmpty());QVERIFY(requests(marker,"turn/start").isEmpty());
+    }
+    void busyPermissionChangeIsRejectedBeforeSaving(){
+        QString marker;auto s=config(&marker);s.permissions="full";Drawer d(s,folder());d.submit("SLOW",{});
+        QTRY_VERIFY_WITH_TIMEOUT(!requests(marker,"turn/start").isEmpty(),10000);
+        auto next=s;next.permissions="ask";d.applySettings(next);QCOMPARE(d.configuration().permissions,QString("full"));
+        d.Preferences();auto *dialog=d.findChild<QDialog*>("cliPreferences");
+        if(!dialog)for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="cliPreferences")dialog=qobject_cast<QDialog*>(w);
+        QVERIFY(dialog);auto *permissions=dialog->findChild<QComboBox*>("settingPermissions");QVERIFY(permissions);
+        permissions->setCurrentIndex(permissions->findData("ask"));
+        dialog->findChild<QDialogButtonBox*>()->button(QDialogButtonBox::Apply)->click();
+        QCOMPARE(d.configuration().permissions,QString("full"));QVERIFY(!QFileInfo::exists(s.file));
+        d.client()->interrupt();QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        d.applySettings(next);d.submit("second",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        const auto resumes=requests(marker,"thread/resume");QVERIFY(!resumes.isEmpty());
+        QCOMPARE(resumes.last()["params"].toObject()["approvalPolicy"].toString(),QString("on-request"));
+    }
+    void oldApprovalCannotAuthorizeReusedRequestId(){
+        QString marker;CodexClient client;client.configure(config(&marker));
+        QSignalSpy pending(&client,&AgentClient::approvalRequested),closed(&client,&AgentClient::approvalClosed);
+        client.send("APPROVE",{});QTRY_COMPARE_WITH_TIMEOUT(pending.size(),1,10000);
+        const auto old=pending[0][0].toJsonValue();client.stop();QCOMPARE(closed.size(),1);
+        client.send("APPROVE",{});QTRY_COMPARE_WITH_TIMEOUT(pending.size(),2,10000);
+        QVERIFY(old!=pending[1][0].toJsonValue());client.answerApproval(old,"accept");QTest::qWait(100);
+        int answers=0;for(const auto &r:requests(marker))if(r.value("id")=="approval-1"&&r.contains("result"))++answers;
+        QCOMPARE(answers,0);client.answerApproval(pending[1][0].toJsonValue(),"decline");
+        QTRY_VERIFY_WITH_TIMEOUT(!client.busy(),10000);
+    }
+    void bridgeDiscardRebuildsSavedPreferences(){
+        auto settings=config();Drawer drawer(settings,folder());
+        LquiSettings::Bridge bridge("ai",[&](const QString &){return drawer.settingsBridgeRoot();},[]{return QJsonArray{QJsonObject{{"id","general"}}};});
+        const auto first=QJsonDocument::fromJson(bridge.Page("general").toUtf8()).object();QString id;
+        for(const auto &field:first["fields"].toArray())if(field.toObject()["name"]=="settingDirectory")id=field.toObject()["id"].toString();
+        QVERIFY(!id.isEmpty());bridge.Set("general",id,QString::fromUtf8(QJsonDocument(QJsonObject{{"value","unsaved-path"}}).toJson()));
+        bridge.Discard("general");const auto second=QJsonDocument::fromJson(bridge.Page("general").toUtf8()).object();
+        bool found=false;for(const auto &field:second["fields"].toArray())if(field.toObject()["name"]=="settingDirectory"){QCOMPARE(field.toObject()["value"].toString(),settings.directory);found=true;}
+        QVERIFY(found);
+    }
+    void dropBudgetUsesSerializedUtf8Bytes(){
+        QMimeData mime;mime.setText(QString(1500000,QChar(0x4e2d)));QString error;
+        QVERIFY(StationDrop::prepare(&mime,&error).isEmpty());QVERIFY(!error.isEmpty());
+        mime.setText(QString(1000000,QChar(0x4e2d)));const auto path=StationDrop::prepare(&mime,&error);QVERIFY(!path.isEmpty());
+        QCOMPARE(StationDrop::read(path)["text"].toString(),mime.text());StationDrop::discard(path);
+    }
+    void corruptConversationIsNeverOverwritten(){
+        auto s=config();const QString dir=folder();QDir().mkpath(dir);const QString path=dir+"/conversation.json";
+        const QByteArray original="{recoverable but incomplete";QFile f(path);QVERIFY(f.open(QIODevice::WriteOnly));f.write(original);f.close();
+        {Drawer d(s,dir);d.submit("new text",{});QVERIFY(!d.client()->busy());}
+        QCOMPARE(read(path),original);
+        Conversation c(dir);QVERIFY(!c.load());QVERIFY(!c.save());QCOMPARE(read(path),original);
+        QVERIFY(c.clear());QVERIFY(c.save());QVERIFY(!QDir(dir).entryList({"*.recovery-*"}).isEmpty());
+    }
+    void closingCaptureCancelsExactlyOnce(){
+        int callbacks=0;auto windows=RegionCapture::begin([&](QImage image){++callbacks;QVERIFY(image.isNull());});
+        QVERIFY(!windows.isEmpty());windows.first()->close();QTRY_COMPARE(callbacks,1);QTest::qWait(30);QCOMPARE(callbacks,1);
+    }
+    void acpApprovalPreservesLongParameters(){
+        QString marker;auto s=config(&marker);s.selectBackend("qwen");s.command=quote(qEnvironmentVariable("LIQUID_ACP_FIXTURE"))+" "+quote(marker);
+        AcpClient c;c.configure(s);QSignalSpy pending(&c,&AgentClient::approvalRequested);c.send("APPROVE",{});
+        QTRY_COMPARE_WITH_TIMEOUT(pending.size(),1,10000);QVERIFY(pending[0][2].toString().contains("REVIEW_SUFFIX"));
+        QVERIFY(pending[0][2].toString().size()>800);c.stop();
     }
     void clearStopsProcessesAndRemovesHistory(){
         QString marker;Drawer d(config(&marker),folder());d.Show();

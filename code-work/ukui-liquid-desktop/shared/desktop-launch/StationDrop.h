@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 namespace StationDrop {
+constexpr int kManifestBytes=4*1024*1024;
 inline QString root(){return QStandardPaths::writableLocation(QStandardPaths::GenericCacheLocation)+"/ai-station/drops";}
 inline bool owns(const QString &path) {
     const QFileInfo file(path);return file.exists()&&file.isFile()&&!file.isSymLink()&&file.ownerId()==getuid()&&file.absolutePath()==QFileInfo(root()).absoluteFilePath();
@@ -40,15 +41,17 @@ inline QString prepare(const QMimeData *mime,QString *error=nullptr) {
     } else if(!links.isEmpty())payload["text"]=links.join('\n');
     else if(files.isEmpty()&&mime->hasText())payload["text"]=mime->text();
     if(files.isEmpty()&&!payload.contains("image")&&payload.value("text").toString().isEmpty())return {};
+    const QByteArray encoded=QJsonDocument(payload).toJson(QJsonDocument::Compact);
+    if(encoded.size()>kManifestBytes){if(payload.contains("image"))QFile::remove(payload["image"].toString());if(error)*error="拖入内容超过 4 MiB，请缩小内容后重试。";return {};}
     QSaveFile file(stem+".json");
     if(!file.open(QIODevice::WriteOnly)){if(error)*error="无法暂存拖入内容";return {};}
     file.setPermissions(QFile::ReadOwner|QFile::WriteOwner);
-    if(file.write(QJsonDocument(payload).toJson(QJsonDocument::Compact))<0||!file.commit()){if(error)*error="无法保存拖入内容";return {};}
+    if(file.write(encoded)!=encoded.size()||!file.commit()){if(error)*error="无法保存拖入内容";return {};}
     return file.fileName();
 }
 inline QJsonObject read(const QString &path) {
-    if(!owns(path)||!path.endsWith(".json")||QFileInfo(path).size()>4*1024*1024)return {};
-    QFile file(path);if(!file.open(QIODevice::ReadOnly))return {};return QJsonDocument::fromJson(file.readAll()).object();
+    if(!owns(path)||!path.endsWith(".json")||QFileInfo(path).size()>kManifestBytes)return {};
+    QFile file(path);if(!file.open(QIODevice::ReadOnly))return {};const auto bytes=file.read(kManifestBytes+1);if(bytes.size()>kManifestBytes)return {};return QJsonDocument::fromJson(bytes).object();
 }
 inline void discard(const QString &path) {
     const auto payload=read(path);const QString image=payload.value("image").toString();if(owns(image))QFile::remove(image);if(owns(path))QFile::remove(path);

@@ -97,7 +97,7 @@ def scan_plugins() -> list:
         cli_enabled = cli_settings.read()["enabled"]
         for plugin in result:
             if plugin.id == "peony-cli-panel":
-                plugin.enabled = plugin.installed and cli_enabled
+                plugin.enabled = False if not plugin.installed or not cli_enabled else plugin.enabled
                 plugin.pending_enabled = plugin.enabled
     except (ValueError, OSError):
         pass

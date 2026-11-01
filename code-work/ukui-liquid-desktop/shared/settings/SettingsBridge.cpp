@@ -62,7 +62,8 @@ Bridge::~Bridge(){if(registered)QDBusConnection::sessionBus().unregisterObject("
 QString Bridge::Catalog(){return json({{"ok",true},{"module",module},{"pages",catalog()}});}
 QString Bridge::controlId(QWidget *widget){
     QString id=widget->property("lquiControlId").toString();
-    if(id.isEmpty()){id=QString::number(nextId++);widget->setProperty("lquiControlId",id);controls[id]=widget;}
+    if(id.isEmpty()){id=QString::number(nextId++);widget->setProperty("lquiControlId",id);controls[id]=widget;
+        connect(widget,&QObject::destroyed,this,[this,id]{controls.remove(id);});}
     return id;
 }
 QString Bridge::label(QWidget *widget,QWidget *root) const {
@@ -124,6 +125,13 @@ QJsonObject Bridge::snapshot(const QString &page) {
     return {{"ok",true},{"module",module},{"page",page},{"fields",fields},{"dirty",dirty},{"modalActive",bool(QApplication::activeModalWidget())}};
 }
 QString Bridge::Page(const QString &page){return json(snapshot(page));}
+QString Bridge::Discard(const QString &page){
+    auto root=roots.value(page);
+    if(root&&root->property("lquiDiscardOnLeave").toBool()&&!root->isVisible()&&!QApplication::activeModalWidget()) {
+        roots.remove(page);delete root.data();
+    }
+    return json({{"ok",true}});
+}
 QString Bridge::Set(const QString &page,const QString &id,const QString &encoded) {
     auto root=roots.value(page);auto widget=controls.value(id);
     if(!root||!widget||!(root==widget||root->isAncestorOf(widget)))return error("设置项已经刷新，请重试");

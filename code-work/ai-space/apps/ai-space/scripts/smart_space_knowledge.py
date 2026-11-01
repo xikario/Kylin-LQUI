@@ -508,6 +508,7 @@ def iter_stream(path):
             values = [read_text(stream) for _ in range(8)]
             yield total, {
                 "is_dir": bool(flags & 1),
+                "snapshot_only": bool(flags & 2),
                 "size": size,
                 "modified_ms": modified_ms,
                 "path": values[0],
@@ -535,6 +536,7 @@ def iter_json(path):
             continue
         yield 0, {
             "is_dir": bool(item.get("isDir")),
+            "snapshot_only": str(item.get("source", "")).startswith("provider:"),
             "size": int(item.get("size", 0)),
             "modified_ms": int(item.get("modifiedMs", 0)),
             "path": item.get("path", ""),
@@ -763,7 +765,7 @@ def inventory_metadata(stream_path, json_path):
 
 
 def build(args):
-    inventory_metadata(args.index_stream, args.index_json)
+    inventory = inventory_metadata(args.index_stream, args.index_json)
     from knowledge_library import storage_plan, guard_storage
 
     os.environ.setdefault("AI_SPACE_STORAGE_DIRECTORY", str(Path(args.db).resolve().parent))
@@ -781,10 +783,12 @@ def build(args):
     if args.force:
         os.environ["AI_SPACE_OCR_BYPASS_CACHE"] = "1"
     with build_lock(args.db):
-        build_locked(args)
+        build_locked(args, inventory)
 
 
-def build_locked(args):
+def build_locked(args, inventory=None):
+    if inventory is None:inventory=inventory_metadata(args.index_stream,args.index_json)
+    from local_path_policy import excluded, local_read_allowed
     db = open_db(args.db)
     retry_ids = set(getattr(args, "retry_document_id", []))
     if retry_ids:
@@ -851,6 +855,13 @@ def build_locked(args):
             generated_at = item.get("generated_at") or generated_at
             if item["is_dir"] or not item["path"]:
                 continue
+            if os.path.isabs(item["path"]) and excluded(item["path"], inventory.get("excludedRoots", [])):
+                continue
+            # Recheck immediately before extraction as well as at merge time.
+            # Old inventories may lack source flags, so roots also bound reads.
+            provider_snapshot = item.get("snapshot_only", False) or (
+                "roots" in inventory and not local_read_allowed(item["path"], inventory["roots"], inventory.get("excludedRoots", []))
+            )
             path = os.path.abspath(item["path"])
             old = db.execute(
                 "SELECT id,content_hash FROM documents WHERE path=?", (path,)
@@ -881,6 +892,8 @@ def build_locked(args):
                 )
             source = None
             try:
+                if provider_snapshot:
+                    raise OSError("provider snapshot")
                 source_stat = Path(path).stat()
                 source = (
                     source_stat.st_dev,
@@ -1014,11 +1027,11 @@ def build_locked(args):
                 try:
                     delete_fts_document(db, doc_id)
                     db.execute("DELETE FROM chunks WHERE document_id=?", (doc_id,))
-                    use_snapshot = args.snapshot_only or not Path(path).is_file()
+                    use_snapshot = args.snapshot_only or provider_snapshot or not Path(path).is_file()
                     if "." + suffix in IMAGE_SUFFIXES and not args.ocr and item.get("content"):
                         use_snapshot = True
                     if use_snapshot:
-                        if old and not Path(path).is_file() and not args.snapshot_only:
+                        if old and not Path(path).is_file() and not args.snapshot_only and not provider_snapshot:
                             # Offline/removable sources must not erase good text.
                             raise FileNotFoundError(
                                 "source missing; previous indexed text retained"
@@ -1063,7 +1076,7 @@ def build_locked(args):
                         count += 1
                         indexed_chars += len(piece)
                         digest.update(piece.encode("utf-8"))
-                    if signature != source_signature(item, args):
+                    if signature != source_signature(item, args, source=source if provider_snapshot else None):
                         raise RuntimeError("source changed during extraction; retry required")
                     if retry_ids and previous_chunks and not count:
                         raise RuntimeError(
@@ -1215,6 +1228,10 @@ def build_locked(args):
         removed_ids = (
             stale_ids if getattr(args, "prune_unseen", False) and not args.ocr_only else []
         )
+        # Explicit exclusions revoke indexed local copies; mere absence/offline
+        # media still follows the conservative retention policy above.
+        removed_ids=list(set(removed_ids)|{ident for ident,path in db.execute("SELECT id,path FROM documents")
+                                          if os.path.isabs(path) and excluded(path,inventory.get("excludedRoots",[]))})
         for doc_id in removed_ids:
             delete_fts_document(db, doc_id)
             db.execute("DELETE FROM document_names_fts WHERE rowid=?", (doc_id,))

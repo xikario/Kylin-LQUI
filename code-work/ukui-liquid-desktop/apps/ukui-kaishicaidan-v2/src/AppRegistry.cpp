@@ -2,6 +2,7 @@
 #include "../../../shared/desktop-launch/DesktopEntryFile.h"
 
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QSaveFile>
 #include <QSettings>
@@ -304,16 +305,15 @@ QList<AppEntry> AppRegistry::installedApps()
         QDir dir(dirPath);
         if (!dir.exists()) continue;
 
-        const QFileInfoList files = dir.entryInfoList(QStringList() << "*.desktop",
-                                                       QDir::Files | QDir::Readable);
-        for (const QFileInfo &fi : files) {
+        QDirIterator files(dirPath,QStringList()<<"*.desktop",QDir::Files,QDirIterator::Subdirectories);
+        while(files.hasNext()) {
+            const QFileInfo fi(files.next());
+            QString desktopId=dir.relativeFilePath(fi.absoluteFilePath());desktopId.replace('/','-');
+            if(seenDesktopIds.contains(desktopId))continue;
+            seenDesktopIds.append(desktopId);
             AppEntry entry = parseDesktopFile(fi.absoluteFilePath());
             if (entry.name.isEmpty()) continue;
             if (entry.exec.isEmpty()) continue;
-
-            const QString desktopId = fi.fileName().toLower();
-            if (seenDesktopIds.contains(desktopId)) continue;
-            seenDesktopIds.append(desktopId);
 
             apps.append(entry);
         }

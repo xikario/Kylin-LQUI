@@ -68,6 +68,6 @@ struct ActivityMetricsTestAccess {
         check(enabled&&interval&&retention&&settingsWindow->findChild<QPushButton *>("activityHistoryDetails"),"Fences exposes all activity recording and history controls");
         enabled->setChecked(false);interval->setValue(15);retention->setCurrentIndex(retention->findData(3));settings.sync();check(!recorder->metricsEnabled()&&recorder->metricsIntervalSeconds()==15&&recorder->logRetentionDays()==3,"Fences resource settings update the live sampler and persistence together");
         settingsWindow->grab().save("artifacts/activity-metrics/settings.png");settingsWindow->close();settle(80);recorder->flush();
-        return 0;
+        return failures ? 1 : 0;
     }
 };

@@ -70,7 +70,7 @@ add_executable(ukui-fences
     src/FencesWindowIdentity.cpp
     src/FenceGlassRenderer.cpp
     src/fence-glass.qrc
-    src/LiquidIconRenderer.cpp
+    ../../shared/icon-style/LiquidIconRenderer.cpp
     src/DesktopCanvasIconAppearance.cpp
     src/DesktopIcon.cpp
     src/FileClipboard.cpp

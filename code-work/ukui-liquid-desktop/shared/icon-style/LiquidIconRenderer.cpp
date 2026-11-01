@@ -1,5 +1,5 @@
 #include "LiquidIconRenderer.h"
-#include "../../../shared/icon-style/OpticalIcon.h"
+#include "OpticalIcon.h"
 #include <QPixmapCache>
 #include <QPainterPath>
 #include <QtMath>

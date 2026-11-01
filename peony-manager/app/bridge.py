@@ -85,16 +85,7 @@ class PeonyBridge(QObject):
 
     @pyqtSlot(result=str)
     def chooseAndInstallCopyPathPlugin(self) -> str:
-        file_path, _ = QFileDialog.getOpenFileName(
-            None,
-            "选择 libpeony-copy-path.so",
-            "",
-            "Peony 插件 (libpeony-copy-path.so);;共享库 (*.so);;所有文件 (*)",
-        )
-        if not file_path:
-            return json.dumps({"success": False, "code": "cancelled", "error": "已取消选择"}, ensure_ascii=False)
-        result = operations.install_copy_path_plugin(file_path)
-        return json.dumps(result, ensure_ascii=False)
+        return json.dumps({"success":False,"error":"扩展必须先由管理员安装为系统插件包，再使用启用扩展。"},ensure_ascii=False)
 
     @pyqtSlot(result=str)
     def removeCopyPathPlugin(self) -> str:

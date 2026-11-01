@@ -8,6 +8,10 @@
 #include <QMessageBox>
 #include <QMimeData>
 
+struct UndoIdentityTestAccess {
+    static void create(DesktopCanvas &canvas,const QString &path){canvas.recordCreateUndo(path);}
+    static void rename(DesktopCanvas &canvas,const QString &before,const QString &after){canvas.recordRenameUndo(before,after,nullptr);}
+};
 static int runFolderDropUndoTest(const QString &root)
 {
     QSettings settings;
@@ -147,5 +151,23 @@ static int runFolderDropUndoTest(const QString &root)
     check(read(second) == "second payload" && !QFileInfo::exists(dest + "/second.txt"),
           "same-directory no-op does not add an undo record");
     check(messages.size() == 2, "only expected partial-drop and undo-conflict warnings shown");
+    for(const QString &kind:QStringList{"create","rename","copy","move"}) {
+        const QString before=desktop+"/identity-"+kind+".txt";
+        const QString after=(kind=="create"?desktop:dest)+"/identity-"+kind+".txt";
+        check(write(before,"original"),"identity fixture created");
+        if(kind=="create")UndoIdentityTestAccess::create(canvas,after);
+        else if(kind=="rename"){QFile::rename(before,after);UndoIdentityTestAccess::rename(canvas,before,after);}
+        else drop({before},kind=="move",false);
+        const QString preserved=after+".original";
+        check(QFile::rename(after,preserved)&&write(after,"replacement"),"external replacement keeps the original inode elsewhere");
+        undo(&canvas);
+        check(read(after)=="replacement"&&read(preserved)=="original","undo refuses the replacement object");
+        QFile::remove(after);QFile::rename(preserved,after);undo(&canvas);
+        check(kind=="rename"||kind=="move"?read(before)=="original":!QFileInfo::exists(after),"failed identity check retains a usable undo receipt");
+    }
+    const QString referent=desktop+"/referent.txt",link=desktop+"/dangling-link";
+    write(referent,"referent");check(QFile::link(referent,link),"link fixture created");drop({link},false,false);
+    QFile::remove(referent);check(QFileInfo(dest+"/dangling-link").isSymLink(),"copied link becomes dangling");
+    undo(&canvas);check(!QFileInfo(dest+"/dangling-link").isSymLink(),"undo removes the dangling link itself");
     return failures ? 1 : 0;
 }

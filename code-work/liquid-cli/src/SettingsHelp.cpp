@@ -37,7 +37,7 @@ bool SettingsHelp::eventFilter(QObject *object,QEvent *event) {
     auto *widget=qobject_cast<QWidget*>(object);if(!widget||!dialog)return false;
     const bool inside=widget==dialog||dialog->isAncestorOf(widget);
     if(inside&&event->type()==QEvent::ToolTip){event->accept();return true;}
-    if(event->type()==QEvent::Enter||event->type()==QEvent::MouseMove)track(QApplication::widgetAt(QCursor::pos()));
+    if(inside&&dialog->isVisible()&&(event->type()==QEvent::Enter||event->type()==QEvent::MouseMove))track(QApplication::widgetAt(QCursor::pos()));
     else if(inside&&event->type()==QEvent::Leave)QTimer::singleShot(0,this,[this]{track(QApplication::widgetAt(QCursor::pos()));});
     else if(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::KeyPress||
             (widget==dialog&&(event->type()==QEvent::Hide||event->type()==QEvent::Close||event->type()==QEvent::WindowDeactivate)))cancel();

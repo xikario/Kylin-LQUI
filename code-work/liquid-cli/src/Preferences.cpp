@@ -43,13 +43,14 @@ void Drawer::PreferencesAt(int x,int y,int width,int height) {
 }
 void Drawer::Preferences() {
     if(LquiSettings::open("ai:general"))return;
-    hideTimer.stop();if(preferences){if(LquiSettings::buildingForm())return;preferences->setGeometry(preferencesGeometry(preferences->size()));preferences->show();preferences->raise();preferences->activateWindow();return;}
+    if(!LquiSettings::buildingForm())hideTimer.stop();if(preferences){if(LquiSettings::buildingForm())return;preferences->setGeometry(preferencesGeometry(preferences->size()));preferences->show();preferences->raise();preferences->activateWindow();return;}
     QScreen *screen=panelAnchor.isValid()?QGuiApplication::screenAt(panelAnchor.center()):nullptr;
     if(!screen)screen=windowHandle()&&windowHandle()->screen()?windowHandle()->screen():QGuiApplication::primaryScreen();
     LiquidDialog::Options options;options.colors=false;options.placement=[this](QSize size){return preferencesGeometry(size);};options.backdrop=[](const QRect &area,qreal dpr){auto *screen=QGuiApplication::screenAt(area.center());if(!screen)screen=QGuiApplication::primaryScreen();return drawerWallpaper(area,screen->geometry(),dpr);};
     auto *dialog=new LiquidDialog::Dialog(nullptr,Qt::Window|Qt::WindowStaysOnTopHint,options);preferences=dialog;
     dialog->setFont(font());
     dialog->setObjectName("cliPreferences");
+    dialog->setProperty("lquiDiscardOnLeave",true);
     dialog->setAttribute(Qt::WA_DeleteOnClose);dialog->setWindowTitle("AI小站设置");dialog->setWindowIcon(QIcon(":/icons/app.svg"));
     const auto available=screen->availableGeometry();dialog->resize(qMin(540,available.width()-30),qMin(720,available.height()-40));
     const auto colors=UiColors::forSurface(lightSurface);dialog->setPalette(colors.palette(dialog->palette()));
@@ -209,7 +210,11 @@ void Drawer::Preferences() {
     resetBackend();
     auto *clear=new QPushButton("清空聊天记录并开始新对话…",dialog);clear->setObjectName("clearConversation");layout->addWidget(clear,0,Qt::AlignLeft);
     connect(clear,&QPushButton::clicked,dialog,[this,dialog,note]{
-        if(LiquidDialog::question(dialog,"清空对话","清空 "+settings.cliName+" 的聊天记录和附图，并开始新对话？\n此操作无法撤销。")!=QMessageBox::Yes)return;
+        const bool hidden=!dialog->isVisible();
+        if(hidden){dialog->show();dialog->raise();dialog->activateWindow();}
+        const auto answer=LiquidDialog::question(dialog,"清空对话","清空 "+settings.cliName+" 的聊天记录和附图，并开始新对话？\n此操作无法撤销。");
+        if(hidden)dialog->hide();
+        if(answer!=QMessageBox::Yes)return;
         clearConversation();note->setText("已清空。下一条消息会开始新的对话。");
     });
     auto *buttons=new QDialogButtonBox(QDialogButtonBox::Apply|QDialogButtonBox::Close,dialog);buttons->button(QDialogButtonBox::Apply)->setText("应用");buttons->button(QDialogButtonBox::Close)->setText("关闭");layout->addWidget(buttons);
@@ -219,6 +224,7 @@ void Drawer::Preferences() {
         collectSelection();auto next=*draft;next.width=width->value();next.height=height->value();next.animation=animation->currentData().toString();next.animationMs=duration->value();
         next.followLauncherMaterial=sharedMaterial->isChecked();next.residentOnLogin=resident->isChecked();next.hideDelay=delay->value();next.liquid=liquid->value();next.darken=darken->value();next.fontSize=font->value();
         next.translationLanguage=translation->text();next.directory=directory->text();next.command=command->text();next.permissions=permissions->currentData().toString();next.contextLimitK=limit->value();next.idleStopMinutes=idle->value();next.normalize();
+        if(backend->busy()&&(next.backend!=settings.backend||next.command!=settings.command||next.directory!=settings.directory||next.permissions!=settings.permissions)){note->setText("请先停止当前回复，再更改后台、命令、目录或权限。");return;}
         QString error;if(!ResidentStartup::save(resident->isChecked(),&error)){note->setText("启动项保存失败："+error);return;}if(!next.save(&error)){note->setText("保存失败："+error);return;}applySettings(next);updateModelStatus();note->setText("已应用并保存。");
     });
     connect(buttons->button(QDialogButtonBox::Close),&QPushButton::clicked,dialog,&QDialog::close);

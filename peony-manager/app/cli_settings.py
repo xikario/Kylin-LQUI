@@ -82,7 +82,11 @@ def status():
     from app import paths
     directories = paths.get_plugin_dirs()
     target = Path(directories[0] if directories else "/usr/lib/%s-linux-gnu/peony-extensions" % paths.get_arch()) / FILE_NAME
-    return {"configPath": str(config_path()), "installed": target.is_file(),
+    payload=Path('/usr/share/kylin-lqui/peony-plugins')
+    parts=[payload/FILE_NAME]+[payload/'peony-cli-panel'/name for name in ('libpeony-cli-terminal.so','libqtermwidget5.so.0','libutf8proc.so.2','peony-cli-session','data/kb-layouts/default.keytab')]
+    packaged=all(part.is_file() for part in parts)
+    helper=Path('/usr/libexec/kylin-lqui/peony-manager-helper').is_file()
+    return {"packagedPayloadReady":packaged,"helperReady":helper,"installable":packaged and helper,"configPath": str(config_path()), "installed": target.is_file(),
             "targetPath": str(target), "built": (BUILD / FILE_NAME).is_file(),
             "sourcePath": str(BUILD / FILE_NAME), "engine": "原生 Qt / QTermWidget，点击后加载",
             "settings": read()}

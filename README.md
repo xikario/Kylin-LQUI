@@ -21,7 +21,7 @@
 | AI 空间、本地索引与检索 | `code-work/ai-space` |
 | Peony 管理器与文件扩展 | `peony-manager` |
 
-保留组件之间的相对目录关系，因此构建时请克隆整个仓库。输入法兼容材质库与主框架库当前仍是两套实现；不要直接互相覆盖。
+保留组件之间的相对目录关系，因此构建时请克隆整个仓库。输入法与 AI 空间构建统一引用主框架的玻璃、弹窗和设置桥；历史副本只保留作迁移参考，不再作为默认链接目标。
 
 ## 构建与运行
 
@@ -39,6 +39,7 @@ Dock 默认保持居中宽度，拥挤时缩小应用图标；同应用多窗口
 
 ## 状态与维护
 
+- [2026-11-01 双评审源码修复（54 项）](docs/REVIEW_REPAIR_20261101.md)
 - [2026-11-01 发布前修复](docs/RELEASE_CHECK_20261101.md)
 - [框架设计](code-work/ukui-liquid-desktop/docs/ARCHITECTURE.md)
 - [组件清单](code-work/ukui-liquid-desktop/integration/components.json)

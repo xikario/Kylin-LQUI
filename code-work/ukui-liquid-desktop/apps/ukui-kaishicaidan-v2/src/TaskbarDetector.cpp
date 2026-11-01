@@ -208,7 +208,7 @@ TaskbarInfo TaskbarDetector::detectPanelWindow()
     // The start button (ukui-menu) is at the leftmost position of the panel
     // on bottom/top bars, or topmost on side bars.
     // We use the panel's own left edge (not the strut's!) plus a small offset.
-    const int btnOffset = logH / 2;  // roughly half the panel height
+    const int btnOffset = (info.edge == 0 || info.edge == 1) ? logW / 2 : logH / 2;  // roughly half the panel height
 
     if (info.edge == 3) {
         // Bottom taskbar

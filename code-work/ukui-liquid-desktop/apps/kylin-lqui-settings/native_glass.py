@@ -6,8 +6,8 @@ from PyQt5 import QtCore,QtGui
 class NativeGlass:
     def __init__(self,image,screen):
         self.handle=None;self.cache={};self.render_count=0
-        candidate=Path(__file__).with_name('liblqui-glass-bridge.so')
-        if not candidate.is_file():candidate=Path(__file__).resolve().parents[1]/'ukui-panel-liquid/build/liblqui-glass-bridge.so'
+        candidate=Path(os.environ['LQUI_NATIVE_GLASS_LIBRARY']) if os.environ.get('LQUI_NATIVE_GLASS_LIBRARY') else Path(__file__).with_name('liblqui-glass-bridge.so')
+        if not candidate.is_file() and not os.environ.get('LQUI_NATIVE_GLASS_LIBRARY'):candidate=Path(__file__).resolve().parents[1]/'ukui-panel-liquid/build/liblqui-glass-bridge.so'
         self.library=ctypes.CDLL(str(candidate))
         create=self.library.lqui_glass_create;create.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_int,ctypes.c_int,ctypes.c_double]+[ctypes.c_int]*4;create.restype=ctypes.c_void_p
         render=self.library.lqui_glass_render;render.argtypes=[ctypes.c_void_p]+[ctypes.c_int]*4+[ctypes.c_double]*2+[ctypes.c_void_p]+[ctypes.c_int]*3;render.restype=ctypes.c_int

@@ -365,7 +365,7 @@ def extract_xlrd_spreadsheet(path: Path, limit: int) -> str:
 def ocr_image(path: Path, limit: int, timeout: int = 45) -> str:
     tesseract = shutil.which("tesseract")
     if not tesseract:
-        return ""
+        raise RuntimeError("tesseract not installed")
     from ocr_budget import run_ocr
 
     with tempfile.TemporaryFile() as output:
@@ -548,6 +548,7 @@ def ocr_state(
     """
     if is_dir:
         return "not-needed", "folder"
+    if extractor.startswith("ocr-unavailable:"):return "unavailable",extractor.split(":",1)[1]
     suffix = path.suffix.lower()
     if suffix in IMAGE_SUFFIXES:
         if extractor == "tesseract":
@@ -639,7 +640,11 @@ def entry_for(
             # run still walks and OCRs every page of every PDF.  Later text is
             # discarded to keep the JSON/RSS budget bounded.
             extraction_limit = max(2_000, extraction_limit)
-        content, extractor = extract_content(path, ocr_images, extraction_limit, ocr_pdf_pages)
+        try:
+            content, extractor = extract_content(path, ocr_images, extraction_limit, ocr_pdf_pages)
+        except (RuntimeError, ValueError) as error:
+            if not ocr_images or not str(error).startswith(("ocr_","tesseract not installed")):raise
+            content=str(previous.get("content", ""));extractor="ocr-unavailable:"+str(error)
         content = content[: max(0, content_budget[0])]
         stats["extracted"] += 1
     if content:
@@ -966,6 +971,8 @@ def atomic_ui_stream_write(output: Path, payload: Dict) -> Path:
                         if not isinstance(stored, dict):
                             stored = {}
                         flags = 1 if stored.get("isDir") else 0
+                        if str(stored.get("source", "")).startswith("provider:"):
+                            flags |= 2  # Provider content never authorizes local reads.
                         size = int(stored.get("size", 0) or 0)
                         modified_ms = -1
                         modified = str(stored.get("modified", ""))
@@ -1029,7 +1036,7 @@ def parse_path_list(value: str) -> List[str]:
     for item in raw if isinstance(raw, list) else []:
         if not isinstance(item, str) or not item.strip():
             continue
-        path = os.path.abspath(os.path.expanduser(item))
+        path = os.path.realpath(os.path.abspath(os.path.expanduser(item)))
         if path not in result:
             result.append(path)
     return result
@@ -1051,8 +1058,9 @@ def parse_extensions(value: str) -> List[str]:
 
 
 def path_is_excluded(path: Path, excluded: List[str]) -> bool:
-    candidate = os.path.abspath(str(path))
-    return any(candidate == parent or candidate.startswith(parent + os.sep) for parent in excluded)
+    from local_path_policy import excluded as is_excluded
+
+    return is_excluded(path, excluded)
 
 
 def extension_is_included(path: Path, included: List[str]) -> bool:
@@ -1983,7 +1991,8 @@ def main() -> int:
         errors.append({"path": "<limits>", "error": "item limit reached; narrow the indexed roots"})
 
     if args.provider_config:
-        items.extend(collect_provider_items(Path(args.provider_config).expanduser(), roots, errors))
+        items.extend(item for item in collect_provider_items(Path(args.provider_config).expanduser(), roots, errors)
+                     if not (os.path.isabs(item["path"]) and path_is_excluded(Path(item["path"]), excluded_roots)))
     if not read_tags:
         # The widget's tag feature is intentionally removed.  Also discard
         # legacy/provider tag fields so a no-tag snapshot cannot reintroduce

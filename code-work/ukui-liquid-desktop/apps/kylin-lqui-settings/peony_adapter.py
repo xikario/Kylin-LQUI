@@ -48,7 +48,7 @@ def page(name):
             if plugin.installed:
                 if plugin.enabled is None:fields.append(field('unknown:'+plugin.file_name,'','note','无法读取启用状态，请确认 Peony 设置服务可用后刷新。'))
                 else:fields.append(field('plugin:'+plugin.file_name,'启用 '+plugin.name,'boolean',plugin.enabled))
-        for key,label in [('install-copy','安装 / 更新复制路径扩展'),('choose-copy','选择复制路径扩展文件…'),('remove-copy','卸载复制路径扩展'),('install-cli','安装 / 更新嵌入终端'),('remove-cli','卸载嵌入终端')]:
+        for key,label in [('install-copy','安装 / 更新复制路径扩展'),('remove-copy','卸载复制路径扩展'),('install-cli','安装 / 更新嵌入终端'),('remove-cli','卸载嵌入终端')]:
             fields.append(field(key,label,'action',confirm='确认'+label+'？' if key.startswith('remove') else ''))
     else:raise ValueError('设置页不存在')
     return {'ok':True,'module':'peony','page':name,'fields':fields,'dirty':False}
@@ -78,7 +78,9 @@ def set_value(name,fid,encoded):
         filename=fid[7:]
         installed={p.file_name for p in scanner.scan_plugins() if p.installed}
         if filename not in installed:raise ValueError('插件已移除，请刷新')
-        settings=Gio.Settings.new(gsettings_store.SCHEMA)
+        source=Gio.SettingsSchemaSource.get_default();schema=source.lookup(gsettings_store.SCHEMA,True) if source else None
+        if not schema:raise ValueError('系统未安装文件管理器插件设置')
+        settings=Gio.Settings.new_full(schema,None,None)
         disabled=list(settings.get_strv('disabled-extensions'))
         if value:disabled=[item for item in disabled if item!=filename]
         elif filename not in disabled:disabled.append(filename)
@@ -92,13 +94,7 @@ def set_value(name,fid,encoded):
 def activate(name,fid):
     allowed={'install-copy':operations.install_copy_path_plugin,'remove-copy':operations.remove_copy_path_plugin,'install-cli':operations.install_cli_panel_plugin,'remove-cli':operations.remove_cli_panel_plugin}
     if name!='plugins':raise ValueError('无效操作')
-    if fid=='choose-copy':
-        from PyQt5.QtWidgets import QApplication,QFileDialog
-        app=QApplication([])
-        selected,_=QFileDialog.getOpenFileName(None,'选择复制路径扩展','','Peony 扩展 (libpeony-copy-path.so)')
-        if not selected:return {'ok':True,'cancelled':True}
-        result=operations.install_copy_path_plugin(selected)
-    elif fid in allowed:result=allowed[fid]()
+    if fid in allowed:result=allowed[fid]()
     else:raise ValueError('此操作不可用')
     if not result.get('success'):raise ValueError(result.get('error','操作失败'))
     return page(name)

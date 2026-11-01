@@ -60,7 +60,7 @@ struct DesktopItem
     static DesktopItem fromPath(const QString &path)
     {
         QFileInfo fi(path);
-        if (!fi.exists()) return {};
+        if (!fi.exists() && !fi.isSymLink()) return {};
 
         if (!fi.isDir() &&
             path.endsWith(QLatin1String(".desktop"), Qt::CaseInsensitive))

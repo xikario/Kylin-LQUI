@@ -12,6 +12,7 @@
 #include "CalendarDesklet.h"
 #include "ActivityRecorder.h"
 #include "DesktopCanvas.h"
+#include "FileIdentity.h"
 #include "SettingsBridge.h"
 #include "GlassFinish.h"
 #include "Palette.h"
@@ -2387,6 +2388,11 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
     auto updateDirty = [=,&dlg] {
         dlg.setProperty("settingsDirty", draft() != *baseline);
     };
+    auto previewImage=std::make_shared<QPixmap>();
+    auto previewPath=std::make_shared<QString>();
+    auto requestedPreview=std::make_shared<QString>();
+    auto previewLoading=std::make_shared<bool>(false);
+    auto *previewTimer=new QTimer(&dlg);previewTimer->setSingleShot(true);
     auto updatePreview = [=, &dlg] {
         updateDirty();
         const bool video = kindCombo->currentData().toBool();
@@ -2408,13 +2414,11 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
         bool customMode = false;
         QPixmap source;
         if (mode != WallpaperMode::System && !chosenPath->isEmpty()) {
-            source = readWallpaperPixmap(*chosenPath,nullptr,
-                mode==WallpaperMode::Tile || mode==WallpaperMode::Center ? QSize() : wallpaperDecodeSize());
-            if (source.isNull())
-                source = readWallpaperPixmap(savedWallpaperPath(*chosenPath), nullptr,
-                    mode==WallpaperMode::Tile || mode==WallpaperMode::Center ? QSize() : wallpaperDecodeSize());
-            customMode = !source.isNull();
-        }
+            *requestedPreview=*chosenPath;
+            if(*previewPath==*chosenPath)source=*previewImage;
+            else if(!previewTimer->isActive())previewTimer->start(40);
+            customMode=!source.isNull();
+        } else requestedPreview->clear();
         if (!customMode)
             source = *systemWallpaper;
         if (source.isNull())
@@ -2433,6 +2437,20 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
         }
     };
 
+    connect(previewTimer,&QTimer::timeout,&dlg,[=,&dlg]{
+        if(*previewLoading||requestedPreview->isEmpty())return;
+        *previewLoading=true;const QString path=*requestedPreview;
+        BackgroundTask::run(&dlg,[path]{
+            // Preview has its own budget, including Tile and Center modes.
+            QImage image=readWallpaperImage(path,nullptr,QSize(1280,720));
+            if(image.isNull())image=readWallpaperImage(savedWallpaperPath(path),nullptr,QSize(1280,720));
+            return image;
+        },[=](const QImage &image){
+            *previewLoading=false;
+            if(*requestedPreview==path){*previewPath=path;*previewImage=QPixmap::fromImage(image);updatePreview();if(image.isNull())pathLabel->setText("无法读取图片，请选择其他图片。");}
+            else if(!requestedPreview->isEmpty())previewTimer->start(0);
+        });
+    });
     const QSize systemPreviewSize = wallpaperDecodeSize();
     BackgroundTask::run(&dlg, [systemPreviewSize] { return loadSystemWallpaperImage(systemPreviewSize); },
         [systemWallpaper, updatePreview](const QImage &image) {
@@ -2454,14 +2472,6 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
             "图片文件 (*.jpg *.jpeg *.png *.bmp *.webp *.svg);;所有文件 (*)");
         if (path.isEmpty())
             return;
-
-        QString imageError;
-        const QPixmap test = readWallpaperPixmap(path, &imageError);
-        if (test.isNull()) {
-            LiquidDialog::warning(&dlg, "Fences 壁纸",
-                QStringLiteral("无法读取这张图片：%1\n%2").arg(path, imageError));
-            return;
-        }
 
         *chosenPath = path;
         if (static_cast<WallpaperMode>(modeCombo->currentData().toInt()) ==
@@ -2520,6 +2530,9 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
     connect(apply, &QPushButton::clicked, &dlg, [=,&dlg] {
         if (*applying) return;
         if (!kindCombo->currentData().toBool()) {
+            if(static_cast<WallpaperMode>(modeCombo->currentData().toInt())!=WallpaperMode::System&&!chosenPath->isEmpty()&&(*previewPath!=*chosenPath||previewImage->isNull())) {
+                pathLabel->setText(*previewLoading?"正在检查图片，请稍候再应用。":"无法读取图片，当前壁纸保持不变。");return;
+            }
             saveImage();disableVideoWallpaper();loadWallpaper();
             finish(true, "静态壁纸已应用并保存。");
             return;
@@ -3267,11 +3280,9 @@ void DesktopCanvas::syncDesktopIcons(bool force)
         addedNew = true;
     }
 
-    // 新增了图标后，把 show/raise 事件排空，确保控件几何尺寸就绪后再布局。
-    // 否则 layoutLooseIcons 可能在控件未完全初始化的状态下 move()，导致
-    // KWin compositor 错过子控件区域，出现"数据已同步但不显示"的问题。
-    if (addedNew)
-        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    // Return to Qt normally; draining events here can reenter watcher refresh
+    // while m_looseIcons is being changed. Geometry is explicit before layout.
+    if(addedNew)QTimer::singleShot(0,this,[this]{layoutLooseIcons();update();});
 
     // 这里不能只在 changed=true 时布局。真实桌面上可能出现"路径和坐标
     // 已在 layout 中，但对应子控件被隐藏/未 move/show"的半同步状态；
@@ -3412,6 +3423,8 @@ void DesktopCanvas::syncCutVisualState()
 
 void DesktopCanvas::sortLooseIcons()
 {
+    QHash<DesktopIcon*,QDateTime> modified;
+    if(m_arrangeMode==ArrangeMode::ByModifiedTime)for(auto *icon:m_looseIcons)if(icon)modified.insert(icon,QFileInfo(icon->item().filePath).lastModified());
     switch (m_arrangeMode) {
     case ArrangeMode::ByName:
         std::stable_sort(m_looseIcons.begin(), m_looseIcons.end(),
@@ -3437,11 +3450,10 @@ void DesktopCanvas::sortLooseIcons()
         break;
     case ArrangeMode::ByModifiedTime:
         std::stable_sort(m_looseIcons.begin(), m_looseIcons.end(),
-            [](DesktopIcon *a, DesktopIcon *b) {
+            [&modified](DesktopIcon *a, DesktopIcon *b) {
                 if (a->item().isSystemIcon || b->item().isSystemIcon)
                     return systemIconsFirst(a, b);
-                return QFileInfo(a->item().filePath).lastModified()
-                    > QFileInfo(b->item().filePath).lastModified();
+                return modified.value(a)>modified.value(b);
             });
         break;
     case ArrangeMode::Manual:
@@ -3544,17 +3556,19 @@ void DesktopCanvas::assignLooseIconsToFirstCells()
         if (fence) fenceRects.append(fence->geometry());
     fenceRects.append(desktopWidgetReservedGeometries());
 
+    QHash<DesktopIcon*,QDateTime> modified;
+    for(auto *icon:m_looseIcons)if(icon)modified.insert(icon,QFileInfo(icon->item().filePath).lastModified());
     std::stable_sort(m_looseIcons.begin(), m_looseIcons.end(),
-        [](DesktopIcon *a, DesktopIcon *b) {
+        [&modified](DesktopIcon *a, DesktopIcon *b) {
             if (!a || !b)
                 return a != nullptr;
             if (a->item().isSystemIcon || b->item().isSystemIcon)
                 return systemIconsFirst(a, b);
 
             const QDateTime am =
-                QFileInfo(a->item().filePath).lastModified();
+                modified.value(a);
             const QDateTime bm =
-                QFileInfo(b->item().filePath).lastModified();
+                modified.value(b);
             if (am != bm)
                 return am > bm;
 
@@ -4017,17 +4031,20 @@ void DesktopCanvas::pushUndo(const UndoOperation &op)
     if (op.sourcePaths.isEmpty() && op.targetPaths.isEmpty())
         return;
 
+    UndoOperation recorded=op;
+    if(recorded.type!=UndoOperation::Type::Trash)for(const auto &path:recorded.targetPaths)
+        if(!recorded.identities.contains(path))recorded.identities.insert(path,fileObjectIdentity(path));
     if (!m_undoStack.isEmpty()) {
         const UndoOperation &last = m_undoStack.constLast();
-        if (last.type == op.type &&
-            last.sourcePaths == op.sourcePaths &&
-            last.targetPaths == op.targetPaths &&
-            last.fenceIds == op.fenceIds &&
-            last.trashEntries == op.trashEntries)
+        if (last.type == recorded.type &&
+            last.sourcePaths == recorded.sourcePaths &&
+            last.targetPaths == recorded.targetPaths &&
+            last.fenceIds == recorded.fenceIds &&
+            last.trashEntries == recorded.trashEntries && last.identities == recorded.identities)
             return;
     }
 
-    m_undoStack.append(op);
+    m_undoStack.append(recorded);
     while (m_undoStack.size() > 50)
         m_undoStack.removeFirst();
 }
@@ -4155,7 +4172,7 @@ bool DesktopCanvas::transferFilesToFolder(const QStringList &paths, const QStrin
 bool DesktopCanvas::deletePathForUndo(const QString &path)
 {
     const QFileInfo fi(path);
-    if (!fi.exists())
+    if (!fi.exists() && !fi.isSymLink())
         return true;
     // Undo never permanently erases a copy the user may have edited since it
     // was created. Gio uses the same recoverable trash as ordinary deletion.
@@ -4187,6 +4204,12 @@ void DesktopCanvas::undoLastOperation()
         for (int i=0; i<paths.size(); ++i) {
             const QString path=paths[i]; QString restored;
             bool ok=false;
+            if(op.type!=UndoOperation::Type::Trash) {
+                const auto current=fileObjectIdentity(path);
+                if(!current.isEmpty()&&(op.identities.value(path).isEmpty()||current!=op.identities.value(path))) {
+                    result.failedPaths<<path;continue;
+                }
+            }
             if (op.type==UndoOperation::Type::Trash) { restored=FileClipboard::restoreTrashedEntry(op.trashEntries.value(path)); ok=!restored.isEmpty(); }
             else if (op.type==UndoOperation::Type::Rename ||
                      ((op.type==UndoOperation::Type::Paste || op.type==UndoOperation::Type::FolderDrop) && op.move)) {
@@ -4235,7 +4258,7 @@ void DesktopCanvas::undoLastOperation()
             pushUndo(pending);
             const QString reason = op.type == UndoOperation::Type::Trash
                 ? "可能回收站记录已被清理或修改，或权限不足。"
-                : "可能原位置已有同名项目或权限不足。";
+                : "可能目标已被替换、原位置已有同名项目或权限不足。";
             LiquidDialog::warning(this,"撤回失败",QString("有 %1 个项目无法撤回，%2\n未覆盖现有文件；处理后可再次撤回。")
                 .arg(result.failedPaths.size()).arg(reason));
         }

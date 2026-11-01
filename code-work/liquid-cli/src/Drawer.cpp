@@ -225,6 +225,7 @@ void Drawer::connectClient() {
 
 void Drawer::submit(const QString &text,const QStringList &images) {sendMessage(text,images,true);}
 void Drawer::sendMessage(const QString &text,const QStringList &images,bool clearComposer) {
+    if(!history.canSave()){setStatus("原聊天记录读取失败，已保留原件；请恢复文件或在设置中开始新对话。");return;}
     if(backend->busy()||(text.isEmpty()&&images.isEmpty()))return;
     ChatMessage m{"user",text,images,{},0};history.append(m);view->append(history.messages().last());
     view->followBottom();if(clearComposer)input->clear();answerIndex=-1;view->setTyping(true);input->setBusy(true);
@@ -303,7 +304,7 @@ void Drawer::persist() {
     QSaveFile draft(path);if(draft.open(QIODevice::WriteOnly)){draft.setPermissions(QFile::ReadOwner|QFile::WriteOwner);draft.write(QJsonDocument(QJsonObject{{"text",input->editor()->toPlainText()},{"images",QJsonArray::fromStringList(input->images())}}).toJson(QJsonDocument::Compact));draft.commit();}
 }
 void Drawer::clearConversation() {
-    backend->stop();history.clear();input->clear();persist();backend->setThreadId({});answerIndex=-1;compactDismissedAt=0;
+    backend->stop();if(!history.clear()){setStatus("无法保留原聊天记录，未开始新对话。");return;}input->clear();persist();backend->setThreadId({});answerIndex=-1;compactDismissedAt=0;
     for(auto *card:findChildren<QFrame*>("notice"))card->deleteLater();
     view->setTyping(false);view->reset({});input->clear();input->setBusy(false);updateContext();setStatus("已清空，下一条消息开始新对话");
 }
@@ -499,6 +500,9 @@ void Drawer::processCapture(const QImage &image,const QString &action) {
     sendMessage(CaptureEditor::actionPrompt(action,settings.translationLanguage),{path},false);
 }
 void Drawer::applySettings(Settings value) {
+    if(backend->busy()&&(settings.backend!=value.backend||settings.command!=value.command||settings.directory!=value.directory||settings.permissions!=value.permissions)) {
+        setStatus("请先停止当前回复，再更改后台、命令、目录或权限。");return;
+    }
     value.normalize();const bool geometryChanged=settings.width!=value.width||settings.height!=value.height;
     const bool materialChanged=geometryChanged||settings.liquid!=value.liquid||settings.darken!=value.darken||settings.followLauncherMaterial!=value.followLauncherMaterial;
     const bool switched=settings.backend!=value.backend;
@@ -518,7 +522,7 @@ void Drawer::applySettings(Settings value) {
     if(materialChanged)materialKey.clear();
     if(opened){motion.stop();place(1);refreshGlass();}
 }
-void Drawer::Reload(){applySettings(Settings::load(settings.file));}
+void Drawer::Reload(){if(preferences&&!preferences->isVisible()&&!QApplication::activeModalWidget())delete preferences.data();applySettings(Settings::load(settings.file));}
 QString Drawer::State() const {
     QJsonObject state{{"expanded",opened},{"progress",shown},{"capturing",capturing},{"busy",backend->busy()},{"sessionRunning",backend->running()},
         {"backend",settings.backend},{"backendName",settings.cliName},{"messages",history.messages().size()},{"hasThread",!history.threadId.isEmpty()},{"contextTokens",double(history.contextTokens)},

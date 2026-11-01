@@ -74,6 +74,7 @@ class FusionView:
         else:self.build_home(layout)
         self.scroll.setWidget(content);content.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False);self.apply_snapshot();self.set_position()
     def build_home(self,layout):
+        self.media_art=None
         top=QtWidgets.QHBoxLayout();top.setSpacing(7);layout.addLayout(top)
         left=QtWidgets.QVBoxLayout();left.setSpacing(7);top.addLayout(left,1)
         self.tiles={}
@@ -124,21 +125,21 @@ class FusionView:
         if self.page=='power':
             for key,enabled in self.data.get('session',{}).get('actions',{}).items():
                 button=self.findChild(QtWidgets.QPushButton,'session_'+key)
-                if button:button.setEnabled(enabled and not self.changing)
+                if button:button.setEnabled(enabled and not self.is_busy('session'))
         if self.page=='bluetooth':self.update_bluetooth();return
         if self.page!='home':return
         for kind,(frame,toggle,label) in self.tiles.items():
-            data=self.data.get(kind,{});enabled=bool(data.get('enabled'));blocker=QtCore.QSignalBlocker(toggle);toggle.setChecked(enabled);del blocker;toggle.setEnabled(bool(data.get('available')) and not self.changing);toggle.setIcon(glyph(kind,'#3277ab' if enabled else '#e4edf7'));frame.set_active(enabled)
+            data=self.data.get(kind,{});enabled=bool(data.get('enabled'));blocker=QtCore.QSignalBlocker(toggle);toggle.setChecked(enabled);del blocker;toggle.setEnabled(bool(data.get('available')) and not self.is_busy(kind));toggle.setIcon(glyph(kind,'#3277ab' if enabled else '#e4edf7'));frame.set_active(enabled)
             if not data.get('available'):text='未检测到设备'
             elif not enabled:text='已关闭'
             elif kind=='wifi':text=next((n['ssid'] for n in data.get('networks',[]) if n['connected']),'未连接')
             else:text=next((n['name'] for n in data.get('devices',[]) if n['connected']),'已开启')
             label.setText(label.fontMetrics().elidedText(text,QtCore.Qt.ElideRight,100));label.setToolTip(text)
-        brightness=self.data.get('brightness',{});self.brightness.setEnabled(bool(brightness.get('available')) and not self.changing)
-        if not self.brightness.isSliderDown():blocker=QtCore.QSignalBlocker(self.brightness);self.brightness.setValue(brightness.get('value',5));del blocker;self.brightness_label.setText(str(brightness['value'])+'%' if brightness.get('available') else '未支持')
-        notify=self.data.get('notifications',{});blocker=QtCore.QSignalBlocker(self.dnd);self.dnd.setChecked(bool(notify.get('dnd')));del blocker;self.dnd.setEnabled(bool(notify.get('dndAvailable')) and not self.changing);self.dnd.setText('勿扰已开启' if notify.get('dnd') else '勿扰模式');self.dnd_card.set_active(bool(notify.get('dnd')))
+        brightness=self.data.get('brightness',{});self.brightness.setEnabled(bool(brightness.get('available')))
+        if not self.brightness.isSliderDown() and not self.is_busy('brightness') and 'brightness' not in self.pending_actions:blocker=QtCore.QSignalBlocker(self.brightness);self.brightness.setValue(brightness.get('value',5));del blocker;self.brightness_label.setText(str(brightness['value'])+'%' if brightness.get('available') else '未支持')
+        notify=self.data.get('notifications',{});blocker=QtCore.QSignalBlocker(self.dnd);self.dnd.setChecked(bool(notify.get('dnd')));del blocker;self.dnd.setEnabled(bool(notify.get('dndAvailable')) and not self.is_busy('notifications'));self.dnd.setText('勿扰已开启' if notify.get('dnd') else '勿扰模式');self.dnd_card.set_active(bool(notify.get('dnd')))
         self.update_notifications();player=self.data.get('media',{}).get('player',{});self.media_title.setText(player.get('title') or '暂无播放');self.media_artist.setText(player.get('artist') or '打开播放器即可控制');self.media_card.set_active(bool(player.get('playing')))
-        for method,button in self.media_buttons.items():button.setEnabled(bool(player.get('canControl')) and (method=='PlayPause' or player.get('can'+method)) and not self.changing)
+        for method,button in self.media_buttons.items():button.setEnabled(bool(player.get('canControl')) and (method=='PlayPause' or player.get('can'+method)) and not self.is_busy('media'))
         self.media_buttons['PlayPause'].setIcon(glyph('pause' if player.get('playing') else 'play'))
         art=player.get('art','')
         if getattr(self,'media_art',None)!=art:
@@ -150,7 +151,7 @@ class FusionView:
     def toggle_connectivity(self,kind):self.action('wifi-enabled' if kind=='wifi' else 'bluetooth-enabled',{'value':not self.data.get(kind,{}).get('enabled',False)})
     def media_command(self,method):self.action('media',{'service':self.data.get('media',{}).get('player',{}).get('service'),'method':method})
     def update_bluetooth(self):
-        data=self.data.get('bluetooth',{});blocker=QtCore.QSignalBlocker(self.bluetooth_toggle);self.bluetooth_toggle.setChecked(data.get('enabled',False));del blocker;self.bluetooth_toggle.setEnabled(bool(data.get('available')) and not self.changing);signature=json.dumps([data,self.changing],sort_keys=True)
+        data=self.data.get('bluetooth',{});blocker=QtCore.QSignalBlocker(self.bluetooth_toggle);self.bluetooth_toggle.setChecked(data.get('enabled',False));del blocker;self.bluetooth_toggle.setEnabled(bool(data.get('available')) and not self.is_busy('bluetooth'));signature=json.dumps([data,self.is_busy('bluetooth')],sort_keys=True)
         if signature==self.bluetooth_signature:return
         self.bluetooth_signature=signature
         while self.bluetooth_list.count():
@@ -160,11 +161,11 @@ class FusionView:
         elif not data.get('enabled'):self.bluetooth_list.addWidget(self.label('蓝牙已关闭',True))
         elif not data.get('devices'):self.bluetooth_list.addWidget(self.label('点击“查找设备”，配对确认由系统处理。',True))
         for device in data.get('devices',[]):
-            button=QtWidgets.QPushButton(device['name'].replace('&','&&')+' · '+('断开连接' if device['connected'] else '连接' if device['paired'] else '配对并连接'));button.setEnabled(not self.changing);button.clicked.connect(lambda checked=False,d=device:self.action('bluetooth-device',{'id':d['id']}));self.bluetooth_list.addWidget(button)
+            button=QtWidgets.QPushButton(device['name'].replace('&','&&')+' · '+('断开连接' if device['connected'] else '连接' if device['paired'] else '配对并连接'));button.setEnabled(not self.is_busy('bluetooth'));button.clicked.connect(lambda checked=False,d=device:self.action('bluetooth-device',{'id':d['id']}));self.bluetooth_list.addWidget(button)
     def page_notifications(self,delta):self.notification_page=max(0,self.notification_page+delta);self.notification_signature=None;self.update_notifications()
     def update_notifications(self):
         data=self.data.get('notifications',{});entries=data.get('entries',[]);pages=max(1,math.ceil(len(entries)/2));self.notification_page=min(self.notification_page,pages-1);signature=json.dumps([entries,self.notification_page,data.get('systemCount')],sort_keys=True)
-        self.clear_notifications.setEnabled(bool(entries) and not self.changing);self.notification_prev.setEnabled(self.notification_page>0);self.notification_next.setEnabled(self.notification_page<pages-1);self.notification_count.setText(str(self.notification_page+1)+' / '+str(pages) if entries else '');self.system_notifications.setText('系统通知'+(' · '+str(data['systemCount']) if data.get('systemCount') else ''))
+        self.clear_notifications.setEnabled(bool(entries) and not self.is_busy('notifications'));self.notification_prev.setEnabled(self.notification_page>0);self.notification_next.setEnabled(self.notification_page<pages-1);self.notification_count.setText(str(self.notification_page+1)+' / '+str(pages) if entries else '');self.system_notifications.setText('系统通知'+(' · '+str(data['systemCount']) if data.get('systemCount') else ''))
         if signature==self.notification_signature:return
         self.notification_signature=signature
         parts=[]

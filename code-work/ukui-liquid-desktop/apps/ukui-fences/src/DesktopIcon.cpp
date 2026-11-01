@@ -962,20 +962,21 @@ void DesktopIcon::contextMenuEvent(QContextMenuEvent *e)
         parentWidget()->setFocus(Qt::MouseFocusReason);
 
     QMenu menu;
+    connect(this,&QObject::destroyed,&menu,&QMenu::close);
     MenuStyle::applyVenturaContextMenu(&menu);
 
     auto *actUndo = menu.addAction(
         QIcon::fromTheme("edit-undo"), "撤回");
     actUndo->setShortcut(QKeySequence::Undo);
     connect(actUndo, &QAction::triggered,
-            [this] { emit undoRequested(); });
+            this, [this] { emit undoRequested(); });
 
     menu.addSeparator();
 
     auto *actOpen = menu.addAction(
         QIcon::fromTheme("document-open"), "打开");
     connect(actOpen, &QAction::triggered,
-            [this] { emit activated(m_item); });
+            this, [this] { emit activated(m_item); });
 
     if (!m_item.isSystemIcon)
         addOpenWithMenu(menu, m_item);
@@ -984,7 +985,7 @@ void DesktopIcon::contextMenuEvent(QContextMenuEvent *e)
     if (!m_item.isSystemIcon && !m_item.isDesktopEntry && !m_item.isDir) {
         auto *actFolder = menu.addAction(
             QIcon::fromTheme("folder-open"), "打开所在文件夹");
-        connect(actFolder, &QAction::triggered, [this] {
+        connect(actFolder, &QAction::triggered, this, [this] {
             const QString peony = findExecutable({ "peony" });
             if (!peony.isEmpty()) {
                 QProcess::startDetached(peony,
@@ -1003,7 +1004,7 @@ void DesktopIcon::contextMenuEvent(QContextMenuEvent *e)
         if (m_item.filePath == QLatin1String("trash:///")) {
             auto *actEmptyTrash = menu.addAction(
                 QIcon::fromTheme("user-trash"), "清空回收站");
-            connect(actEmptyTrash, &QAction::triggered, [this] {
+            connect(actEmptyTrash, &QAction::triggered, this, [this] {
                 if (LiquidDialog::question(this, "清空回收站",
                         "确定要永久删除回收站中的所有项目吗？\n此操作无法撤销。")
                     != QMessageBox::Yes)
@@ -1023,7 +1024,7 @@ void DesktopIcon::contextMenuEvent(QContextMenuEvent *e)
         auto *actProp = menu.addAction(
             QIcon::fromTheme("document-properties"), "属性");
         connect(actProp, &QAction::triggered,
-                [this] { showPropertiesDialog(m_item.filePath); });
+                this, [this] { showPropertiesDialog(m_item.filePath); });
         menu.exec(e->globalPos());
         e->accept();
         return;
@@ -1033,22 +1034,22 @@ void DesktopIcon::contextMenuEvent(QContextMenuEvent *e)
     auto *actCopy = menu.addAction(
         QIcon::fromTheme("edit-copy"), "复制");
     connect(actCopy, &QAction::triggered,
-            [this] { emit copyRequested(this, false); });
+            this, [this] { emit copyRequested(this, false); });
 
     auto *actCut = menu.addAction(
         QIcon::fromTheme("edit-cut"), "剪切");
     connect(actCut, &QAction::triggered,
-            [this] { emit copyRequested(this, true); });
+            this, [this] { emit copyRequested(this, true); });
 
     auto *actCopyPath = menu.addAction("复制路径");
     connect(actCopyPath, &QAction::triggered,
-            [this] { QApplication::clipboard()->setText(m_item.filePath); });
+            this, [this] { QApplication::clipboard()->setText(m_item.filePath); });
 
     // 重命名
     auto *actRename = menu.addAction(
         QIcon::fromTheme("edit-rename"), "重命名");
     connect(actRename, &QAction::triggered,
-            [this] { startInlineRename(); });
+            this, [this] { startInlineRename(); });
 
     menu.addSeparator();
 
@@ -1056,13 +1057,13 @@ void DesktopIcon::contextMenuEvent(QContextMenuEvent *e)
         QIcon::fromTheme("package-x-generic"), "压缩…");
     actCompress->setEnabled(!findExecutable({ "engrampa", "file-roller" }).isEmpty());
     connect(actCompress, &QAction::triggered,
-            [this] { compressItem(m_item.filePath); });
+            this, [this] { compressItem(m_item.filePath); });
 
     menu.addSeparator();
 
     auto *actDel = menu.addAction(
         QIcon::fromTheme("user-trash"), "移到回收站");
-    connect(actDel, &QAction::triggered, [this] {
+    connect(actDel, &QAction::triggered, this, [this] {
         if (LiquidDialog::question(this, "确认删除",
                 QString("确定要将 \"%1\" 移到回收站吗？").arg(m_item.displayName))
             == QMessageBox::Yes) {
@@ -1077,7 +1078,7 @@ void DesktopIcon::contextMenuEvent(QContextMenuEvent *e)
 
     auto *actPermanentDel = menu.addAction(
         QIcon::fromTheme("edit-delete"), "永久删除");
-    connect(actPermanentDel, &QAction::triggered, [this] {
+    connect(actPermanentDel, &QAction::triggered, this, [this] {
         if (LiquidDialog::warning(this, "永久删除",
                 QString("确定永久删除 \"%1\"？\n此操作无法撤销。")
                     .arg(m_item.displayName),
@@ -1097,7 +1098,7 @@ void DesktopIcon::contextMenuEvent(QContextMenuEvent *e)
     // 属性
     auto *actProp = menu.addAction(
         QIcon::fromTheme("document-properties"), "属性");
-    connect(actProp, &QAction::triggered, [this] {
+    connect(actProp, &QAction::triggered, this, [this] {
         showPropertiesDialog(m_item.filePath);
     });
 

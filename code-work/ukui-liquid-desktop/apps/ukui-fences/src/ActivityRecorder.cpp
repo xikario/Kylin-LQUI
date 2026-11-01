@@ -42,7 +42,10 @@ QString ActivityRecorder::dataPath() const {
 QString ActivityRecorder::metricsDirectory() const {return QFileInfo(dataPath()).absolutePath()+"/activity-metrics";}
 ActivityRecorder::ActivityRecorder(QObject *parent) : QObject(parent), m_native(new Native) {
     QFile f(dataPath());
-    if (f.open(QIODevice::ReadOnly)) {
+    const bool hadFile=QFileInfo::exists(dataPath())||QFileInfo(dataPath()).isSymLink();
+    const bool opened=f.open(QIODevice::ReadOnly);
+    if(hadFile&&!opened)m_saveOk=false;
+    if (opened) {
         QJsonParseError error;
         const auto doc = QJsonDocument::fromJson(f.readAll(), &error);
         const int version=doc.object().value("schemaVersion").toInt();
@@ -57,6 +60,7 @@ ActivityRecorder::ActivityRecorder(QObject *parent) : QObject(parent), m_native(
             if (!m_saveOk) qWarning() << "Activity ledger could not be backed up; writes disabled";
         }
     }
+    if(opened&&f.error()!=QFile::NoError)m_saveOk=false;
     m_recording = QSettings().value("desklets/activity/recording", true).toBool();
     m_metricsEnabled=QSettings().value("desklets/activity/metricsEnabled",true).toBool();
     m_metricsInterval=qBound(5,QSettings().value("desklets/activity/metricsInterval",10).toInt(),60);

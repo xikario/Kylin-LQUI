@@ -55,6 +55,7 @@ private:
     void endTurn(const QString &state,const QString &error);
     void processGone(const QString &reason);
     void armIdle();
+    void closeApprovals();
     QJsonObject permissionOverrides() const;
     QString summary() const;
     Settings settings;
@@ -74,7 +75,8 @@ private:
     int commands=0,edits=0,searches=0,tools=0;
     QElapsedTimer clock;
     QTimer idle;
-    int pendingApprovals=0;
+    QHash<QString,QJsonValue> approvals;
+    quint64 approvalSerial=0,turnEpoch=0;
     bool discoveryOnly=false;
     QJsonArray models;
 };

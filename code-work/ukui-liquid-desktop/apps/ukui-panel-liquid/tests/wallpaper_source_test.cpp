@@ -1,3 +1,4 @@
+#include "../../../shared/settings/FencesSettings.h"
 #include "WallpaperBackdrop.h"
 #include "../../ukui-fences/src/VideoWallpaperCache.h"
 #include <QApplication>
@@ -26,7 +27,13 @@ int main(int argc,char **argv) {
     const QString still=root.path()+"/static.png";image(still,QColor(220,50,40));
     QFile layout(cfg+"/kyfences/layout.json");check(layout.open(QIODevice::WriteOnly),"layout opened");
     layout.write(QJsonDocument(QJsonObject{{"wallpaperPath",still},{"wallpaperMode",1}}).toJson());layout.close();
-    QSettings settings(cfg+"/kylin/ukui-fences.ini",QSettings::IniFormat);
+    // Simulate the OEM theme's old format, then call the production migration.
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    {QSettings previous;previous.setValue("wallpaper/migrationFixture",42);previous.sync();}
+    check(initializeFencesSettings(),"production migration completes");
+    QSettings settings;
+    check(settings.value("wallpaper/migrationFixture").toInt()==42,"legacy preferences survive migration");
+    check(settings.fileName()==QSettings(QSettings::NativeFormat,QSettings::UserScope,"kylin","ukui-fences").fileName(),"test uses the production settings contract");
     auto video=[&](const QString &name) {
         const QString path=root.path()+name;QFile file(path);
         check(file.open(QIODevice::WriteOnly),"video identity fixture opened");file.write("identity fixture");return path;

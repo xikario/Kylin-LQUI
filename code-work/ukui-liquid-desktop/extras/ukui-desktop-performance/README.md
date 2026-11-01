@@ -1,5 +1,6 @@
 # 可选 FTG340 接电最低频率策略
 
+以下相对命令均在桌面组件目录 `code-work/ukui-liquid-desktop/` 执行。若当前位于统一仓库根目录，请先运行 `cd code-work/ukui-liquid-desktop`。
 针对麒麟 V10 / UKUI X11 上匹配的 FTG340 驱动，接电时提高最低频率，电池供电或停用时恢复保存的原值。它是**需要管理员权限的独立系统扩展**，不随桌面主题安装，不适用于其他显卡，也不是通用性能优化。
 
 [项目主页](../../README.md) · [权限与模块关系](../../docs/ARCHITECTURE.md)

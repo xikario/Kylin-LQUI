@@ -15,6 +15,7 @@ public:
 signals:
     void selected(QImage image,QRect globalSelection);
 protected:
+    void closeEvent(QCloseEvent *) override;
     void paintEvent(QPaintEvent *) override;
     void mousePressEvent(QMouseEvent *) override;
     void mouseMoveEvent(QMouseEvent *) override;

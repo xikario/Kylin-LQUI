@@ -1,5 +1,6 @@
 # 桌面接管实验与恢复
 
+以下相对命令均在桌面组件目录 `code-work/ukui-liquid-desktop/` 执行。若当前位于统一仓库根目录，请先运行 `cd code-work/ukui-liquid-desktop`。
 此工具让 Fences 在当前 X11 会话中短时独立承担桌面，并在到期、Fences 退出、隐藏或无响应后恢复原生 Peony 桌面。它不修改登录 provider、自启动或系统二进制；不是永久接管安装器。
 
 Fences 设置 → **桌面接管（实验）**提供 60 秒试运行与恢复。安装后还提供“恢复原生桌面服务”的应用入口，即使 Fences 不可用也能操作。

@@ -24,4 +24,8 @@ class PolicyTests(unittest.TestCase):
             p.run('stop');self.assertEqual((node/'min_freq').read_text().strip(),'200000')
             p.run('apply');self.assertEqual((node/'min_freq').read_text().strip(),'200000')
             p.run('start');p.run('stop');self.assertEqual((node/'min_freq').read_text().strip(),'200000')
+    def test_stop_clears_activation_even_after_the_device_disappears(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);p.NODE=root/'missing';p.STATE=root/'original.json';p.STATE.write_text('{"min_freq":200000}');p.MARKER=root/'active';p.MARKER.touch()
+            p.run('stop');self.assertFalse(p.MARKER.exists());self.assertTrue(p.STATE.with_suffix('.generation').exists())
 if __name__=='__main__':unittest.main()

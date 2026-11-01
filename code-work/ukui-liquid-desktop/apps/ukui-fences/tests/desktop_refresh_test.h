@@ -2,6 +2,13 @@
 #include <QKeyEvent>
 #include <QPointer>
 
+struct DesktopRefreshTestAccess {
+    static bool sampleFeedback(DesktopIcon *icon){
+        auto &animation=icon->m_refreshFeedback;
+        if(animation.state()!=QAbstractAnimation::Running)return false;
+        animation.setCurrentTime(animation.duration()/4);return true;
+    }
+};
 // The public menu and F5 entry points must preserve an unchanged desktop.
 static int runDesktopRefreshTest(const QString &root)
 {
@@ -85,7 +92,8 @@ static int runDesktopRefreshTest(const QString &root)
     settle(180);
     const QImage stable = loose->grab().toImage();
     QKeyEvent f5(QEvent::KeyPress, Qt::Key_F5, Qt::NoModifier);
-    QApplication::sendEvent(&canvas, &f5); settle(50);
+    QApplication::sendEvent(&canvas, &f5);
+    check(DesktopRefreshTestAccess::sampleFeedback(loose),"F5 starts refresh feedback through the public entry point");
     check(stable != loose->grab().toImage(), "F5 gives visible refresh feedback on the existing icon");
     settle(200);
     check(stable == loose->grab().toImage(), "refresh feedback ends without changing icon appearance or selection");

@@ -5,13 +5,15 @@ import json
 import os
 from pathlib import Path
 import sys
+import uuid
+import tempfile
 
 NODE = Path('/sys/class/devfreq/PHYT0048:00')
 POWER = Path('/sys/class/power_supply')
 CONFIG = Path('/etc/ukui-ftg340-responsiveness.json')
 STATE = Path('/var/lib/ukui-ftg340-responsiveness/original.json')
 MARKER = Path('/run/ukui-ftg340-responsiveness.active')
-LOCK = Path('/run/ukui-ftg340-responsiveness.lock')
+LOCK = STATE.parent/'policy.lock'
 
 
 def ac_online(power):
@@ -40,15 +42,23 @@ def write_floor(value):
 
 
 def run(action):
-    if (NODE/'device/driver').resolve().name != 'ftg340':
-        raise RuntimeError('Expected FTG340 device is not available')
+    # Every policy event advances ownership, including same-value writes.
+    generation=STATE.with_suffix('.generation');generation.parent.mkdir(parents=True,exist_ok=True)
+    fd,temporary=tempfile.mkstemp(dir=str(generation.parent),prefix='.generation-')
+    try:
+        with os.fdopen(fd,'w') as output:output.write(uuid.uuid4().hex);output.flush();os.fsync(output.fileno())
+        os.replace(temporary,generation)
+    finally:
+        if os.path.exists(temporary):os.unlink(temporary)
     if action == 'stop':
         MARKER.unlink(missing_ok=True)
-        if STATE.exists():
+        if STATE.exists() and (NODE/'device/driver').resolve().name == 'ftg340':
             write_floor(int(json.loads(STATE.read_text())['min_freq']))
         return
     if action == 'apply' and not MARKER.exists():
         return  # A udev event must not reactivate a stopped service.
+    if (NODE/'device/driver').resolve().name != 'ftg340':
+        raise RuntimeError('Expected FTG340 device is not available')
     if (NODE/'governor').read_text().strip() != 'simple_ondemand':
         print('Skipping: another GPU governor is selected')
         return
@@ -76,6 +86,7 @@ def main():
         raise SystemExit('Administrator authentication required')
     if len(sys.argv) != 2 or sys.argv[1] not in ('start', 'apply', 'stop'):
         raise SystemExit('Usage: ftg340-responsiveness {start|apply|stop}')
+    LOCK.parent.mkdir(parents=True,exist_ok=True)
     with LOCK.open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         run(sys.argv[1])

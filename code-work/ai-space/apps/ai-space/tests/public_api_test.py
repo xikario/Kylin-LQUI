@@ -86,7 +86,7 @@ with tempfile.TemporaryDirectory(prefix="ai-space-public-api-") as directory:
             text=True,
         )
         interface = ET.fromstring(xml).find("interface[@name='%s']" % service)
-        allowed = {"showWindow", "hideWindow", "toggleWindow", "showSettings", "quit", "status"}
+        allowed = {"showWindow", "hideWindow", "toggleWindow", "showSettings", "quit", "quitSettingsService", "status"}
         assert {row.attrib["name"] for row in interface.findall("method")} == allowed, xml
         for method, arguments in [
             ("startFullIndex", ()),

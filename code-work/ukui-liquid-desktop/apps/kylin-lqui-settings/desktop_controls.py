@@ -15,7 +15,7 @@ class DesktopControls:
         path,adapter=next((item for item in adapters if item[1].get('Powered')),adapters[0]);devices=[]
         for device,interfaces in objects.items():
             item=interfaces.get('org.bluez.Device1')
-            if item and item.get('Adapter')==path:devices.append({'id':device,'name':item.get('Alias') or item.get('Name') or item.get('Address'),'paired':bool(item.get('Paired')),'connected':bool(item.get('Connected'))})
+            if item and item.get('Adapter')==path:devices.append({'id':device,'name':str(item.get('Alias') or item.get('Name') or item.get('Address') or '未知设备'),'paired':bool(item.get('Paired')),'connected':bool(item.get('Connected'))})
         return {'available':True,'adapter':path,'enabled':bool(adapter.get('Powered')),'discovering':bool(adapter.get('Discovering')),'devices':sorted(devices,key=lambda d:(not d['connected'],not d['paired'],d['name']))[:30]}
     def brightness(self):
         # Use the supported user-session display service. The hardware daemon
@@ -23,7 +23,7 @@ class DesktopControls:
         value=int(self.session_call('org.ukui.SettingsDaemon','/org/ukui/SettingsDaemon/GammaManager','org.ukui.SettingsDaemon.GammaManager','getPrimaryBrightness')[0])
         return {'available':0<=value<=100,'value':max(0,min(100,value)),'backend':'ukui-display'}
     def notifications(self):
-        schema=Gio.SettingsSchemaSource.get_default().lookup('org.ukui.quick-operation.panel',True)
+        source=Gio.SettingsSchemaSource.get_default();schema=source.lookup('org.ukui.quick-operation.panel',True) if source else None
         dnd=Gio.Settings.new_full(schema,None,None).get_boolean('disturbmodestatus') if schema else False
         try:entries=json.loads(self.session_call('org.ukui.AiStationPanel','/org/kylin/Lqui/Notifications','org.kylin.Lqui.Notifications','List')[0])
         except (GLib.Error,ValueError):entries=[]
@@ -35,8 +35,10 @@ class DesktopControls:
         for name in [n for n in names if n.startswith('org.mpris.MediaPlayer2.')][:8]:
             try:
                 item=self.session_props(name,'/org/mpris/MediaPlayer2','org.mpris.MediaPlayer2.Player');meta=item.get('Metadata',{})
-                players.append({'service':name,'title':str(meta.get('xesam:title','暂无曲目信息')),'artist':' / '.join(meta.get('xesam:artist',[])),'art':str(meta.get('mpris:artUrl','')),'playing':item.get('PlaybackStatus')=='Playing','canControl':bool(item.get('CanControl')),'canPrevious':bool(item.get('CanGoPrevious')),'canNext':bool(item.get('CanGoNext'))})
-            except GLib.Error:continue
+                artists=meta.get('xesam:artist') or []
+                if isinstance(artists,str):artists=[artists]
+                players.append({'service':name,'title':str(meta.get('xesam:title') or '暂无曲目信息'),'artist':' / '.join(str(artist) for artist in artists),'art':str(meta.get('mpris:artUrl','')),'playing':item.get('PlaybackStatus')=='Playing','canControl':bool(item.get('CanControl')),'canPrevious':bool(item.get('CanGoPrevious')),'canNext':bool(item.get('CanGoNext'))})
+            except (GLib.Error,TypeError,ValueError,AttributeError):continue
         return {'available':bool(players),'player':next((p for p in players if p['playing']),players[0] if players else {}),'players':players}
     def session(self):
         result={}
@@ -71,7 +73,9 @@ class DesktopControls:
         elif operation=='dnd':
             value=values.get('value')
             if type(value) is not bool:raise ValueError('无效的勿扰状态')
-            settings=Gio.Settings.new('org.ukui.quick-operation.panel')
+            source=Gio.SettingsSchemaSource.get_default();schema=source.lookup('org.ukui.quick-operation.panel',True) if source else None
+            if not schema:raise ValueError('系统未安装勿扰设置服务')
+            settings=Gio.Settings.new_full(schema,None,None)
             for key in ('disturbmodestatus','disturbmodenotifyclose'):
                 if not settings.set_boolean(key,value):raise ValueError('系统未接受勿扰设置')
             Gio.Settings.sync()

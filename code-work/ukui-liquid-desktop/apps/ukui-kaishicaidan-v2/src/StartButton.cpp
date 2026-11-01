@@ -1,4 +1,5 @@
 #include "StartButton.h"
+#include <QPointer>
 #include "StartMenu.h"
 #include "TaskbarDetector.h"
 #include "StartMenuTheme.h"
@@ -292,9 +293,10 @@ void StartButton::showContextMenu(const QPoint &pos)
     // Close any existing menu
     if (m_contextMenu) {
         qApp->removeEventFilter(this);
-        m_contextMenu->close();
-        m_contextMenu->deleteLater();
-        m_contextMenu = nullptr;
+        QPointer<QMenu> previous=m_contextMenu;
+        m_contextMenu=nullptr;
+        previous->close();
+        if(previous)previous->deleteLater();
     }
 
     m_contextMenu = new QMenu(this);

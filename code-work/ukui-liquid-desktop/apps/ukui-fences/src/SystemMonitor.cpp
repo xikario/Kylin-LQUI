@@ -421,7 +421,7 @@ QVector<ProcessInfo> SystemMonitor::readProcessSnapshot(
     previousTicks = currentTicks;
     std::sort(processes.begin(), processes.end(),
               [](const ProcessInfo &a, const ProcessInfo &b) {
-        if (std::abs(a.cpuPercent - b.cpuPercent) > 0.05)
+        if (a.cpuPercent != b.cpuPercent)
             return a.cpuPercent > b.cpuPercent;
         return a.rssMb > b.rssMb;
     });
@@ -443,7 +443,7 @@ QVector<SystemMonitor::Sample::FrameworkInfo> SystemMonitor::readFrameworkSnapsh
     for(const auto &value:catalog) {
         const auto component=value.toObject(), config=component.value("monitor").toObject();
         if(config.isEmpty())continue;
-        Sample::FrameworkInfo row;row.name=config.value("label").toString();row.status=config.value("idle").toString();
+        Sample::FrameworkInfo row;row.id=component.value("id").toString();row.name=config.value("label").toString();row.status=config.value("idle").toString();
         bool cpuValid=true,memoryValid=true;QStringList states;
         for(const auto &process:processes) {
             if(process.uid!=int(getuid()))continue;

@@ -38,7 +38,7 @@ void step() {
     auto e=events.takeFirst();
     if(e.contains("approval")) {
         approval=true;out({{"id","opaque-permission"},{"method","session/request_permission"},{"params",QJsonObject{{"sessionId",session},
-            {"toolCall",QJsonObject{{"toolCallId","x1"},{"title","清理构建目录"},{"rawInput",QJsonObject{{"command","rm -rf build"}}}}},
+            {"toolCall",QJsonObject{{"toolCallId","x1"},{"title","清理构建目录"},{"rawInput",QJsonObject{{"command",QString(800,'x')+"REVIEW_SUFFIX"}}}}},
             {"options",QJsonArray{QJsonObject{{"optionId","yes-once"},{"name","允许本次"},{"kind","allow_once"}},QJsonObject{{"optionId","no-once"},{"name","拒绝"},{"kind","reject_once"}}}}}}});return;
     }
     update(e);

@@ -51,7 +51,7 @@ bool WallpaperBackdrop::reload() {
             if(mode!=5)path=root.value("wallpaperPath").toString();
             if(mode==5)mode=0; // Fences renders system wallpaper as Fill.
         }
-        QSettings videoSettings(config+"/kylin/ukui-fences.ini",QSettings::IniFormat);
+        QSettings videoSettings(QSettings::NativeFormat,QSettings::UserScope,"kylin","ukui-fences");
         m_videoPath=videoSettings.value("wallpaper/videoPath").toString();
         m_videoPoster=fencesVideoPoster(m_videoPath);
         if(!m_videoPoster.isEmpty() && QFileInfo(m_videoPoster).isFile()) {

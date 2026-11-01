@@ -33,12 +33,13 @@ AI小站是独立程序，由任务栏 AI 小球按需启动。Fences 不再提�
 需要 Qt5 Core/Gui/Widgets/Network/DBus/Test、GL 头文件、Xvfb 与用户 systemd。
 
 ```sh
-bash build.sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j2
 cd build
 ctest --output-on-failure
 ```
 
-`build.sh` 默认使用旁边 `ukui-liquid-desktop/shared/` 的公共渲染与窗口库，可用 `LIQUID_DESKTOP_ROOT` 指定。
+CMake 默认使用旁边 `ukui-liquid-desktop/shared/` 的公共渲染与窗口库，可用 `-DLIQUID_DESKTOP_ROOT=/path/to/ukui-liquid-desktop` 指定。以上命令在本组件目录执行；安装器遵循 `settings.json` 中的 `residentOnLogin`（未配置时默认启用）；可在统一设置中关闭登录常驻。
 
 测试使用 `tests/fixture.cpp` 模拟 `codex app-server`：协议相同，不联网，不调用模型。覆盖范围：
 
@@ -55,7 +56,7 @@ python3 scripts/install.py
 ~/.local/bin/liquid-cli --show | --toggle | --hide | --settings | --reload | --state | --quit
 ```
 
-只安装到用户目录，保留旧 release，默认不开机自启。终端版 0.1.0 的源码保留在 `releases/source-terminal-0.1.0/`。
+只安装到用户目录，保留旧 release，按已保存的登录常驻设置安装。终端版 0.1.0 的源码保留在 `releases/source-terminal-0.1.0/`。
 
 ## 来源与许可
 

@@ -5,6 +5,7 @@
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QTimer>
+#include <QCloseEvent>
 #include <memory>
 
 RegionCapture::RegionCapture(const QRect &screen,QPixmap screenshot):QWidget(nullptr,Qt::Tool|Qt::FramelessWindowHint|Qt::WindowStaysOnTopHint),image(std::move(screenshot)) {
@@ -68,3 +69,4 @@ void RegionCapture::mouseReleaseEvent(QMouseEvent *e) {
     auto cropped=image.copy(physical).toImage();cropped.setDevicePixelRatio(1);emit selected(cropped,QRect(mapToGlobal(area.topLeft()),area.size()));
 }
 void RegionCapture::keyPressEvent(QKeyEvent *e){if(e->key()==Qt::Key_Escape)emit selected({},{});else QWidget::keyPressEvent(e);}
+void RegionCapture::closeEvent(QCloseEvent *event){emit selected({},{});event->accept();}

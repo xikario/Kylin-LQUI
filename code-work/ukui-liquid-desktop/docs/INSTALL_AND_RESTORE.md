@@ -19,7 +19,7 @@ sh apps/ukui-fences/packaging/install-user.sh
 
 ### 升级和回退
 
-安装脚本不保存历史二进制，也不是跨文件的事务安装器。升级前备份已有程序及资源、`~/.config/kylin/ukui-fences.ini`、`~/.config/kyfences/layout.json`；需要保留知识库/统计时另备份用户数据。布局导出不备份桌面文件或其他数据。
+安装脚本不保存历史二进制，也不是跨文件的事务安装器。升级前备份已有程序及资源、`~/.config/kylin/ukui-fences.conf`、`~/.config/kyfences/layout.json`；需要保留知识库/统计时另备份用户数据。布局导出不备份桌面文件或其他数据。
 
 正常退出旧实例：
 

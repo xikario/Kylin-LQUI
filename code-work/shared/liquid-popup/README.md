@@ -1,3 +1,5 @@
+> 历史实现，仅供对照。当前输入法与桌面构建统一使用 `code-work/ukui-liquid-desktop/shared/` 中的规范实现。
+
 # UKUI 公共液态气泡 v0.2
 
 2026-09-27。Qt 5 Widgets / C++17，四个界面引用一份源码。

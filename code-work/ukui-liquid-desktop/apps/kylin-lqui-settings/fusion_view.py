@@ -112,7 +112,8 @@ class FusionView:
     def set_position(self):
         screen=QtWidgets.QApplication.screenAt(self.anchor.center()) or QtWidgets.QApplication.primaryScreen();area=screen.availableGeometry().adjusted(7,7,-7,-7)
         self.resize(min(390,area.width()),min(660 if self.page=='home' else 440 if self.page in ('wifi','bluetooth') else 520 if self.page=='power' else 340 if self.page=='sound' else 570,area.height()))
-        x=self.anchor.right()-self.width()+1;y=self.anchor.top()-self.height()-7
+        # Align the visible card edge, excluding the transparent window margin.
+        x=self.anchor.left()-self.layout().contentsMargins().left();y=self.anchor.top()-self.height()-7
         if y<area.top():y=self.anchor.bottom()+7
         self.move(max(area.left(),min(x,area.right()-self.width()+1)),max(area.top(),min(y,area.bottom()-self.height()+1)))
     def capture_backdrop(self):self.backdrop=blurred_capture(self);self.update();[card.update() for card in self.findChildren(GlassCard)]

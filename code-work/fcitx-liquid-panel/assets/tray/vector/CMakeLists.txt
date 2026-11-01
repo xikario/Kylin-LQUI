@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.16)
+project(TrayAssetRenderer LANGUAGES CXX)
+find_package(Qt5 REQUIRED COMPONENTS Gui)
+add_executable(render-tray-vector render.cpp)
+target_link_libraries(render-tray-vector PRIVATE Qt5::Gui)

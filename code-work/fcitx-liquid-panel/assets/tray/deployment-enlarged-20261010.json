@@ -1,0 +1,141 @@
+{
+  "pid": 45623,
+  "binary_sha256": "6c19144f8f3bad2caf5f89983f29b9cacccd0d11155a2aba20eb7f7644fa5a04",
+  "running_binary_matches": true,
+  "gpu": true,
+  "style": "enlarged borderless white symbols",
+  "assets": [
+    {
+      "mode": "chinese",
+      "label": "中文输入",
+      "source": "/home/zhouzhang/下载/Gemini_Generated_Image_ornhfsornhfsornh.jpeg",
+      "vector": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/vector/chinese.svg",
+      "asset": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/chinese.png",
+      "method": "Manual SVG artwork; outer rounded-square frame and translucent fill removed; rendered to PNG with Qt",
+      "date": "2026-10-10",
+      "sha256": "66a6cec50b6d50463c8abbe340c224bfe70e19e9192837d25726b3f4468eea8b",
+      "size": [
+        512,
+        512
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "style": "enlarged borderless white symbols",
+      "opaque_bounds": [
+        59,
+        31,
+        453,
+        481
+      ],
+      "visible_max_at_24px": 21.1,
+      "sizing_reference": "/usr/share/icons/ukui-icon-theme-classical/24x24/actions/ukui-wifi-on.symbolic.png"
+    },
+    {
+      "mode": "latin",
+      "label": "Rime 英文小写",
+      "source": "/home/zhouzhang/下载/Gemini_Generated_Image_ornhfsornhfsornh.jpeg",
+      "vector": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/vector/latin.svg",
+      "asset": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/latin.png",
+      "method": "Manual SVG artwork; outer rounded-square frame and translucent fill removed; rendered to PNG with Qt",
+      "date": "2026-10-10",
+      "sha256": "bb18672facf6aba98232bcea70ef7156c57dded03203bd6db525bd3b888110f5",
+      "size": [
+        512,
+        512
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "style": "enlarged borderless white symbols",
+      "opaque_bounds": [
+        52,
+        30,
+        460,
+        481
+      ],
+      "visible_max_at_24px": 21.1,
+      "sizing_reference": "/usr/share/icons/ukui-icon-theme-classical/24x24/actions/ukui-wifi-on.symbolic.png"
+    },
+    {
+      "mode": "uppercase",
+      "label": "Caps Lock 大写锁定",
+      "source": "/home/zhouzhang/下载/Gemini_Generated_Image_ornhfsornhfsornh.jpeg",
+      "vector": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/vector/uppercase.svg",
+      "asset": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/uppercase.png",
+      "method": "Manual SVG artwork; outer rounded-square frame and translucent fill removed; rendered to PNG with Qt",
+      "date": "2026-10-10",
+      "sha256": "1e3ea0651fd9e55a90999476664bb9d3c8a75172b90f81391a063d6e177a5609",
+      "size": [
+        512,
+        512
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "style": "enlarged borderless white symbols",
+      "opaque_bounds": [
+        48,
+        45,
+        497,
+        466
+      ],
+      "visible_max_at_24px": 21.0,
+      "sizing_reference": "/usr/share/icons/ukui-icon-theme-classical/24x24/actions/ukui-wifi-on.symbolic.png"
+    },
+    {
+      "mode": "direct",
+      "label": "键盘直输 / 输入法关闭",
+      "source": "/home/zhouzhang/下载/Gemini_Generated_Image_ornhfsornhfsornh.jpeg",
+      "vector": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/vector/direct.svg",
+      "asset": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/direct.png",
+      "method": "Manual SVG artwork; outer rounded-square frame and translucent fill removed; rendered to PNG with Qt",
+      "date": "2026-10-10",
+      "sha256": "f2f013180b06d9ed519c56825d4a3f7a2849a0d0a11ddeec316d34b1ab68e278",
+      "size": [
+        512,
+        512
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "style": "enlarged borderless white symbols",
+      "opaque_bounds": [
+        20,
+        115,
+        492,
+        396
+      ],
+      "visible_max_at_24px": 22.1,
+      "sizing_reference": "/usr/share/icons/ukui-icon-theme-classical/24x24/actions/ukui-wifi-on.symbolic.png"
+    }
+  ]
+}

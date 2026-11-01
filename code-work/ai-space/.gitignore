@@ -1,0 +1,16 @@
+build/
+.local-deps/
+__pycache__/
+*.pyc
+*.user
+releases/
+.env
+
+# User knowledge is data, never source code.
+*.aikb
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+.venv/
+build-sanitize/

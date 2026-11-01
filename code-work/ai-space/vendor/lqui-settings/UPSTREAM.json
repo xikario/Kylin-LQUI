@@ -1,0 +1,9 @@
+{
+  "source": "Kylin-LQUI/ukui-liquid-desktop/shared/settings",
+  "snapshot": "2026-10-31",
+  "files": {
+    "CMakeLists.txt": "42d4e3d3c157d2140ca45525d17811bce8516735608d91987a26d18f39e34eee",
+    "SettingsBridge.cpp": "213a7bd3e66b85daf55b4d6af288dda60c26c8ebf75a65e8870c72f4d01f4328",
+    "SettingsBridge.h": "30be0c1d4b48eb1c2addce1e4f9ee39b429cde9361e96577bf92105cb33cc7e3"
+  }
+}

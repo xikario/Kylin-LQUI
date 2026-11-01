@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-10",
+  "pid": 43261,
+  "binary_sha256": "25c7f66219d9a086e58015655aec4b508385977d8cfc9939a468abbc0cb1c3cc",
+  "running_binary_matches": true,
+  "gpu": true,
+  "tray_icon": ":/fcitx-liquid/tray/direct.png",
+  "config_sha256": "06095c2c653dd16ce53c5c9d5747348fd28740360bd43b8ed886f4b03e03dd5b",
+  "config_unchanged": true,
+  "real_shortcuts": "PASS: Shift / Caps Lock / Ctrl+Space round trips",
+  "method": "Manual SVG design reconstruction, Qt rasterization",
+  "assets": [
+    {
+      "mode": "chinese",
+      "label": "中文输入",
+      "source": "/home/zhouzhang/下载/Gemini_Generated_Image_ornhfsornhfsornh.jpeg",
+      "vector": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/vector/chinese.svg",
+      "asset": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/chinese.png",
+      "method": "Manually authored SVG matching supplied minimal design; rendered to PNG with Qt",
+      "date": "2026-10-10",
+      "sha256": "7935414805e0f02466e7acb216a9ded12d8a58c636ee6afbd284aa26962abf63",
+      "size": [
+        512,
+        512
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "mode": "latin",
+      "label": "Rime 英文小写",
+      "source": "/home/zhouzhang/下载/Gemini_Generated_Image_ornhfsornhfsornh.jpeg",
+      "vector": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/vector/latin.svg",
+      "asset": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/latin.png",
+      "method": "Manually authored SVG matching supplied minimal design; rendered to PNG with Qt",
+      "date": "2026-10-10",
+      "sha256": "4fab9b9f7c819ce7080098b15d01c0778bcb7937cc0d2996cdbafd95265a6eb4",
+      "size": [
+        512,
+        512
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "mode": "uppercase",
+      "label": "Caps Lock 大写锁定",
+      "source": "/home/zhouzhang/下载/Gemini_Generated_Image_ornhfsornhfsornh.jpeg",
+      "vector": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/vector/uppercase.svg",
+      "asset": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/uppercase.png",
+      "method": "Manually authored SVG matching supplied minimal design; rendered to PNG with Qt",
+      "date": "2026-10-10",
+      "sha256": "6012a93379c4b74d74bdea66fe092f08f149831e40d5c88a0b696523e1c2edbe",
+      "size": [
+        512,
+        512
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "mode": "direct",
+      "label": "键盘直输 / 输入法关闭",
+      "source": "/home/zhouzhang/下载/Gemini_Generated_Image_ornhfsornhfsornh.jpeg",
+      "vector": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/vector/direct.svg",
+      "asset": "/home/zhouzhang/应用/code-work/fcitx-liquid-panel/assets/tray/direct.png",
+      "method": "Manually authored SVG matching supplied minimal design; rendered to PNG with Qt",
+      "date": "2026-10-10",
+      "sha256": "fc1adfca2460e618f40088161ba96da489d8524b8aeb856a59d86e84213cf53f",
+      "size": [
+        512,
+        512
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "corner_alpha": [
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

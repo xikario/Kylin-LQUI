@@ -1,0 +1,9 @@
+<RCC>
+  <qresource prefix="/fcitx-liquid/tray">
+    <file alias="settings.png">tray/settings.png</file>
+    <file alias="chinese.png">tray/chinese.png</file>
+    <file alias="latin.png">tray/latin.png</file>
+    <file alias="uppercase.png">tray/uppercase.png</file>
+    <file alias="direct.png">tray/direct.png</file>
+  </qresource>
+</RCC>

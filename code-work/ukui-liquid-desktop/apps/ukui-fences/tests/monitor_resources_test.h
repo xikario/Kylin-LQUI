@@ -1,0 +1,86 @@
+#pragma once
+#include <QClipboard>
+#include <QDialogButtonBox>
+#include <QPlainTextEdit>
+#include <QScreen>
+#include <QLineEdit>
+#include <QSpinBox>
+
+struct SystemMonitorTestAccess {
+    static int run() {
+        QSettings settings;settings.setValue("systemMonitor/autoStart",false);
+        settings.setValue("systemMonitor/apiKey","unused-legacy-fixture");
+        settings.setValue("systemMonitor/credentialStore","secret-service");
+        QWidget host;host.resize(1600,950);host.show();
+        SystemMonitor monitor(&host);monitor.m_timer.stop();monitor.setSkin(SystemMonitor::Skin::Dark);monitor.show();settle(150);
+        check(monitor.findChildren<QProcess *>().isEmpty(),"monitor never starts a keyring reader or cloud request process");
+        check(settings.value("systemMonitor/apiKey").toString()=="unused-legacy-fixture","removing diagnosis leaves legacy stored credentials untouched");
+        const int realCores=monitor.m_coreCount;
+        const auto own=SystemMonitor::readProcessDetails(getpid());
+        ProcessInfo ownFixture;ownFixture.pid=getpid();ownFixture.startTicks=own.startTicks;
+        ownFixture.executablePath="/fixture/ukui-fences";ownFixture.uid=getuid();ownFixture.state="S";
+        auto framework=SystemMonitor::readFrameworkSnapshot({ownFixture});
+        check(framework.size()==8&&framework.first().pids.contains(getpid()),"framework catalog identifies exact main executable and current user");
+        check(!framework.first().cpuValid&&framework.first().memoryValid&&framework.first().pss>0,"first CPU sample is unknown while proportional memory is measured");
+        check(framework[5].status=="按需启动"&&framework[5].pids.isEmpty(),"optional manager is on demand, not a failed service");
+        ownFixture.uid=getuid()+1;
+        check(SystemMonitor::readFrameworkSnapshot({ownFixture}).first().pids.isEmpty(),"other users' processes are excluded");
+        ownFixture.uid=getuid();++ownFixture.startTicks;
+        check(SystemMonitor::readFrameworkSnapshot({ownFixture}).first().pids.isEmpty(),"PID reuse between common and memory samples is rejected");
+        --ownFixture.startTicks;ownFixture.state="T";ownFixture.cpuValid=true;ownFixture.cpuPercent=235.;
+        framework=SystemMonitor::readFrameworkSnapshot({ownFixture});
+        check(framework.first().warning&&framework.first().status=="已暂停"&&framework.first().cpu==235.,"stopped process status and multi-core CPU are preserved");
+        for(bool compact:{false,true}) {
+            monitor.m_compact=compact;monitor.resize(monitor.baseSize());
+            for(int cores:{1,8,16,32,64}) {
+                monitor.m_coreCount=cores;monitor.grab();
+                const QRect card(monitor.MARGIN,monitor.HEADER_H+14,(monitor.logicalWidth()-monitor.MARGIN*2-24)/3,156);
+                check(monitor.m_coreRects.size()==qMin(cores,monitor.CORE_LIMIT),"CPU tracks represent all supported cores");
+                for(const auto &rect:monitor.m_coreRects)check(card.contains(rect),"CPU tracks remain inside their card");
+            }
+        }
+        monitor.m_coreCount=realCores;monitor.m_compact=false;monitor.resize(monitor.baseSize());
+        monitor.m_cpuPercent=38.;monitor.m_memPercent=56.;monitor.m_cpuHistory={12.,60.,38.};monitor.m_memHistory={42.,62.,56.};
+        monitor.m_lastUpdated=QDateTime::currentDateTime();monitor.m_loads={1.5,1.1,.8};monitor.m_swapUsedGb=.25;monitor.m_diskReadMb=18.5;monitor.m_diskWriteMb=3.2;
+        monitor.m_topProcs={{"多核应用","/fixture/application",230.,768.,99,123,true},{"第二应用","/fixture/second",15.,256.,100,124,true}};
+        monitor.grab();
+        monitor.m_framework=framework;monitor.grab();
+        check(monitor.m_frameworkRowRects.size()==8,"all framework components have a status row");
+        for(const auto &row:monitor.m_frameworkRowRects)check(monitor.m_overviewRect.contains(row)&&!row.intersects(monitor.m_copyRect),"framework rows fit without clipping or overlapping actions");
+        monitor.m_framework<<framework.first()<<framework.last();monitor.grab();
+        check(monitor.m_frameworkRowRects.size()==10,"ten framework components remain visible");
+        for(const auto &row:monitor.m_frameworkRowRects)check(!row.intersects(monitor.m_copyRect)&&!row.intersects(monitor.m_detailsRect),"ten-row framework list reserves its action footer");
+        monitor.m_framework=framework;monitor.grab();
+        check(monitor.tooltipAt(monitor.m_frameworkRowRects.first().center()).contains("换出"),"framework hover explains swapped and proportional memory");
+        check(monitor.m_processRowRects.size()==2,"wider resource table shows native process rows");
+        for(const auto &row:monitor.m_processRowRects)check(!row.intersects(monitor.m_overviewRect),"process rows and local overview do not overlap");
+        check(monitor.m_overviewRect.contains(monitor.m_copyRect)&&monitor.m_overviewRect.contains(monitor.m_detailsRect),"snapshot actions fit within the local overview");
+        const QString snapshot=monitor.resourceSnapshotText();
+        check(snapshot.contains("230.0%")&&snapshot.contains("RSS")&&snapshot.contains("60.0%"),"snapshot preserves multi-core CPU semantics and measured peaks");
+        check(!snapshot.contains("DeepSeek")&&!snapshot.contains("unused-legacy-fixture"),"local snapshot contains no provider or credential data");
+        monitor.copyResourceSnapshot();check(QApplication::clipboard()->text()==snapshot,"copy action copies the measured local snapshot");
+        const QString selected=monitor.resourceSnapshotText(&monitor.m_topProcs.first());check(selected.contains("多核应用")&&!selected.contains("第二应用"),"selected-process copy has the requested scope");
+        check(monitor.tooltipAt(monitor.m_processRowRects.first().center()).contains("单核 100%"),"process hover explains its CPU accounting");
+        monitor.openResourceSnapshot();settle(80);
+        auto *details=monitor.findChild<QDialog *>("monitorResourceSnapshot");check(details&&details->isVisible(),"local detail window opens");
+        auto *text=details->findChild<QPlainTextEdit *>("monitorSnapshotText");check(text&&text->isReadOnly()&&text->toPlainText()==snapshot,"details display an immutable readable snapshot");
+        details->close();settle(80);
+        QWidget settingsHost;auto *page=monitor.createSettingsPage(&settingsHost);
+        check(!page->findChild<QWidget *>("monitorApiKey")&&!page->findChild<QWidget *>("monitorApiModel"),"monitor settings have no removed model or credential controls");
+        auto *sort=page->findChild<QComboBox *>("monitorSortBy");auto *interval=page->findChild<QSpinBox *>("monitorSampleInterval");
+        auto *frameworkSetting=page->findChild<QCheckBox *>("monitorFramework");
+        check(frameworkSetting&&frameworkSetting->isChecked(),"framework monitoring is included in Fences settings");
+        frameworkSetting->setChecked(false);
+        check(sort&&interval&&page->findChild<QCheckBox *>("monitorCompact"),"sorting, refresh cadence and compact view are configurable");
+        sort->setCurrentIndex(1);interval->setValue(7);page->findChild<QLineEdit *>("monitorTitle")->setText("资源观测");
+        page->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply)->click();settle(100);settings.sync();
+        check(settings.value("systemMonitor/sortByMemory").toBool()&&settings.value("systemMonitor/statInterval").toInt()==7&&settings.value("systemMonitor/title").toString()=="资源观测","monitor settings persist together through the Fences apply form");
+        SystemMonitor restored;restored.m_timer.stop();check(restored.m_sortByMemory&&restored.m_statIntervalSec==7,"recreated monitor restores resource preferences");
+        check(!restored.m_showFramework&&!settings.value("systemMonitor/showFramework").toBool(),"framework visibility persists across restart");
+        frameworkSetting->setChecked(true);page->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Apply)->click();settle(100);
+        monitor.hide();check(!monitor.m_timer.isActive(),"hidden monitor stops sampling");monitor.show();check(monitor.m_timer.isActive(),"showing monitor resumes sampling");monitor.m_timer.stop();
+        QDir().mkpath("artifacts/monitor-resources");monitor.grab().save("artifacts/monitor-resources/expanded.png");
+        monitor.setCompact(true);monitor.grab().save("artifacts/monitor-resources/compact.png");
+        return 0;
+    }
+};

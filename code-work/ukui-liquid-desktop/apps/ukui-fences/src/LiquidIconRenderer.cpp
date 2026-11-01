@@ -1,0 +1,90 @@
+#include "LiquidIconRenderer.h"
+#include "../../../shared/icon-style/OpticalIcon.h"
+#include <QPixmapCache>
+#include <QPainterPath>
+#include <QtMath>
+
+void LiquidIconRenderer::drawPlate(QPainter &p, const QRectF &rect,
+    const QColor &accent, qreal strength, qreal dpr, bool hovered, bool selected)
+{
+    if (LquiIcon::uniform()) {
+        // The adapted artwork is already a tile; do not wrap it in another box.
+        if (hovered || selected) {
+            p.save();QColor border=selected?accent:QColor(Qt::white);border.setAlpha(selected?205:105);
+            p.setPen(QPen(border,selected?1.5:1.));p.setBrush(QColor(255,255,255,hovered?18:8));
+            p.drawRoundedRect(rect.adjusted(.75,.75,-.75,-.75),rect.width()*.235,rect.width()*.235);p.restore();
+        }
+        return;
+    }
+    strength = qBound(0., strength, 1.);
+    dpr = qMax(1., dpr);
+    const qreal pad = 3.;
+    const QSizeF size = rect.size() + QSizeF(pad*2, pad*2);
+    const QString key = QStringLiteral("liquid-icon-v1:%1:%2:%3:%4:%5")
+        .arg(rect.width(),0,'f',2).arg(rect.height(),0,'f',2)
+        .arg(dpr,0,'f',3).arg(accent.rgba()).arg(qRound(strength*100));
+    QPixmap material;
+    if (!QPixmapCache::find(key, &material)) {
+        material = QPixmap(qCeil(size.width()*dpr), qCeil(size.height()*dpr));
+        material.setDevicePixelRatio(dpr);
+        material.fill(Qt::transparent);
+        QPainter g(&material);
+        g.setRenderHint(QPainter::Antialiasing);
+        const QRectF r(QPointF(pad,pad), rect.size());
+        const qreal radius = r.width() * .235;
+        g.setPen(Qt::NoPen);
+        for (int i=3; i>=1; --i) {
+            g.setBrush(QColor(0,0,0,qRound((4-i)*5*strength)));
+            g.drawRoundedRect(r.adjusted(-i*.5, 1, i*.5, i*.65), radius+i*.5, radius+i*.5);
+        }
+        QLinearGradient glass(r.topLeft(),r.bottomRight());
+        glass.setColorAt(0, QColor(255,255,255,qRound(110*strength)));
+        glass.setColorAt(.45, QColor(255,255,255,qRound(36*strength)));
+        glass.setColorAt(1, QColor(220,235,250,qRound(64*strength)));
+        g.setBrush(glass); g.drawRoundedRect(r,radius,radius);
+        QColor tint=accent; tint.setAlpha(qRound(46*strength));
+        g.setBrush(tint); g.drawRoundedRect(r,radius,radius);
+        QLinearGradient rim(r.topLeft(),r.bottomRight());
+        rim.setColorAt(0,QColor(255,255,255,qRound(185*strength)));
+        rim.setColorAt(.45,QColor(255,255,255,qRound(32*strength)));
+        rim.setColorAt(1,QColor(255,255,255,qRound(100*strength)));
+        g.setBrush(Qt::NoBrush); g.setPen(QPen(rim, .9));
+        g.drawRoundedRect(r.adjusted(.5,.5,-.5,-.5),radius,radius);
+        QPainterPath clip; clip.addRoundedRect(r.adjusted(1,1,-1,-1),radius-1,radius-1);
+        g.setClipPath(clip);
+        QRadialGradient shine(r.topLeft()+QPointF(r.width()*.22,0),r.width()*.8);
+        shine.setColorAt(0,QColor(255,255,255,qRound(85*strength)));
+        shine.setColorAt(1,Qt::transparent);
+        g.fillRect(r,shine);
+        g.end(); QPixmapCache::insert(key, material);
+    }
+    p.save();
+    p.drawPixmap(rect.topLeft()-QPointF(pad,pad),material);
+    if (hovered || selected) {
+        QColor border = selected ? accent : QColor(Qt::white);
+        border.setAlpha(selected ? 205 : 105);
+        p.setPen(QPen(border, selected ? 1.5 : 1.));
+        p.setBrush(QColor(255,255,255,hovered ? 18 : 8));
+        p.drawRoundedRect(rect.adjusted(.75,.75,-.75,-.75),rect.width()*.235,rect.width()*.235);
+    }
+    p.restore();
+}
+
+void LiquidIconRenderer::drawIcon(QPainter &p, const QRectF &rect, const QIcon &icon, qreal dpr)
+{
+    const QSize size(qCeil(rect.width()*dpr),qCeil(rect.height()*dpr));
+    const QString key=QString("lqui-icon-raster-v2:%1:%2:%3:%4:%5")
+        .arg(icon.cacheKey()).arg(size.width()).arg(size.height()).arg(dpr,0,'f',3).arg(LquiIcon::revision());
+    QPixmap raster;
+    if (!QPixmapCache::find(key,&raster)) {
+        raster=LquiIcon::raster(icon,qMax(size.width(),size.height()));
+        if (raster.isNull()) return;
+        raster.setDevicePixelRatio(dpr);
+        QPixmapCache::insert(key,raster);
+    }
+    // Rasterize scaling once, before the backing-store damage clip is applied.
+    // Qt's clipped smooth resampler can otherwise differ by one colour level
+    // at the edge of an overlapping icon between partial and full repaints.
+    const QPointF origin=rect.center()-QPointF(raster.width()/(2*dpr),raster.height()/(2*dpr));
+    p.drawPixmap(QPointF(qRound(origin.x()*dpr)/dpr,qRound(origin.y()*dpr)/dpr),raster);
+}

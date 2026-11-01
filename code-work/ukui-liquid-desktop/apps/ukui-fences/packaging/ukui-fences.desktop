@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=ukui-fences
+Name[zh_CN]=ukui-fences 桌面分区
+GenericName=Desktop Fences
+GenericName[zh_CN]=桌面分区
+Comment=Organize the UKUI desktop with fences and desktop widgets
+Comment[zh_CN]=用桌面分区、小组件和系统监视管理 UKUI 桌面
+Exec=ukui-fences-launcher
+Icon=ukui-fences
+Terminal=false
+StartupNotify=false
+Categories=Settings;DesktopSettings;
+Keywords=fences;desktop;widgets;monitor;
+Keywords[zh_CN]=桌面分区;小组件;系统监视;

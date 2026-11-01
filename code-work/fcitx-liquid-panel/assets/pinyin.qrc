@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="/fcitx-liquid/pinyin">
+    <file alias="characters.txt">pinyin/characters.txt</file>
+    <file alias="phrases.txt">pinyin/phrases.txt</file>
+  </qresource>
+</RCC>

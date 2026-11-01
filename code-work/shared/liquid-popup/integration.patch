@@ -1,0 +1,235 @@
+--- ukui-fences/CMakeLists.txt.before
++++ ukui-fences/CMakeLists.txt
+@@ -176,3 +176,11 @@
+         DESTINATION ${CMAKE_INSTALL_DOCDIR})
+ install(FILES vendor/nextkde-glass/LICENSE vendor/nextkde-glass/README.md
+         DESTINATION ${CMAKE_INSTALL_DOCDIR}/nextkde-glass)
++
++# One shared implementation for launcher, fences, Smart Space and monitor.
++set(UKUI_LIQUID_POPUP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../shared/liquid-popup" CACHE PATH "Shared liquid popup source")
++add_subdirectory("${UKUI_LIQUID_POPUP_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/liquid-popup")
++target_link_libraries(ukui-fences PRIVATE ukui-liquid-popup)
++if(TARGET fence-glass-test)
++    target_link_libraries(fence-glass-test PRIVATE ukui-liquid-popup)
++endif()
+--- ukui-fences/src/SmartSpaceWidget.cpp.before
++++ ukui-fences/src/SmartSpaceWidget.cpp
+@@ -1,3 +1,4 @@
++#include "LiquidPopup.h"
+ #include "SmartSpaceWidget.h"
+ 
+ #include "DesktopItem.h"
+@@ -1929,10 +1930,7 @@
+     connect(settings, &QAction::triggered, this,
+             &SmartSpaceWidget::showSettingsDialog);
+     connect(close, &QAction::triggered, this, &SmartSpaceWidget::closeRequested);
+-    const QPoint popup = m_moreButton
+-        ? m_moreButton->mapToGlobal(QPoint(m_moreButton->width() + 5, 0))
+-        : QCursor::pos();
+-    menu.exec(popup);
++    LiquidPopup::execAt(menu,m_moreButton);
+ }
+ 
+ void SmartSpaceWidget::updateResponsiveLayout()
+@@ -3109,7 +3107,7 @@
+                     .arg(currentPath.isEmpty() ? QString()
+                         : QStringLiteral("\n当前文件：%1").arg(currentPath)));
+                 if (m_indexProgress->underMouse()) {
+-                    QToolTip::showText(
++                    LiquidPopup::showText(
+                         m_indexProgress->mapToGlobal(
+                             QPoint(m_indexProgress->width() / 2,
+                                    m_indexProgress->height() + 4)),
+@@ -3882,7 +3880,7 @@
+             updateResults(false);
+         });
+     }
+-    menu.exec(m_sortButton->mapToGlobal(QPoint(0, m_sortButton->height() + 3)));
++    LiquidPopup::execAt(menu,m_sortButton);
+ }
+ 
+ QVector<int> SmartSpaceWidget::matchingFileIndexes() const
+@@ -4121,7 +4119,7 @@
+     const SmartSpaceEntry *entry = entryForPath(path);
+     if (!entry || entry->isDir || !m_previewPanel)
+         return;
+-    QToolTip::hideText();
++    LiquidPopup::hideText();
+     if (m_previewProcess && m_previewProcess->state() != QProcess::NotRunning) {
+         m_previewProcess->kill();
+         m_previewProcess->waitForFinished(120);
+@@ -5795,7 +5793,7 @@
+     auto *title = qobject_cast<QLabel *>(watched);
+     if (title && title->property("cardName").toBool()) {
+         if (event->type() == QEvent::Leave) {
+-            QToolTip::hideText();
++            LiquidPopup::hideText();
+         } else if (event->type() == QEvent::ToolTip ||
+                    event->type() == QEvent::MouseMove) {
+             const QPoint pos = event->type() == QEvent::ToolTip
+@@ -5804,7 +5802,7 @@
+             const int textEnd = title->contentsRect().left() +
+                 title->fontMetrics().horizontalAdvance(title->text());
+             if (pos.x() >= textEnd) {
+-                QToolTip::hideText();
++                LiquidPopup::hideText();
+                 if (event->type() == QEvent::ToolTip)
+                     return true;
+             }
+@@ -5822,7 +5820,7 @@
+     if (watched == m_indexProgress) {
+         if ((event->type() == QEvent::Enter || event->type() == QEvent::ToolTip)
+             && m_indexProgress && m_indexProgress->isVisible()) {
+-            QToolTip::showText(
++            LiquidPopup::showText(
+                 m_indexProgress->mapToGlobal(
+                     QPoint(m_indexProgress->width() / 2,
+                            m_indexProgress->height() + 4)),
+@@ -5830,7 +5828,7 @@
+             return event->type() == QEvent::ToolTip;
+         }
+         if (event->type() == QEvent::Leave)
+-            QToolTip::hideText();
++            LiquidPopup::hideText();
+     }
+     if (!m_fenceEmbedded && watched == m_header) {
+         if (event->type() == QEvent::MouseButtonPress) {
+--- ukui-fences/src/SystemMonitor.cpp.before
++++ ukui-fences/src/SystemMonitor.cpp
+@@ -1,3 +1,4 @@
++#include "LiquidPopup.h"
+ #include "SystemMonitor.h"
+ #include "DesktopCanvas.h"
+ #include "MenuStyle.h"
+@@ -2435,9 +2436,10 @@
+             QAction *wallpaper =
+                 menu.addAction(QStringLiteral("壁纸自动取色"));
+             QAction *liquid = menu.addAction(QStringLiteral("NextKDE 液态玻璃"));
+-            QAction *chosen = menu.exec(mapToGlobal(
+-                QPoint(qRound(m_skinRect.left() * m_scale),
+-                       qRound(m_skinRect.bottom() * m_scale))));
++            const QRect anchor(mapToGlobal(QPoint(qRound(m_skinRect.left()*m_scale),
++                                                  qRound(m_skinRect.top()*m_scale))),
++                               QSize(qRound(m_skinRect.width()*m_scale),qRound(m_skinRect.height()*m_scale)));
++            QAction *chosen = LiquidPopup::execAt(menu,anchor);
+             if (chosen == dark) setSkin(Skin::Dark);
+             else if (chosen == light) setSkin(Skin::Light);
+             else if (chosen == cyber) setSkin(Skin::Cyber);
+@@ -2561,9 +2563,9 @@
+ 
+     const QString tooltip = tooltipAt(logicalPos);
+     if (tooltip.isEmpty())
+-        QToolTip::hideText();
++        LiquidPopup::hideText();
+     else
+-        QToolTip::showText(event->globalPos() + QPoint(12, 18),
++        LiquidPopup::showText(event->globalPos() + QPoint(12, 18),
+                            tooltip, this);
+     QWidget::mouseMoveEvent(event);
+ }
+@@ -2679,7 +2681,7 @@
+ void SystemMonitor::leaveEvent(QEvent *)
+ {
+     m_hovered = false;
+-    QToolTip::hideText();
++    LiquidPopup::hideText();
+     update();
+ }
+ 
+--- ukui-fences/src/main.cpp.before
++++ ukui-fences/src/main.cpp
+@@ -1,3 +1,4 @@
++#include "LiquidPopup.h"
+ #include <QApplication>
+ #include <QAction>
+ #include <QFile>
+@@ -117,6 +118,7 @@
+     QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+ 
+     QApplication app(argc, argv);
++    LiquidPopup::install(app);
+     QApplication::setQuitOnLastWindowClosed(false);
+     app.setApplicationName("ukui-fences");
+     app.setApplicationDisplayName("ukui-fences");
+--- ukui-fences/tests/fence_glass_test.cpp.before
++++ ukui-fences/tests/fence_glass_test.cpp
+@@ -1,3 +1,4 @@
++#include "LiquidPopup.h"
+ #include "DesktopCanvas.h"
+ #include "FenceWidget.h"
+ #include "FenceGlassRenderer.h"
+@@ -59,6 +60,7 @@
+     QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+     QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+     QApplication app(argc, argv);
++    LiquidPopup::install(app);
+     app.setOrganizationName("kylin");
+     app.setApplicationName("ukui-fences");
+     const bool cpu = qEnvironmentVariableIsSet("UKUI_FENCES_GLASS_NO_GL");
+--- ukui-kaishicaidan-v2/CMakeLists.txt.before
++++ ukui-kaishicaidan-v2/CMakeLists.txt
+@@ -94,3 +94,8 @@
+     target_include_directories(glass-render-test PRIVATE src ${KAISHICAIDAN_GL_INCLUDE_DIR})
+     target_link_libraries(glass-render-test PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets)
+ endif()
++
++# One shared implementation for launcher, fences, Smart Space and monitor.
++set(UKUI_LIQUID_POPUP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../shared/liquid-popup" CACHE PATH "Shared liquid popup source")
++add_subdirectory("${UKUI_LIQUID_POPUP_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/liquid-popup")
++target_link_libraries(ukui-kaishicaidan-v2 PRIVATE ukui-liquid-popup)
+--- ukui-kaishicaidan-v2/src/StartMenu.cpp.before
++++ ukui-kaishicaidan-v2/src/StartMenu.cpp
+@@ -1,3 +1,4 @@
++#include "LiquidPopup.h"
+ #include "StartMenu.h"
+ #include "StartButton.h"
+ #include "TaskbarDetector.h"
+@@ -2814,13 +2815,13 @@
+     }
+ 
+     if (text.isEmpty()) {
+-        QToolTip::hideText();
++        LiquidPopup::hideText();
+         return;
+     }
+ 
+     const QPoint globalPos = mapToGlobal(
+         QPoint(StartMenuTheme::kRailWidth + 10, yCenter + 12));
+-    QToolTip::showText(globalPos, text, this,
++    LiquidPopup::showText(globalPos, text, this,
+                        QRect(0, yCenter - 20, StartMenuTheme::kRailWidth, 40),
+                        10000);
+ }
+@@ -3083,7 +3084,7 @@
+     if (m_hoveredRailBtn != RailButton::NoButton || m_hoveredRailApp >= 0) {
+         m_hoveredRailBtn = RailButton::NoButton;
+         m_hoveredRailApp = -1;
+-        QToolTip::hideText();
++        LiquidPopup::hideText();
+         update();
+     }
+ }
+@@ -3802,7 +3803,7 @@
+     m_visible = false;
+     m_pointerHasEnteredMenu = false;
+     m_showTime.invalidate();
+-    QToolTip::hideText();
++    LiquidPopup::hideText();
+     stopOutsideWatch();
+ }
+ 
+--- ukui-kaishicaidan-v2/src/main.cpp.before
++++ ukui-kaishicaidan-v2/src/main.cpp
+@@ -1,3 +1,4 @@
++#include "LiquidPopup.h"
+ #include <QApplication>
+ #include <QIcon>
+ #include <QFile>
+@@ -49,6 +50,7 @@
+     QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+ 
+     QApplication app(argc, argv);
++    LiquidPopup::install(app);
+     QApplication::setQuitOnLastWindowClosed(false);
+ #if defined(UKUI_KAISHICAIDAN_V2)
+     app.setApplicationName("ukui-kaishicaidan-v2");

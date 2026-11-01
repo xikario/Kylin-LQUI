@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "name": "Kylin-LQUI",
+  "stage": "integrated-visual-shell",
+  "platformBaseline": "UKUI X11 / Qt 5.12",
+  "compatibilityIdsPreserved": true,
+  "upstreamReference": {
+    "repository": "NextKde/NextKde",
+    "commit": "3ad2152512d29e3b704c5da8c2d4e96ebb12e722"
+  },
+  "principles": [
+    "保留 UKUI 基础服务",
+    "视觉与交互统一",
+    "按硬件能力降级",
+    "不重复采样与空转动画",
+    "操作可回退"
+  ],
+  "componentsCatalog": "components.json",
+  "nativeTakeover": {
+    "mode": "bounded-trial",
+    "persistentEnabled": false,
+    "plan": "../docs/KYLIN_LQUI_SYSTEM_PLAN.md"
+  },
+  "iconPolicy": {
+    "implementation": "../shared/icon-style/OpticalIcon.h",
+    "normalizeVisibleArtwork": true,
+    "launcherPermanentPlate": false
+  },
+  "controlCenter": {
+    "status": "implemented",
+    "reference": "NextKde ControlCenterPanel layout and interaction",
+    "backend": "Existing NetworkManager/PulseAudio/UPower/UKUI calendar services",
+    "entry": "Dock system capsule; date stays in metrics/date cluster",
+    "group": [
+      "network",
+      "audio",
+      "battery",
+      "native-notifications",
+      "native-input-method"
+    ],
+    "preserveMetricsDateCluster": true,
+    "resident": false,
+    "idleExitSeconds": 60,
+    "design": "unified liquid cards anchored above bottom Dock",
+    "features": [
+      "wifi",
+      "bluetooth",
+      "media",
+      "display-brightness",
+      "sound-and-output",
+      "battery-and-session",
+      "do-not-disturb",
+      "recent-notification-history"
+    ],
+    "calendar": "full UKUI calendar, right-aligned to Dock",
+    "history": "panel-owned event capture; last 200; user switch; legacy history entry retained"
+  },
+  "roadmap": {
+    "releaseTransactions": "planned",
+    "sharedProcessSampling": "partial",
+    "sharedLibraryVersioning": "planned",
+    "resourceBudgets": "baseline-and-tests",
+    "nativeLoginSession": "assessment"
+  }
+}

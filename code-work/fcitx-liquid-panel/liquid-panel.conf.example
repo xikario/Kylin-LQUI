@@ -1,0 +1,68 @@
+; RIME液态输入法配置
+; 修改后运行：python3 /home/zhouzhang/应用/code-work/fcitx-liquid-panel/manage.py restart
+; 0 表示自动计算；字号单位为 pt，间距和窗口尺寸为逻辑像素。
+
+[Interface]
+; Rime 实际分页，图形设置应用时同步到雾凇；有效范围 1–10
+PageSize=6
+; 0=横排，1=竖排，2=跟随输入方案
+Layout=0
+ShowPreedit=true
+; 汉字上方逐字显示带声调的拼音，与顶部输入栏分别控制
+ShowCandidatePinyin=true
+ShowAuxiliary=true
+ShowLabels=true
+ShowPagingButtons=true
+ScrollToPage=true
+
+[Fonts]
+; 中文候选词使用的字体
+ChineseFamily=Noto Sans CJK SC
+; 英文、拼音和数字使用的字体
+LatinFamily=Noto Sans
+; 通用字号；HeaderSize/CandidateSize 为 0 时继承这个值
+Size=15
+; 顶部输入字母/辅助文字字号，0=继承 Size
+HeaderSize=15
+; 候选词字号，0=继承 Size
+CandidateSize=15
+; 候选拼音的小字号，0=按候选字号自动缩小
+PinyinSize=0
+; 所有文字加粗：true / false
+Bold=false
+; 所有文字使用斜体：true / false
+Italic=false
+; 字符间距，正数变宽，负数变紧
+LetterSpacing=0
+
+[Geometry]
+; 固定窗口宽度和高度；0=自动。想压低高度可直接填例如 WindowHeight=64
+WindowWidth=0
+WindowHeight=0
+; 自动布局时的最小、最大宽度
+MinWindowWidth=140
+MaxWindowWidth=880
+; 行高和顶部输入行高；0=按字体自动计算
+RowHeight=0
+; 拼音与汉字之间的垂直间距，0–32；0 为紧贴，默认 1
+PinyinGap=1
+HeaderHeight=0
+; 外框与内容间距
+WindowPadding=5
+HorizontalPadding=16
+; 候选项左右留白
+ItemSidePadding=8
+ItemHorizontalPadding=28
+; 候选项之间的横向/换行间距
+CandidateGap=2
+HeaderGap=2
+; 液态玻璃边缘阴影与圆角
+ShadowSize=5
+CornerRadius=16
+
+[Effects]
+; 液态玻璃参数。只调显示特效，不影响输入逻辑。
+Refraction=3.5
+Shade=0.58
+Highlight=0.55
+Chroma=1.05

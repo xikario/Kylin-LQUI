@@ -1,0 +1,410 @@
+cmake_minimum_required(VERSION 3.16)
+project(ukui-fences VERSION 0.7.0 LANGUAGES CXX)
+
+include(GNUInstallDirs)
+include(CTest)
+set(AI_SPACE_TEST_BINARY "" CACHE FILEPATH "Optional standalone AI Space binary for extraction integration tests")
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_SKIP_BUILD_RPATH ON)
+
+set(UKUI_FENCES_QT_SDK_ROOT
+    "${CMAKE_SOURCE_DIR}/.local-deps"
+    CACHE PATH "Qt5 SDK root used when system development files are unavailable")
+
+find_package(Qt5 QUIET COMPONENTS Core Gui Widgets DBus Network)
+if(NOT Qt5_FOUND)
+    list(PREPEND CMAKE_PREFIX_PATH
+        "${UKUI_FENCES_QT_SDK_ROOT}/root/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/cmake")
+    find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets DBus Network)
+endif()
+find_package(ZLIB REQUIRED)
+
+find_path(UKUI_FENCES_GL_INCLUDE_DIR GL/gl.h
+    HINTS "${UKUI_FENCES_QT_SDK_ROOT}/root/usr/include")
+if(NOT UKUI_FENCES_GL_INCLUDE_DIR)
+    message(FATAL_ERROR "GL/gl.h missing; install OpenGL development headers or set UKUI_FENCES_GL_INCLUDE_DIR")
+endif()
+
+find_path(UKUI_FENCES_X11_INCLUDE_DIR X11/Xlib.h
+    HINTS "${UKUI_FENCES_QT_SDK_ROOT}/root/usr/include")
+find_library(UKUI_FENCES_X11_LIBRARY
+    NAMES X11 libX11.so.6
+    HINTS
+        "/lib/${CMAKE_LIBRARY_ARCHITECTURE}"
+        "/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}")
+if(NOT UKUI_FENCES_X11_INCLUDE_DIR OR NOT UKUI_FENCES_X11_LIBRARY)
+    message(FATAL_ERROR "X11 development headers or runtime library were not found")
+endif()
+
+add_executable(ukui-fences
+    src/main.cpp
+    src/DesktopCanvas.cpp
+    src/VideoWallpaperTrial.cpp
+    src/VideoWallpaperPreview.cpp
+    src/DesktopLayerWatch.cpp
+    src/DesktopCoverWatch.cpp
+    src/GlassFinish.cpp
+    src/Palette.cpp
+    src/Lyrics.cpp
+    src/StartupWallpaperCover.cpp
+    src/FencesSettingsWindow.cpp
+    src/DesktopSessionSettings.cpp
+    src/LiquidWheelPicker.cpp
+    src/SettingsComboPopup.cpp
+    src/DesktopWidgets.cpp
+    src/MprisPlayer.cpp
+    src/MusicClientIntegration.cpp
+    src/MusicClientsSettings.cpp
+    src/MusicDesklet.cpp
+    src/CalendarDesklet.cpp
+    src/DeskletModels.cpp
+    src/ActivityRecorder.cpp
+    src/ActivityDetailsDialog.cpp
+    src/ProcessMetrics.cpp
+    src/FenceWidget.cpp
+    src/FenceIconPicker.cpp
+    src/FencesWindowIdentity.cpp
+    src/FenceGlassRenderer.cpp
+    src/fence-glass.qrc
+    src/LiquidIconRenderer.cpp
+    src/DesktopCanvasIconAppearance.cpp
+    src/DesktopIcon.cpp
+    src/FileClipboard.cpp
+    src/SystemMonitor.cpp
+    src/AiSpaceClient.cpp
+    src/MenuStyle.h
+    resources.qrc
+    ../../shared/desktop-launch/DesktopLaunchCompat.cpp
+)
+
+target_compile_definitions(ukui-fences PRIVATE
+    UKUI_FENCES_VIDEO_TRIAL_PATH="${CMAKE_SOURCE_DIR}/scripts/video_wallpaper_trial.py"
+    UKUI_FENCES_CALENDAR_READER_PATH="${CMAKE_SOURCE_DIR}/scripts/calendar_snapshot.py"
+    UKUI_LIQUID_SESSION_HELPER_PATH="${CMAKE_SOURCE_DIR}/../../integration/session/session_bridge.py"
+)
+
+target_include_directories(ukui-fences PRIVATE
+    src/
+    ${UKUI_FENCES_X11_INCLUDE_DIR}
+    ${UKUI_FENCES_GL_INCLUDE_DIR}
+)
+
+target_link_libraries(ukui-fences PRIVATE
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::DBus
+    Qt5::Network
+    ZLIB::ZLIB
+    ${UKUI_FENCES_X11_LIBRARY}
+)
+
+if(BUILD_TESTING)
+    add_executable(desktop-open-test tests/desktop_open_test.cpp ../../shared/desktop-launch/DesktopLaunchCompat.cpp)
+    target_link_libraries(desktop-open-test PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets)
+    find_program(DBUS_RUN_SESSION_EXECUTABLE dbus-run-session)
+    if(DBUS_RUN_SESSION_EXECUTABLE)
+        add_test(NAME desktop_open_lifecycle COMMAND ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:desktop-open-test>)
+    else()
+        add_test(NAME desktop_open_lifecycle COMMAND desktop-open-test)
+        set_tests_properties(desktop_open_lifecycle PROPERTIES ENVIRONMENT "DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/ukui-desktop-open-test")
+    endif()
+    set_tests_properties(desktop_open_lifecycle PROPERTIES TIMEOUT 15)
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME calendar_holiday_sync COMMAND ${Python3_EXECUTABLE} -m unittest -v tests/test_holiday_sync.py)
+        add_test(NAME video_wallpaper_geometry COMMAND ${Python3_EXECUTABLE} -m unittest -v tests/test_video_wallpaper_trial.py)
+        set_tests_properties(video_wallpaper_geometry PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 10)
+        set_tests_properties(calendar_holiday_sync PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 30)
+    endif()
+
+    find_program(XVFB_RUN_EXECUTABLE xvfb-run)
+    find_program(DBUS_RUN_SESSION_EXECUTABLE dbus-run-session)
+    if(XVFB_RUN_EXECUTABLE AND DBUS_RUN_SESSION_EXECUTABLE)
+        get_target_property(FENCE_TEST_SOURCES ukui-fences SOURCES)
+        list(REMOVE_ITEM FENCE_TEST_SOURCES src/main.cpp)
+        add_executable(fence-glass-test tests/fence_glass_test.cpp tests/music_window_test.cpp tests/music_fixture.h ${FENCE_TEST_SOURCES})
+        target_include_directories(fence-glass-test PRIVATE src ${UKUI_FENCES_X11_INCLUDE_DIR} ${UKUI_FENCES_GL_INCLUDE_DIR})
+        target_compile_definitions(fence-glass-test PRIVATE $<TARGET_PROPERTY:ukui-fences,COMPILE_DEFINITIONS>)
+        target_link_libraries(fence-glass-test PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::DBus Qt5::Network ZLIB::ZLIB ${UKUI_FENCES_X11_LIBRARY})
+        add_test(NAME desktop_video_trial COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1920x1200x24"
+            ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --video-trial-only)
+        set_tests_properties(desktop_video_trial PROPERTIES TIMEOUT 25 ENVIRONMENT "QT_SCALE_FACTOR=1.5;QT_FONT_DPI=96")
+        foreach(GLASS_BACKEND gpu cpu)
+            add_test(NAME fence_glass_${GLASS_BACKEND}
+                COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
+                        ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test>
+                        ${CMAKE_SOURCE_DIR}/test-results/fence-glass-${GLASS_BACKEND})
+            set_tests_properties(fence_glass_${GLASS_BACKEND} PROPERTIES TIMEOUT 90 LABELS "integration;ui;glass")
+        endforeach()
+        set_tests_properties(fence_glass_cpu PROPERTIES ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1")
+        set_tests_properties(fence_glass_gpu PROPERTIES SKIP_RETURN_CODE 77)
+        add_test(NAME desktop_persistence COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
+            ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --persistence-only)
+        set_tests_properties(desktop_persistence PROPERTIES TIMEOUT 30 ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1" LABELS "integration;files")
+        add_test(NAME desktop_selection_drag
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
+                    ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test>
+                    --selection-only)
+        set_tests_properties(desktop_selection_drag PROPERTIES
+            TIMEOUT 60 LABELS "integration;ui;selection"
+            ENVIRONMENT "QT_STYLE_OVERRIDE=ukui;QT_SCREEN_SCALE_FACTORS=1")
+        add_test(NAME desktop_selection_drag_scaled
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2160x1350x24"
+                    ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test>
+                    --selection-only)
+        set_tests_properties(desktop_selection_drag_scaled PROPERTIES
+            TIMEOUT 60 LABELS "integration;ui;selection"
+            ENVIRONMENT "QT_STYLE_OVERRIDE=ukui;QT_SCREEN_SCALE_FACTORS=1;QT_SCALE_FACTOR=1.5")
+        add_test(NAME fence_features
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
+                    ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test>
+                    --features-only)
+        set_tests_properties(fence_features PROPERTIES
+            TIMEOUT 30 LABELS "integration;ui;fences" ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1")
+        add_test(NAME desktop_appearance
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
+                    ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --appearance-only)
+        set_tests_properties(desktop_appearance PROPERTIES TIMEOUT 30 LABELS "integration;ui;appearance"
+            ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1;QT_SCREEN_SCALE_FACTORS=1")
+        foreach(POINTER_SCALE 1 1.5 2)
+            add_test(NAME desktop_pointer_effect_${POINTER_SCALE}
+                COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2560x1600x24"
+                    ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --pointer-effect-only)
+            set_tests_properties(desktop_pointer_effect_${POINTER_SCALE} PROPERTIES TIMEOUT 45
+                ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1;QT_STYLE_OVERRIDE=Fusion;QT_SCREEN_SCALE_FACTORS=1;QT_SCALE_FACTOR=${POINTER_SCALE}")
+        endforeach()
+        foreach(REFRESH_SCALE 1 1.5 2)
+            add_test(NAME desktop_refresh_${REFRESH_SCALE}
+                COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
+                    ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --refresh-only)
+            set_tests_properties(desktop_refresh_${REFRESH_SCALE} PROPERTIES
+                TIMEOUT 30 LABELS "integration;ui;files;wallpaper"
+                ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1;QT_SCREEN_SCALE_FACTORS=1;QT_SCALE_FACTOR=${REFRESH_SCALE}")
+        endforeach()
+        foreach(REORDER_SCALE 1 1.5 2)
+            add_test(NAME desktop_fence_reorder_${REORDER_SCALE}
+                COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2560x1600x24"
+                    ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --fence-reorder-only)
+            set_tests_properties(desktop_fence_reorder_${REORDER_SCALE} PROPERTIES TIMEOUT 30 LABELS "integration;ui;files"
+                ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1;QT_SCREEN_SCALE_FACTORS=1;QT_SCALE_FACTOR=${REORDER_SCALE}")
+        endforeach()
+        add_test(NAME desktop_folder_drop_undo
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a ${DBUS_RUN_SESSION_EXECUTABLE} --
+                $<TARGET_FILE:fence-glass-test> --folder-drop-undo-only)
+        set_tests_properties(desktop_folder_drop_undo PROPERTIES TIMEOUT 45 LABELS "integration;files"
+            ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1")
+        add_library(trash-inotify-stub MODULE tests/trash_inotify_stub.cpp)
+        foreach(WATCH_MODE unavailable overflow)
+            add_test(NAME desktop_trash_undo_${WATCH_MODE}
+                COMMAND ${XVFB_RUN_EXECUTABLE} -a ${DBUS_RUN_SESSION_EXECUTABLE} --
+                    ${CMAKE_COMMAND} -E env "LD_PRELOAD=$<TARGET_FILE:trash-inotify-stub>"
+                    "UKUI_TRASH_TEST_INOTIFY=${WATCH_MODE}" "UKUI_FENCES_GLASS_NO_GL=1"
+                    $<TARGET_FILE:fence-glass-test> --trash-undo-only)
+            set_tests_properties(desktop_trash_undo_${WATCH_MODE} PROPERTIES TIMEOUT 45 LABELS "integration;files")
+        endforeach()
+        add_test(NAME desktop_trash_undo
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a ${DBUS_RUN_SESSION_EXECUTABLE} --
+                $<TARGET_FILE:fence-glass-test> --trash-undo-only)
+        set_tests_properties(desktop_trash_undo PROPERTIES TIMEOUT 45 LABELS "integration;files"
+            ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1")
+        add_test(NAME desktop_permanent_delete
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a ${DBUS_RUN_SESSION_EXECUTABLE} --
+                $<TARGET_FILE:fence-glass-test> --permanent-delete-only)
+        set_tests_properties(desktop_permanent_delete PROPERTIES TIMEOUT 45 LABELS "integration;files"
+            ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1")
+        find_program(PEONY_EXECUTABLE peony)
+        find_program(XDOTOOL_EXECUTABLE xdotool)
+        if(PEONY_EXECUTABLE AND XDOTOOL_EXECUTABLE)
+            foreach(DRAG_SCALE 1 2)
+                add_test(NAME desktop_external_drag_${DRAG_SCALE}
+                    COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24"
+                        ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --external-drag-only)
+                set_tests_properties(desktop_external_drag_${DRAG_SCALE} PROPERTIES TIMEOUT 90 LABELS "integration;files;native"
+                    ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1;QT_SCREEN_SCALE_FACTORS=1;QT_SCALE_FACTOR=${DRAG_SCALE}")
+            endforeach()
+        endif()
+        add_test(NAME desktop_clipboard_async
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a ${DBUS_RUN_SESSION_EXECUTABLE} --
+                $<TARGET_FILE:fence-glass-test> --clipboard-only)
+        set_tests_properties(desktop_clipboard_async PROPERTIES TIMEOUT 30 LABELS "integration;files")
+        foreach(SCALE 1 1.5 2)
+            foreach(KIND appearance icon-appearance icon-damage settings-center fence-settings menu-shortcut)
+                add_test(NAME desktop_${KIND}_${SCALE}
+                    COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24"
+                        ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --${KIND}-only)
+                set_tests_properties(desktop_${KIND}_${SCALE} PROPERTIES TIMEOUT 45 LABELS "integration;ui;appearance"
+                    ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1;QT_STYLE_OVERRIDE=ukui;QT_SCREEN_SCALE_FACTORS=1;QT_SCALE_FACTOR=${SCALE};QT_FONT_DPI=96")
+            endforeach()
+        endforeach()
+        add_test(NAME desktop_screen_change
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24 +extension RANDR"
+                    ${DBUS_RUN_SESSION_EXECUTABLE} --
+                    ${CMAKE_SOURCE_DIR}/tests/run_screen_change_smoke.sh
+                    $<TARGET_FILE:ukui-fences>)
+        set_tests_properties(desktop_screen_change PROPERTIES
+            TIMEOUT 30 LABELS "integration;ui;screen")
+    endif()
+endif()
+
+install(TARGETS ukui-fences RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(PROGRAMS packaging/ukui-fences-launcher DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(PROGRAMS scripts/video_wallpaper_trial.py DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME ukui-fences-video-trial)
+install(PROGRAMS ../../integration/session/session_bridge.py DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/ukui-liquid-desktop)
+install(FILES packaging/ukui-fences.desktop packaging/ukui-fences-settings.desktop packaging/ukui-fences-monitor.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES packaging/ukui-fences.metainfo.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+install(FILES packaging/ukui-fences.svg packaging/ukui-fences-settings.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+install(FILES assets/system-monitor.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+        RENAME ukui-fences-monitor.svg)
+install(DIRECTORY assets/fence-icons/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/ukui-fences/fence-icons
+        FILES_MATCHING PATTERN "*.svg")
+install(FILES packaging/ukui-fences-autostart.desktop
+        DESTINATION ${CMAKE_INSTALL_SYSCONFDIR}/xdg/autostart)
+install(FILES README.md docs/FENCE_LIQUID_GLASS.md docs/DESKTOP_MENU.md docs/DESKTOP_WIDGETS.md
+        DESTINATION ${CMAKE_INSTALL_DOCDIR})
+install(FILES vendor/nextkde-glass/LICENSE vendor/nextkde-glass/README.md
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}/nextkde-glass)
+
+# One shared implementation for launcher, fences, Smart Space and monitor.
+set(UKUI_LIQUID_POPUP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../shared/liquid-popup" CACHE PATH "Shared liquid popup source")
+option(UKUI_FENCES_BUILD_POPUP_PREVIEW "Build and install the shared popup preview" ON)
+if(UKUI_FENCES_BUILD_POPUP_PREVIEW)
+    set(LIQUID_POPUP_BUILD_DEMO ON)
+endif()
+add_subdirectory("${UKUI_LIQUID_POPUP_ROOT}" "${CMAKE_CURRENT_BINARY_DIR}/liquid-popup")
+target_link_libraries(ukui-fences PRIVATE ukui-liquid-popup)
+if(TARGET fence-glass-test)
+    add_test(NAME desktop_startup_wallpaper
+        COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
+            ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --startup-wallpaper-only)
+    set_tests_properties(desktop_startup_wallpaper PROPERTIES TIMEOUT 30
+        ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1" LABELS "integration;ui;wallpaper")
+    target_link_libraries(fence-glass-test PRIVATE ukui-liquid-popup)
+    target_include_directories(fence-glass-test PRIVATE "${UKUI_LIQUID_POPUP_ROOT}/tests")
+endif()
+
+if(TARGET liquid-popup-preview)
+    add_dependencies(ukui-fences liquid-popup-preview)
+    target_compile_definitions(ukui-fences PRIVATE
+    UKUI_FENCES_CALENDAR_READER_PATH="${CMAKE_SOURCE_DIR}/scripts/calendar_snapshot.py"
+        UKUI_LIQUID_POPUP_PREVIEW_PATH="$<TARGET_FILE:liquid-popup-preview>")
+    install(TARGETS liquid-popup-preview RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
+# New desklets share the same optical renderer as the liquid panel.
+set(UKUI_LIQUID_GL_INCLUDE_DIR "${UKUI_FENCES_GL_INCLUDE_DIR}")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../shared/liquid-glass" "${CMAKE_CURRENT_BINARY_DIR}/liquid-glass")
+target_link_libraries(ukui-fences PRIVATE ukui-liquid-optics)
+if(TARGET fence-glass-test)
+    target_link_libraries(fence-glass-test PRIVATE ukui-liquid-optics)
+endif()
+install(FILES vendor/nextkde-desklets/LICENSE vendor/nextkde-desklets/README.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}/nextkde-desklets)
+
+if(TARGET fence-glass-test)
+    foreach(DESKLET_SCALE 1 1.5 2)
+        add_test(NAME desktop_desklets_${DESKLET_SCALE}
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24"
+                ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --desklets-only)
+        set_tests_properties(desktop_desklets_${DESKLET_SCALE} PROPERTIES
+            TIMEOUT 90 ENVIRONMENT "QT_FONT_DPI=96;QT_SCALE_FACTOR=${DESKLET_SCALE};QT_SCREEN_SCALE_FACTORS=1;UKUI_LIQUID_GLASS_NO_GL=1"
+            LABELS "integration;ui;desklets")
+    endforeach()
+endif()
+
+if(TARGET fence-glass-test)
+    foreach(MUSIC_SCALE 1 1.5 2)
+        add_test(NAME desktop_music_${MUSIC_SCALE}
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24"
+                ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --music-only)
+        set_tests_properties(desktop_music_${MUSIC_SCALE} PROPERTIES
+            TIMEOUT 60 ENVIRONMENT "QT_FONT_DPI=96;QT_SCALE_FACTOR=${MUSIC_SCALE};QT_SCREEN_SCALE_FACTORS=1;UKUI_LIQUID_GLASS_NO_GL=1"
+            LABELS "integration;ui;music")
+    endforeach()
+endif()
+
+install(PROGRAMS scripts/calendar_snapshot.py DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+if(TARGET fence-glass-test)
+    foreach(CALENDAR_SCALE 1 1.5 2)
+        add_test(NAME desktop_calendar_${CALENDAR_SCALE}
+            COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24"
+                ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --calendar-only)
+        set_tests_properties(desktop_calendar_${CALENDAR_SCALE} PROPERTIES
+            TIMEOUT 60 ENVIRONMENT "QT_FONT_DPI=96;QT_SCALE_FACTOR=${CALENDAR_SCALE};QT_SCREEN_SCALE_FACTORS=1;UKUI_LIQUID_GLASS_NO_GL=1"
+            LABELS "integration;ui;calendar")
+    endforeach()
+endif()
+if(BUILD_TESTING AND Python3_Interpreter_FOUND)
+    add_test(NAME calendar_snapshot COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_calendar_snapshot.py)
+endif()
+
+install(FILES scripts/chinese_calendar.py scripts/holiday_sync.py scripts/china_holidays_2026.json scripts/lunar_hko_reference.json DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES vendor/holiday-cn/LICENSE vendor/holiday-cn/README.md DESTINATION ${CMAKE_INSTALL_DATADIR}/ukui-fences/holiday-cn)
+
+if(BUILD_TESTING AND AI_SPACE_TEST_BINARY AND XVFB_RUN_EXECUTABLE AND DBUS_RUN_SESSION_EXECUTABLE)
+    add_executable(ai-space-client-test tests/ai_space_client_test.cpp src/AiSpaceClient.cpp)
+    target_include_directories(ai-space-client-test PRIVATE src)
+    target_link_libraries(ai-space-client-test PRIVATE Qt5::Core Qt5::DBus)
+    add_test(NAME ai_space_bridge COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24"
+        ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:ai-space-client-test>
+        ${AI_SPACE_TEST_BINARY} $<TARGET_FILE:ukui-fences>)
+    set_tests_properties(ai_space_bridge PROPERTIES TIMEOUT 60)
+endif()
+
+if(TARGET fence-glass-test)
+    foreach(MONITOR_SCALE 1 1.5 2)
+        add_test(NAME desktop_activity_metrics_${MONITOR_SCALE}
+            COMMAND ${CMAKE_COMMAND} -E env QT_SCALE_FACTOR=${MONITOR_SCALE}
+                ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24 -dpi 96"
+                ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --activity-metrics-only)
+        set_tests_properties(desktop_activity_metrics_${MONITOR_SCALE} PROPERTIES TIMEOUT 40
+            ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1" LABELS "integration;ui;activity")
+        add_test(NAME desktop_monitor_resources_${MONITOR_SCALE}
+            COMMAND ${CMAKE_COMMAND} -E env QT_SCALE_FACTOR=${MONITOR_SCALE}
+                ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24 -dpi 96"
+                ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --monitor-resources-only)
+        set_tests_properties(desktop_monitor_resources_${MONITOR_SCALE} PROPERTIES TIMEOUT 30
+            ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1" LABELS "integration;ui;monitor")
+    endforeach()
+    add_test(NAME desktop_monitor_placement
+        COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
+            ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --monitor-placement-only)
+    set_tests_properties(desktop_monitor_placement PROPERTIES TIMEOUT 30
+        ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1" LABELS "integration;ui;screen")
+    foreach(MONITOR_SCALE 1 1.5 2)
+        add_test(NAME desktop_monitor_icon_avoidance_${MONITOR_SCALE}
+            COMMAND ${CMAKE_COMMAND} -E env QT_SCALE_FACTOR=${MONITOR_SCALE}
+                ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24 -dpi 96"
+                ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --monitor-icon-avoidance-only)
+        set_tests_properties(desktop_monitor_icon_avoidance_${MONITOR_SCALE} PROPERTIES TIMEOUT 30
+            ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1" LABELS "integration;ui;screen")
+    endforeach()
+    add_test(NAME desktop_review_async
+        COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
+            ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --review-async-only)
+    set_tests_properties(desktop_review_async PROPERTIES TIMEOUT 30)
+endif()
+
+if(NOT TARGET lqui-settings-bridge)
+  add_subdirectory(../../shared/settings lqui-settings)
+endif()
+target_link_libraries(ukui-fences PRIVATE lqui-settings-bridge)
+if(TARGET fence-glass-test)
+  target_link_libraries(fence-glass-test PRIVATE lqui-settings-bridge)
+endif()
+
+# Legacy UI fixtures must never launch the installed central application.
+get_property(LQUI_EXISTING_TESTS DIRECTORY PROPERTY TESTS)
+foreach(LQUI_TEST IN LISTS LQUI_EXISTING_TESTS)
+  set_property(TEST ${LQUI_TEST} APPEND PROPERTY ENVIRONMENT "LQUI_SETTINGS_LEGACY=1")
+endforeach()

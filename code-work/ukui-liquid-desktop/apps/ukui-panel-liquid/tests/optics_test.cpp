@@ -1,0 +1,96 @@
+#include "LiquidOpticsRenderer.h"
+#include "WallpaperBackdrop.h"
+#include <QApplication>
+#include <QPainter>
+#include <QDir>
+#include <QDebug>
+#include <QTemporaryDir>
+#include <QScreen>
+#include <cstdlib>
+static void check(bool ok,const char *message){if(!ok){qCritical()<<message;std::exit(1);}qInfo()<<"PASS:"<<message;}
+int main(int argc,char **argv){
+ QApplication app(argc,argv);LiquidOpticsRenderer optics;
+ const bool gpu=app.arguments().contains("--require-gpu");
+ const QString output=argc>1 && !QString::fromLocal8Bit(argv[1]).startsWith("--")?QString::fromLocal8Bit(argv[1]):"artifacts";
+ QDir().mkpath(output);
+ for(qreal d:{1.,1.5,2.}){
+  const QSize logical(800,64);
+  QImage backdrop(QSize(qRound(logical.width()*d),qRound(logical.height()*d)),QImage::Format_RGB32);backdrop.setDevicePixelRatio(d);
+  {QPainter p(&backdrop);QLinearGradient g(0,0,800,0);g.setColorAt(0,QColor("#e98d40"));g.setColorAt(.5,QColor("#536ab2"));g.setColorAt(1,QColor("#071222"));p.fillRect(QRect(QPoint(),logical),g);p.setPen(QPen(QColor("#c5e8f2"),3));for(int x=0;x<850;x+=37)p.drawLine(x,0,x-35,64);}
+  optics.setWallpaper(backdrop);optics.setOptics(0,.58,.55);
+  const QImage flat=optics.renderPanel(QRect(QPoint(),logical),18);
+  if(gpu)check(optics.usedGpu(),"GPU Snell backend actually used");
+  optics.setOptics(3.5,.58,.55);const QImage refracted=optics.renderPanel(QRect(QPoint(),logical),18);
+  check(refracted.size()==backdrop.size() && refracted.devicePixelRatio()==d,"optical surface retains DPR");
+  check(refracted.pixelColor(0,0).alpha()<5,"optical corners transparent");
+  if(gpu)check(refracted!=flat,"refraction setting changes optical content");
+  optics.setOptics(3.5,.58,.55,.48);
+  const QImage restrained=optics.renderPanel(QRect(QPoint(),logical),18);
+  if(gpu)check(restrained!=refracted,"chroma setting changes optical content");
+  optics.setMaterial(0,1);
+  check(optics.renderPanel(QRect(QPoint(),logical),18)==restrained,"default new material parameters preserve original rendering");
+  const int prepared=optics.preparationCount();
+  optics.setMaterial(1,1);const QImage crisp=optics.renderPanel(QRect(QPoint(),logical),18);
+  check(crisp!=restrained,"clarity changes wallpaper detail on this backend");
+  optics.setMaterial(1,1.9);const QImage strong=optics.renderPanel(QRect(QPoint(),logical),18);
+  check(strong!=crisp,"liquid strength changes material on this backend");
+  check(optics.preparationCount()==prepared,"material controls reuse prepared diffusion");
+  check(strong.pixelColor(0,0).alpha()<5 && strong.size()==restrained.size(),"material controls preserve shape and physical size");
+  optics.setMaterial(0,1);
+  check(optics.renderPanel(QRect(QPoint(),logical),18)==restrained,"returning settings restores exact baseline");
+  const int count=optics.preparationCount();optics.renderPanel(QRect(QPoint(),logical),18);
+  check(optics.preparationCount()==count,"background diffusion cached");
+  refracted.save(output+QString("/optics-%1.png").arg(d));
+ }
+ for(qreal d:{1.,1.5,2.}) {
+  const QSize size(800,48);const QRect rect(QPoint(),size);
+  QImage dark(QSize(qRound(size.width()*d),qRound(size.height()*d)),QImage::Format_RGB32);dark.setDevicePixelRatio(d);dark.fill(QColor(38,44,50));
+  optics.setWallpaper(dark);optics.setFinish(LiquidOpticsRenderer::Finish::Original);optics.setOptics(4.7,.58,.86,.66);optics.setMaterial(0,2);
+  const auto old=optics.renderPanel(rect,16);
+  optics.setFinish(LiquidOpticsRenderer::Finish::Liquid);optics.setOptics(3.5,.52,.32,.82);optics.setMaterial(.65,1);
+  const auto clear=optics.renderPanel(rect,16);
+  if(gpu)check(optics.usedGpu(),"new Dock finish runs on the actual GPU shader path");
+  auto peak=[](const QImage &image){int value=0;for(int y=0;y<image.height();++y)for(int x=0;x<qMin(image.width(),qRound(64*image.devicePixelRatio()));++x){const QColor c=image.pixelColor(x,y);if(c.alpha()>250)value=qMax(value,qGray(c.rgb()));}return value;};
+  qInfo()<<"Dock corner peak old/new"<<d<<peak(old)<<peak(clear);
+  if(gpu)check(peak(clear)<peak(old)*.70,"upper-left highlight is restrained rather than clipped into a bright metal bevel");
+  check(clear.size()==old.size()&&clear.pixelColor(0,0).alpha()<5,"Dock finish preserves physical size and transparent rounded corners");
+  optics.setOptics(3.5,.52,1.,.82);const auto maximum=optics.renderPanel(rect,16);
+  check(peak(maximum)<245,"maximum highlight does not clip a dark backdrop to white");
+  optics.setFinish(LiquidOpticsRenderer::Finish::Soft);optics.setOptics(3.5,.58,.28,.72);optics.setMaterial(.22,.55);const auto soft=optics.renderPanel(rect,16);
+  optics.setFinish(LiquidOpticsRenderer::Finish::Frosted);optics.setOptics(3.5,.64,.22,.62);optics.setMaterial(0,0);const auto frosted=optics.renderPanel(rect,16);
+  check(clear!=soft&&soft!=frosted,"clear, soft and frosted presets produce distinct materials");
+  old.save(output+QString("/corner-before-%1.png").arg(d));clear.save(output+QString("/corner-after-%1.png").arg(d));
+  optics.setFinish(LiquidOpticsRenderer::Finish::Original);optics.setOptics(4.7,.58,.86,.66);optics.setMaterial(0,2);
+  check(optics.renderPanel(rect,16)==old,"opt-in Dock finish leaves existing renderer callers byte-identical");
+ }
+ const QString preview=qEnvironmentVariable("PANEL_MATERIAL_RECT");
+ if(!preview.isEmpty()) {
+  const auto numbers=preview.split(',');check(numbers.size()==4,"wallpaper preview rectangle has four coordinates");
+  const QRect area(numbers[0].toInt(),numbers[1].toInt(),numbers[2].toInt(),numbers[3].toInt());
+  WallpaperBackdrop wallpaper;wallpaper.reload();const auto *screen=QApplication::primaryScreen();
+  optics.setWallpaper(wallpaper.sample(area,screen->geometry(),screen->devicePixelRatio()));
+  optics.setFinish(LiquidOpticsRenderer::Finish::Original);optics.setOptics(4.7,.58,.86,.66);optics.setMaterial(0,2);optics.renderPanel(QRect(QPoint(),area.size()),16).save(output+"/wallpaper-before.png");
+  optics.setFinish(LiquidOpticsRenderer::Finish::Liquid);optics.setOptics(3.5,.52,.32,.82);optics.setMaterial(.65,1);optics.renderPanel(QRect(QPoint(),area.size()),16).save(output+"/wallpaper-clear.png");
+  optics.setFinish(LiquidOpticsRenderer::Finish::Soft);optics.setOptics(3.5,.58,.28,.72);optics.setMaterial(.22,.55);optics.renderPanel(QRect(QPoint(),area.size()),16).save(output+"/wallpaper-soft.png");
+  optics.setFinish(LiquidOpticsRenderer::Finish::Frosted);optics.setOptics(3.5,.64,.22,.62);optics.setMaterial(0,0);optics.renderPanel(QRect(QPoint(),area.size()),16).save(output+"/wallpaper-frosted.png");
+ }
+ {
+  QTemporaryDir temp;
+  const QString path=temp.path()+QString::fromUtf8("/壁纸.png");
+  QImage picture(160,90,QImage::Format_RGB32);picture.fill(QColor(210,80,35));
+  check(picture.save(path,"JPEG"),"JPEG wallpaper fixture with PNG suffix saved");
+  const bool hadOverride=qEnvironmentVariableIsSet("UKUI_LIQUID_WALLPAPER");
+  const QByteArray oldOverride=qgetenv("UKUI_LIQUID_WALLPAPER");
+  qputenv("UKUI_LIQUID_WALLPAPER",path.toUtf8());
+  WallpaperBackdrop mismatched;check(mismatched.reload(),"mismatched wallpaper reloads");
+  const QImage sample=mismatched.sample(QRect(0,0,200,50),QRect(0,0,800,600),1.5);
+  check(!sample.isNull() && sample.size()==QSize(300,75),"content-based decoding supports Chinese path and mismatched extension");
+  check(qAbs(sample.pixelColor(150,37).red()-210)<5,"wallpaper crop contains decoded pixels instead of fallback");
+  check(!mismatched.reload(),"decoded wallpaper is cached until it changes");
+  if(hadOverride)qputenv("UKUI_LIQUID_WALLPAPER",oldOverride);else qunsetenv("UKUI_LIQUID_WALLPAPER");
+ }
+ WallpaperBackdrop wallpaper;check(wallpaper.reload(),"wallpaper provider initializes");
+ auto crop=wallpaper.sample(QRect(0,0,200,50),QRect(0,0,800,600),1.5);
+ if(!crop.isNull())check(crop.size()==QSize(300,75),"wallpaper crop uses requested physical size");
+ return 0;
+}

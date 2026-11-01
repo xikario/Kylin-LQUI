@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 1,
+  "platform": "UKUI X11 / Qt 5.12 / ARM64",
+  "components": [
+    {
+      "id": "settings",
+      "name": "Kylin-LQUI 统一设置",
+      "layer": "settings",
+      "source": "apps/kylin-lqui-settings",
+      "processNames": [],
+      "scriptSuffix": "/kylin-lqui-settings/current/main.py",
+      "services": [
+        "org.kylin.Lqui.Settings"
+      ],
+      "hosting": "On-demand PyQt5 native settings; no WebEngine or permanent daemon",
+      "monitor": {
+        "label": "统一设置",
+        "idle": "按需打开"
+      },
+      "executables": [
+        "kylin-lqui-settings"
+      ]
+    },
+    {
+      "id": "control-center",
+      "name": "Kylin-LQUI 系统控制中心",
+      "layer": "shell",
+      "source": "apps/kylin-lqui-settings/control_center.py",
+      "processNames": [],
+      "scriptSuffix": "/kylin-lqui-settings/current/control_center.py",
+      "services": [
+        "org.kylin.Lqui.ControlCenter"
+      ],
+      "hosting": "On-demand native UI over NetworkManager, PulseAudio, UPower and UKUI calendar; quits after 60 seconds hidden",
+      "monitor": {
+        "label": "系统控制中心",
+        "idle": "按需打开"
+      },
+      "executables": [
+        "kylin-lqui-control-center"
+      ]
+    },
+    {
+      "id": "fences",
+      "name": "Fences 桌面与小组件",
+      "layer": "desktop",
+      "source": "apps/ukui-fences",
+      "processNames": [
+        "ukui-fences"
+      ],
+      "services": [
+        "org.ukui.fences"
+      ],
+      "features": [
+        "桌面文件与分区",
+        "系统监视",
+        "时钟与倒计时",
+        "应用活动与资源记录",
+        "音乐",
+        "日历"
+      ],
+      "configuration": [
+        "~/.config/kylin/ukui-fences.conf",
+        "~/.config/kyfences/layout.json"
+      ],
+      "data": [
+        "~/.local/share/ukui-fences/widgets"
+      ],
+      "monitor": {
+        "label": "Fences 桌面",
+        "idle": "未运行"
+      },
+      "executables": [
+        "ukui-fences"
+      ]
+    },
+    {
+      "id": "launcher",
+      "name": "开始菜单 V2",
+      "layer": "shell",
+      "source": "apps/ukui-kaishicaidan-v2",
+      "processNames": [
+        "ukui-kaishicaid",
+        "ukui-kaishicaidan-v2"
+      ],
+      "services": [
+        "org.ukui.menu",
+        "org.ukui.kaishicaidan.v2",
+        "org.ukui.LiquidLauncherContext"
+      ],
+      "configuration": [
+        "~/.config/ukui-kaishicaidan-v2/settings.conf",
+        "~/.config/ukui-kaishicaidan-v2/pinned.conf",
+        "~/.config/ukui-kaishicaidan-v2/recent-apps.conf"
+      ],
+      "monitor": {
+        "label": "开始菜单",
+        "idle": "未运行"
+      },
+      "executables": [
+        "ukui-kaishicaidan-v2"
+      ]
+    },
+    {
+      "id": "panel",
+      "name": "液态任务栏与 Dock",
+      "layer": "shell",
+      "source": "apps/ukui-panel-liquid",
+      "processNames": [
+        "ukui-panel",
+        "ukui-panel-liqu"
+      ],
+      "services": [
+        "org.ukui.AiStationPanel",
+        "org.ukui.LiquidPanelLauncher"
+      ],
+      "configuration": [
+        "~/.config/ukui/liquid-panel.ini",
+        "~/.config/ukui/panel.conf"
+      ],
+      "hosting": "QStylePlugin inside the original panel process",
+      "monitor": {
+        "label": "液态任务栏",
+        "idle": "未运行"
+      },
+      "executables": [
+        "ukui-panel"
+      ],
+      "scriptSuffix": "/ukui-panel-liquid"
+    },
+    {
+      "id": "ai-station",
+      "name": "AI 小站",
+      "layer": "assistant",
+      "source": "../liquid-cli",
+      "processNames": [
+        "liquid-cli"
+      ],
+      "services": [
+        "org.ukui.LiquidCli"
+      ],
+      "configuration": [
+        "~/.config/liquid-cli/settings.json"
+      ],
+      "backends": [
+        "Codex app-server",
+        "Qwen Code ACP",
+        "DeepSeek Harness ACP"
+      ],
+      "monitor": {
+        "label": "AI 小站",
+        "idle": "按需启动"
+      },
+      "executables": [
+        "liquid-cli"
+      ]
+    },
+    {
+      "id": "input-ui",
+      "name": "RIME 液态候选前端",
+      "layer": "input",
+      "source": "../fcitx-liquid-panel",
+      "processNames": [
+        "fcitx-liquid-pa",
+        "fcitx-liquid-panel"
+      ],
+      "services": [
+        "org.kde.impanel"
+      ],
+      "configuration": [
+        "~/.config/fcitx/liquid-panel.conf"
+      ],
+      "dependency": "Fcitx 4 + Rime; replaces the candidate UI, not the engine",
+      "monitor": {
+        "label": "液态输入法",
+        "idle": "未运行"
+      },
+      "executables": [
+        "fcitx-liquid-panel"
+      ]
+    },
+    {
+      "id": "peony-manager",
+      "name": "Peony 插件管理器",
+      "layer": "files",
+      "source": "../../peony-manager",
+      "processNames": [],
+      "scriptSuffix": "/peony-manager/app/main.py",
+      "services": [],
+      "configuration": [
+        "~/.config/peony-manager/cli-profiles.json"
+      ],
+      "settingsSchema": "org.ukui.peony.settings",
+      "hosting": "On-demand PyQt5/WebEngine manager; extensions run inside Peony",
+      "monitor": {
+        "label": "Peony 管理器",
+        "idle": "按需启动"
+      },
+      "executables": []
+    },
+    {
+      "id": "ai-space",
+      "name": "AI 空间 / 本地知识库",
+      "layer": "knowledge",
+      "source": "../ai-space",
+      "processNames": [
+        "ai-space"
+      ],
+      "services": [
+        "io.github.xikario.AiSpace"
+      ],
+      "hosting": "Independent local indexing and query application",
+      "monitor": {
+        "label": "AI 空间",
+        "idle": "按需启动"
+      },
+      "executables": [
+        "ai-space"
+      ]
+    },
+    {
+      "id": "native-desktop",
+      "name": "原生 Peony 桌面（兼容/回退）",
+      "layer": "platform",
+      "source": null,
+      "processNames": [
+        "peony-qt-deskto"
+      ],
+      "services": [],
+      "settingsSchema": "org.ukui.session.required-components",
+      "replacement": "Only the bounded session trial may stop the verified desktop-only process",
+      "monitor": {
+        "label": "原生备用桌面",
+        "idle": "备用未启动"
+      },
+      "executables": [
+        "peony-qt-desktop"
+      ]
+    },
+    {
+      "id": "compositor",
+      "name": "KWin 合成器",
+      "layer": "platform",
+      "source": null,
+      "processNames": [
+        "ukui-kwin_x11"
+      ],
+      "services": [],
+      "mustKeep": true,
+      "executables": []
+    },
+    {
+      "id": "input-engine",
+      "name": "Fcitx / Rime 引擎",
+      "layer": "platform",
+      "source": null,
+      "processNames": [
+        "fcitx"
+      ],
+      "services": [],
+      "mustKeep": true,
+      "executables": []
+    }
+  ],
+  "sharedLibraries": [
+    {
+      "source": "shared/liquid-popup",
+      "consumers": [
+        "fences",
+        "launcher",
+        "panel",
+        "ai-station"
+      ]
+    },
+    {
+      "source": "shared/liquid-glass",
+      "consumers": [
+        "fences",
+        "launcher",
+        "panel",
+        "ai-station"
+      ]
+    },
+    {
+      "source": "shared/async-work",
+      "consumers": [
+        "fences",
+        "launcher",
+        "panel"
+      ]
+    },
+    {
+      "source": "../shared",
+      "consumers": [
+        "input-ui"
+      ],
+      "status": "Separate source copy; consolidate with parity tests before switching"
+    },
+    {
+      "source": "../ai-space/shared",
+      "consumers": [
+        "ai-space"
+      ],
+      "status": "Independent repository snapshot"
+    }
+  ],
+  "product": "Kylin-LQUI"
+}

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Peony Manager
+Name[zh_CN]=Peony 插件管理器
+Comment=Manage Peony file manager plugins and settings
+Comment[zh_CN]=管理 Peony 文件管理器插件和全局设置
+TryExec=/usr/bin/python3
+Exec=/usr/bin/python3 /home/zhouzhang/应用/peony-manager/app/main.py
+Icon=/home/zhouzhang/应用/peony-manager/assets/peony-manager.png
+Terminal=false
+Categories=System;FileTools;
+StartupNotify=true
+X-UKUI-Desktop-File-Version=1.0

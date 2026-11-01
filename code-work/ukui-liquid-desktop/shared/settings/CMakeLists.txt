@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.16)
+set(CMAKE_AUTOMOC ON)
+find_package(Qt5 REQUIRED COMPONENTS Core Gui Widgets DBus)
+add_library(lqui-settings-bridge STATIC SettingsBridge.cpp SettingsBridge.h)
+set_target_properties(lqui-settings-bridge PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(lqui-settings-bridge PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(lqui-settings-bridge PUBLIC Qt5::Widgets Qt5::DBus)

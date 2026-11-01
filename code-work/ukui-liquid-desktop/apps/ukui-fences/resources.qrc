@@ -1,0 +1,21 @@
+<RCC>
+    <qresource prefix="/framework">
+        <file alias="components.json">../../integration/components.json</file>
+    </qresource>
+    <qresource prefix="/settings">
+        <file alias="ukui-fences-settings.svg">packaging/ukui-fences-settings.svg</file>
+        <file alias="system-monitor.svg">assets/system-monitor.svg</file>
+    </qresource>
+    <qresource prefix="/fence-icons">
+        <file alias="archive.svg">assets/fence-icons/archive.svg</file>
+        <file alias="dock.svg">assets/fence-icons/dock.svg</file>
+        <file alias="favorites.svg">assets/fence-icons/favorites.svg</file>
+        <file alias="ideas.svg">assets/fence-icons/ideas.svg</file>
+        <file alias="inbox.svg">assets/fence-icons/inbox.svg</file>
+        <file alias="industry.svg">assets/fence-icons/industry.svg</file>
+        <file alias="orbit.svg">assets/fence-icons/orbit.svg</file>
+        <file alias="presentation.svg">assets/fence-icons/presentation.svg</file>
+        <file alias="services.svg">assets/fence-icons/services.svg</file>
+        <file alias="tasks.svg">assets/fence-icons/tasks.svg</file>
+    </qresource>
+</RCC>

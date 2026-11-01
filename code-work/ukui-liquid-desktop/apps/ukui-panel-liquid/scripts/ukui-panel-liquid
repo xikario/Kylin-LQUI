@@ -1,0 +1,52 @@
+#!/usr/bin/python3
+"""Version-gated style launcher with a per-session crash circuit breaker."""
+import base64,hashlib,json,os,signal,subprocess,sys,tempfile
+from pathlib import Path
+HOST_MANIFEST_B64='@LQUI_HOST_MANIFEST@'
+PLUGIN_SHA256='@LQUI_PLUGIN_SHA256@'
+PANEL=Path('/usr/bin/ukui-panel')
+
+def digest(path):
+    h=hashlib.sha256()
+    with Path(path).open('rb') as stream:
+        for chunk in iter(lambda:stream.read(1024*1024),b''):h.update(chunk)
+    return h.hexdigest()
+
+def compatible():
+    try:
+        expected=json.loads(base64.b64decode(HOST_MANIFEST_B64))
+        return bool(expected) and all(digest(path)==value for path,value in expected.items())
+    except (OSError,ValueError):return False
+
+def main():
+    args=sys.argv[1:];plugin=Path.home()/'.local/lib/ukui-panel-liquid/plugins'
+    runtime=Path(os.environ.get('XDG_RUNTIME_DIR','/run/user/'+str(os.getuid())))
+    marker=runtime/'kylin-lqui-panel-failed.json'
+    if '--retry-liquid' in args:
+        args.remove('--retry-liquid')
+        try:marker.unlink()
+        except FileNotFoundError:pass
+    try:failed=json.loads(marker.read_text()).get('plugin')==PLUGIN_SHA256
+    except (OSError,ValueError):failed=False
+    usable=compatible() and (plugin/'styles/libukuiliquidpanel.so').is_file() and not failed
+    if '--check-compatibility' in args:return 0 if usable else 1
+    if '--original' in args:args.remove('--original');usable=False
+    if not usable:os.execv(str(PANEL),[str(PANEL)]+args)
+    env=dict(os.environ,QT_PLUGIN_PATH=str(plugin)+(os.pathsep+os.environ['QT_PLUGIN_PATH'] if os.environ.get('QT_PLUGIN_PATH') else ''))
+    child=subprocess.Popen([str(PANEL),'-style','ukuiliquidpanel']+args,env=env)
+    stopping=[False]
+    def stop(signum,_):
+        stopping[0]=True
+        if child.poll() is None:child.send_signal(signum)
+    signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
+    code=child.wait()
+    if stopping[0] or code in (0,-signal.SIGTERM,-signal.SIGINT):return 0
+    try:
+        fd,name=tempfile.mkstemp(prefix='.lqui-panel-',dir=str(runtime))
+        with os.fdopen(fd,'w') as f:json.dump({'plugin':PLUGIN_SHA256,'exitCode':code},f)
+        os.replace(name,marker)
+    except OSError:pass
+    # Exec clears the private plugin environment. A subsequent session-manager
+    # restart also sees the circuit breaker and retains the system panel.
+    os.execv(str(PANEL),[str(PANEL)]+args)
+if __name__=='__main__':sys.exit(main())

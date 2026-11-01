@@ -1,0 +1,439 @@
+#include "WidgetResizeSnap.h"
+#include "DesktopWidgets.h"
+#include "DeskletModels.h"
+#include "DesktopCoverWatch.h"
+#include "GlassFinish.h"
+#include "Palette.h"
+#include "PointerEffect.h"
+#include "ActivityRecorder.h"
+#include "FileClipboard.h"
+#include <QPushButton>
+#include "DesktopIcon.h"
+#include <QMimeData>
+#include <QDropEvent>
+#include <QDragEnterEvent>
+#include <QSpinBox>
+#include <QStandardPaths>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xatom.h>
+
+static int runDeskletTest(const QString &root)
+{
+    qputenv("GSETTINGS_BACKEND", "keyfile");
+    {
+        using namespace Palette;
+        check(qAbs(contrast(Qt::white,Qt::black)-21)<1e-6 && qAbs(contrast(Qt::white,Qt::white)-1)<1e-9,"WCAG contrast spans 1:1 to 21:1");
+        check(qAbs(contrast(QColor("#767676"),Qt::white)-4.54)<0.01,"WCAG contrast matches the reference grey on white");
+        check(readableText(QColor("#ffe36e"))==QColor(Qt::black) && readableText(QColor("#1d2b5a"))==QColor(Qt::white),"text colour picks the higher-contrast extreme");
+        bool reached=true;
+        for(const QColor bg:{QColor("#7f7f7f"),QColor("#3a8fd0"),QColor("#e0b040"),QColor("#204030")}){
+            reached&=contrast(ensureContrast(QColor("#b8c6d9"),bg,SecondaryTextContrast),bg)>=SecondaryTextContrast-1e-9;
+            reached&=contrast(ensureContrast(QColor("#f4f7ff"),bg,PrimaryTextContrast),bg)>=PrimaryTextContrast-1e-9
+                     || ensureContrast(QColor("#f4f7ff"),bg,PrimaryTextContrast).rgb()==readableText(bg).rgb();}
+        check(reached,"ensureContrast reaches 4.5:1 secondary and 7:1 primary where attainable");
+        const QVector<QColor> mixed{QColor("#202830"),QColor("#c8d0d8")};
+        const QColor both=ensureContrast(QColor("#f4f7ff"),mixed,SecondaryTextContrast);
+        check(minContrast(both,mixed)>=SecondaryTextContrast || both.rgb()==QColor(Qt::black).rgb() || both.rgb()==QColor(Qt::white).rgb(),"contrast holds for the worst of several cells");
+        check(!usableSwatch(QColor(30,30,30)) && !usableSwatch(QColor(240,240,245)) && !usableSwatch(QColor(128,130,135)) && usableSwatch(QColor(40,110,200)),
+              "swatch filter drops near-black, near-white and grey");
+        check(qAbs(mix(QColor(0,0,0),QColor(255,255,255),HoverMix).redF()-.10)<.01 && qAbs(mix(QColor(0,0,0),QColor(255,255,255),PressMix).redF()-.18)<.01,"hover/press mix at 10% and 18%");
+        QImage art(60,60,QImage::Format_RGB32);art.fill(QColor(30,90,200));
+        {QPainter painter(&art);painter.fillRect(0,0,60,18,QColor(220,120,40));painter.fillRect(0,18,60,6,QColor(36,96,206));painter.fillRect(0,50,60,10,Qt::white);}
+        const Colors colors=extract(art);
+        check(colors.primary.isValid() && colors.primary.blue()>colors.primary.red(),"primary swatch is the most populous usable colour");
+        check(colors.secondary.isValid() && colors.secondary.red()>colors.secondary.blue() && distance(colors.primary,colors.secondary)>MinSecondaryDistance,
+              "secondary swatch is distinct from the primary, skipping near duplicates and white");
+        QImage flat(40,40,QImage::Format_RGB32);flat.fill(QColor(30,90,200));
+        check(extract(flat).primary.isValid() && !extract(flat).secondary.isValid(),"single-colour art has no secondary swatch");
+        flat.fill(Qt::white);check(!extract(flat).isValid(),"white art yields no swatch");
+    }
+    {
+        qreal fast=0,slow=0;
+        for(int i=0;i<8;++i)fast=smoothToward(fast,1,0.008);
+        for(int i=0;i<2;++i)slow=smoothToward(slow,1,0.032);
+        check(qAbs(fast-slow)<1e-9,"hover smoothing reaches the same value at 125 Hz and 31 Hz");
+        check(qAbs(smoothToward(0,1,0.042)-(1-std::exp(-1.0)))<1e-9,"hover smoothing uses a 42 ms time constant");
+        check(smoothToward(0.99995,1,0.001)==1 && smoothToward(1,1,0.016)==1,"hover smoothing snaps when settled");
+    }
+    {
+        using namespace GlassFinish;
+        bool monotonic=true;
+        for(const auto preset:{Scrim::Readable,Scrim::Balanced,Scrim::Transparent,Scrim::Subtle}){
+            qreal last=-1;
+            for(int i=0;i<=20;++i){const qreal a=scrimAlpha(i/20.0,curve(preset));monotonic&=a>=last;last=a;}
+        }
+        check(monotonic,"scrim alpha rises monotonically with backdrop luma for every preset");
+        check(scrimAlpha(1,curve(Scrim::Readable))>scrimAlpha(1,curve(Scrim::Balanced))
+            && scrimAlpha(1,curve(Scrim::Balanced))>scrimAlpha(1,curve(Scrim::Transparent))
+            && scrimAlpha(1,curve(Scrim::Transparent))>scrimAlpha(1,curve(Scrim::Subtle)),"presets are ordered readable > balanced > transparent > subtle");
+        check(scrimAlpha(0,curve(Scrim::Balanced))>0 && scrimAlpha(0,curve(Scrim::Balanced))<scrimAlpha(1,curve(Scrim::Balanced))*0.1,
+            "dark backdrops keep a small scrim floor");
+        check(scrimAlpha(2,curve(Scrim::Readable))<=0.38+1e-9,"scrim never exceeds its cap");
+        QImage half(160,64,QImage::Format_ARGB32_Premultiplied);half.fill(QColor(20,20,20));
+        for(int y=0;y<64;++y)for(int x=80;x<160;++x)half.setPixel(x,y,qRgb(240,240,240));
+        QImage mirrored=half.mirrored(true,false);
+        const QImage a=withScrim(half,Scrim::Balanced),b=withScrim(mirrored,Scrim::Balanced);
+        check(qRed(a.pixel(150,32))<240 && qRed(a.pixel(150,32))<qRed(half.pixel(150,32))
+            && 240-qRed(a.pixel(150,32))>20-qRed(a.pixel(10,32))+20,"bright regions are darkened more than dark regions");
+        check(a.pixel(150,32)==b.pixel(9,32) && a.pixel(10,32)==b.pixel(149,32),"local scrim is symmetric under mirroring");
+        QImage hole(64,64,QImage::Format_ARGB32_Premultiplied);hole.fill(Qt::transparent);
+        for(int y=16;y<48;++y)for(int x=16;x<48;++x)hole.setPixel(x,y,qRgba(200,200,200,200));
+        const QImage h=withScrim(hole,Scrim::Readable);
+        check(qAlpha(h.pixel(2,2))==0 && qAlpha(h.pixel(30,30))==200 && qRed(h.pixel(30,30))<200,"scrim keeps coverage and only darkens covered pixels");
+    }
+    {
+        using namespace GlassFinish;
+        const QRectF r(0,0,200,120);
+        const QPainterPath sq=squirclePath(r,10);QPainterPath circle;circle.addRoundedRect(r,10,10);
+        bool inside=true;const QPointF centre=r.center();
+        // Nudge each outline point 0.01 px inward: boundary points then test strictly inside.
+        for(const QPointF &p:sq.toFillPolygon())inside&=circle.contains(p+(centre-p)*(0.01/QLineF(p,centre).length()));
+        check(inside && sq.boundingRect()==r,"squircle stays inside the circular corner it replaces");
+        check(sq.contains(QPointF(100,0.5)) && sq.contains(QPointF(0.5,60)) && !sq.contains(QPointF(1.5,1.5)),"squircle keeps straight edges and cuts the corner");
+        QImage flat(QSize(400,240),QImage::Format_ARGB32_Premultiplied);flat.fill(qRgba(40,40,40,255));flat.setDevicePixelRatio(2);
+        const QImage e=withEdge(flat,squirclePath(r,10));
+        check(e.devicePixelRatio()==2 && qAlpha(e.pixel(0,0))==0 && e.pixel(200,120)==flat.pixel(200,120),"edge cuts corners and leaves the interior untouched");
+        check(qRed(e.pixel(200,1))>qRed(e.pixel(200,238)) && qRed(e.pixel(200,238))>=40,"inner highlight is brighter at the top than the bottom");
+        check(qRed(e.pixel(1,120))>qRed(e.pixel(398,120)),"inner highlight is brighter on the left than the right");
+        const QVector<qint8> &tile=grainTile();int sum=0,lo=0,hi=0;
+        for(qint8 v:tile){sum+=v;lo=qMin(lo,int(v));hi=qMax(hi,int(v));}
+        check(tile.size()==GRAIN_TILE*GRAIN_TILE && sum==0 && lo==-GRAIN_LEVELS && hi==GRAIN_LEVELS && &tile==&grainTile(),
+              "grain tile is cached, zero-mean and bounded");
+        QImage cover(QSize(160,90),QImage::Format_ARGB32_Premultiplied);cover.fill(qRgba(60,60,60,255));cover.setDevicePixelRatio(1.5);
+        for(int x=0;x<160;++x)cover.setPixel(x,0,0);
+        const QImage g=withGrain(cover);qint64 total=0;bool alphaKept=true,bounded=true,changed=false;
+        for(int y=1;y<64;++y)for(int x=0;x<64;++x){const int r=qRed(g.pixel(x,y));total+=r-60;bounded&=qAbs(r-60)<=GRAIN_LEVELS;changed|=r!=60;alphaKept&=qAlpha(g.pixel(x,y))==255;}
+        check(g.devicePixelRatio()==1.5 && g.pixel(10,0)==0 && alphaKept && bounded && changed,"grain keeps alpha, transparent pixels and stays within its level");
+        check(qAbs(total)<=GRAIN_LEVELS*64,"grain does not shift the average tone");
+    }
+    {
+        using DesktopCover::Client;
+        const QRect desk(0,0,1920,1200);
+        Client max;max.frame=QRect(0,0,1920,1152);max.maximized=true;
+        Client panel;panel.frame=QRect(0,1152,1920,48);panel.dock=true;panel.normal=false;
+        check(DesktopCover::covered(desk,{max,panel}),"maximized window plus panel covers the desktop");
+        check(!DesktopCover::covered(desk,{max}),"a panel-sized strip left free keeps the desktop live");
+        Client floating;floating.frame=QRect(0,0,1920,1200);
+        check(!DesktopCover::covered(desk,{floating}),"ordinary floating windows never pause the desktop");
+        Client hidden=max;hidden.hidden=true;Client glass=max;glass.translucent=true;Client other=max;other.onDesktop=false;
+        check(!DesktopCover::covered(desk,{hidden,panel}) && !DesktopCover::covered(desk,{glass,panel})
+            && !DesktopCover::covered(desk,{other,panel}),"minimized, translucent and other-desktop windows do not cover");
+        Client full;full.frame=desk;full.fullscreen=true;
+        check(DesktopCover::covered(desk,{full}),"fullscreen covers on its own");
+        check(DesktopCover::visibleFrame(QRect(100,50,848,663),{},{24,24,15,48})==QRect(124,65,800,600)
+            && DesktopCover::visibleFrame(QRect(10,40,100,100),{2,2,30,2},{})==QRect(8,10,104,132),
+            "frame extents expand decorations and drop client-side shadows");
+    }
+    CountdownState c;c.start(60000,1000);
+    check(c.remaining(11000)==50000,"countdown uses deadline rather than tick count");
+    c.toggle(11000);check(c.state==CountdownState::Paused && c.remaining(99000)==50000,"pause freezes remaining time");
+    c=CountdownState::fromJson(c.toJson());c.toggle(101000);
+    check(c.remaining(131000)==20000,"paused state survives restoration and resumes accurately");
+    c=CountdownState::fromJson(c.toJson());
+    check(c.expire(151001) && !c.expire(160000),"deadline expires exactly once after restart");
+    c.cancel();check(c.state==CountdownState::Ready && c.remaining(0)==60000,"cancel resets duration");
+    ActivityLedger ledger;
+    const QDateTime end(QDate(2026,9,28),QTime(0,0,5));
+    ledger.addInterval(end,10000,"editor","Editor");
+    check(ledger.days.value(QDate(2026,9,27)).apps.value("editor").ms==5000 && ledger.days.value(end.date()).apps.value("editor").ms==5000,"foreground interval splits correctly at midnight");
+    ledger.observeBoot("boot-a",60000,end);auto first=ledger.toJson();
+    ledger=ActivityLedger::fromJson(first);ledger.observeBoot("boot-a",60000,end);
+    check(ledger.toJson()==first,"same boot and uptime do not duplicate data after restart");
+    ledger.observeBoot("boot-a",65000,end.addSecs(5));
+    ledger.observeBoot("boot-b",3000,end.addSecs(8));
+    qint64 total=0;for(const auto &d:ledger.days)total+=d.uptimeMs;
+    check(total==68000,"new boot and same-boot increments are accounted once");
+    ledger.days[QDate(2020,1,1)]={};ledger.prune(end.date());check(!ledger.days.contains(QDate(2020,1,1)),"history retains only the latest sixty dates");
+    QSettings s;s.setValue("systemMonitor/autoStart",false);s.setValue("smartSpace/autoStart",false);s.sync();
+    const QString redPath=root+"/desklet-red.png",bluePath=root+"/desklet-blue.png";
+    QImage color(1440,900,QImage::Format_RGB32);color.fill(QColor(215,40,35));color.save(redPath);color.fill(QColor(30,40,215));color.save(bluePath);
+    auto setWallpaper=[&](const QString &path){QDir().mkpath(root+"/config/kyfences");QFile f(root+"/config/kyfences/layout.json");f.open(QIODevice::WriteOnly);f.write(QJsonDocument(QJsonObject{{"wallpaperMode",2},{"wallpaperPath",path},{"fences",QJsonArray{}}}).toJson());};
+    setWallpaper(redPath);
+    const QString primaryDesktop=root+"/primary-desktop";
+    const QString desktop=root+"/test-desktop";
+    QDir().mkpath(desktop+"/fixture-folder");
+    QFile fixture(desktop+"/fixture.txt");fixture.open(QIODevice::WriteOnly);fixture.write("layout fixture");fixture.close();
+    qputenv("XDG_DESKTOP_DIR",desktop.toUtf8());
+    {
+        DesktopCanvas canvas;canvas.show();canvas.setClockWidgetVisible(true);canvas.setActivityWidgetVisible(true);settle(700);
+        check(QStandardPaths::writableLocation(QStandardPaths::DesktopLocation)==primaryDesktop
+            && QDir::homePath()==root+"/home" && desktop!=primaryDesktop,
+            "primary and alternate desktop fixtures use an isolated home and separate directories");
+        auto *clock=canvas.findChild<ClockDesklet *>();auto *activity=canvas.findChild<ActivityDesklet *>();auto *recorder=canvas.findChild<ActivityRecorder *>();
+        check(clock && activity && recorder,"both desktop widgets share a live canvas and recorder");if(!clock || !activity || !recorder)return 1;
+        check(clock->isVisible() && activity->isVisible(),"both display actions reveal their widgets");
+        check(clock->tickInterval()==1000,"visible clock ticks once a second");
+        canvas.setDesktopCovered(true);
+        check(clock->tickInterval()==0,"covered desktop stops the idle clock timer");
+        canvas.setDesktopCovered(false);
+        check(clock->tickInterval()==1000,"uncovering the desktop restarts the clock");
+        check(!clock->geometry().intersects(activity->geometry()),"first-use placement does not overlap the other desklet");
+        check(!clock->material().isNull() && clock->material().pixelColor(0,0).alpha()==0,"shared material retains transparent antialiased corners");
+        clock->grab();
+        const QImage face=clock->faceMaterial();
+        check(!face.isNull() && face.pixelColor(0,0).alpha()==0
+              && face.pixelColor(face.width()/2,face.height()/2).alpha()==255,
+              "clock lens has transparent corners and an opaque readable body");
+        check(face.devicePixelRatio()==clock->devicePixelRatioF(),"clock lens preserves display DPR");
+        check(face.pixelColor(face.width()/2,face.height()/2)
+                  != clock->material().pixelColor(clock->material().width()/2,clock->material().height()/2),
+              "clock lens samples the wallpaper instead of the already-darkened card");
+        const int faceBuilds=clock->faceMaterialBuilds();
+        const int builds=clock->materialBuilds();for(int i=0;i<10;++i){clock->tick();clock->grab();}settle(150);
+        check(clock->materialBuilds()==builds,"clock tick reuses cached optics");
+        check(clock->faceMaterialBuilds()==faceBuilds,"clock ticks reuse the lens without GPU rebuilds");
+        auto mouse=[](QWidget *widget,QEvent::Type type,QPoint local,QPoint global){
+            QMouseEvent event(type,local,global,type==QEvent::MouseMove?Qt::NoButton:Qt::LeftButton,
+                type==QEvent::MouseButtonRelease?Qt::NoButton:Qt::LeftButton,Qt::NoModifier);
+            QApplication::sendEvent(widget,&event);
+        };
+        auto drag=[&](LiquidDesklet *widget,QPoint local,QPoint delta){
+            const QPoint global=widget->mapToGlobal(local);
+            mouse(widget,QEvent::MouseButtonPress,local,global);
+            mouse(widget,QEvent::MouseMove,local+delta,global+delta);
+            mouse(widget,QEvent::MouseButtonRelease,local,global+delta);
+        };
+        check(!clock->editMode() && !activity->editMode(),"widgets start with layout locked");
+        for(auto *widget : {static_cast<LiquidDesklet *>(clock),static_cast<LiquidDesklet *>(activity)}){
+            const QRect original=widget->geometry();
+            drag(widget,QPoint(70,20),QPoint(32,36));
+            drag(widget,QPoint(widget->width()-5,widget->height()-5),QPoint(32,36));
+            check(widget->geometry()==original,"locked widget ignores header drag and resize grip");
+            canvas.setGlobalEditMode(true);
+            check(widget->editMode(),"global layout editing unlocks widget");
+            drag(widget,QPoint(70,20),QPoint(32,36));
+            check(widget->pos()!=original.topLeft() && canvas.rect().contains(widget->geometry()),"edit mode allows widget movement within the desktop (including snapping)");
+            drag(widget,QPoint(widget->width()-5,widget->height()-5),QPoint(32,36));
+            check(widget->size()==original.size()+QSize(32,36),"edit mode allows widget resize");
+            const QPoint local(70,20),global=widget->mapToGlobal(local);
+            mouse(widget,QEvent::MouseButtonPress,local,global);
+            canvas.setGlobalEditMode(false);
+            const QRect locked=widget->geometry();
+            mouse(widget,QEvent::MouseMove,local+QPoint(40,40),global+QPoint(40,40));
+            mouse(widget,QEvent::MouseButtonRelease,local,global+QPoint(40,40));
+            check(widget->geometry()==locked,"exiting layout editing cancels an in-flight drag");
+            widget->setGeometry(original);
+        }
+        // Real drag events exercise edge clamping and magnetic placement.
+        const QRect clockBeforeSnap=clock->geometry(),activityBeforeSnap=activity->geometry();
+        canvas.setGlobalEditMode(true);canvas.setActivityWidgetVisible(false);
+        auto dragTo=[&](LiquidDesklet *widget,QPoint target){drag(widget,QPoint(70,20),target-widget->pos());};
+        dragTo(clock,QPoint(19,23));
+        check(clock->pos()==QPoint(0,0),"drag snaps flush to screen top and left without a forced margin");
+        dragTo(clock,QPoint(canvas.width()-clock->width()-20,canvas.height()-clock->height()-20));
+        check(clock->geometry().right()==canvas.rect().right() && clock->geometry().bottom()==canvas.rect().bottom(),
+              "drag snaps flush to screen right and bottom without a one-pixel gap");
+        dragTo(clock,QPoint(-100,-100));
+        check(clock->pos()==QPoint(0,0),"dragging past screen bounds keeps the entire widget visible");
+        canvas.setClockWidgetVisible(false);canvas.setClockWidgetVisible(true);
+        check(clock->pos()==QPoint(0,0),"hide and reveal retain an edge-aligned placement");
+        activity->move(600,200);canvas.setActivityWidgetVisible(true);
+        dragTo(clock,QPoint(activity->x()-clock->width()+7,activity->y()+5));
+        check(clock->x()+clock->width()==activity->x() && clock->y()==activity->y()
+              && !clock->geometry().intersects(activity->geometry()),"neighboring widgets snap side by side with aligned tops and no overlap");
+        dragTo(clock,QPoint(activity->x()+6,activity->y()+activity->height()+8));
+        check(clock->x()==activity->x() && clock->y()==activity->y()+activity->height(),
+              "neighboring widgets snap vertically with aligned left edges");
+        dragTo(clock,QPoint(200,200));
+        check(clock->pos()==QPoint(200,200),"widgets detach freely when dragged beyond the snap threshold");
+        auto *snapFence=canvas.createFence("snap fixture",QRect(800,500,240,200));
+        dragTo(clock,QPoint(800-clock->width()+6,505));
+        check(clock->x()+clock->width()==snapFence->x() && clock->y()==snapFence->y(),
+              "new widget can dock beside an existing fence");
+        snapFence->hide();
+        // Resize uses the original fixed corner, including while entering and
+        // leaving a snap in the same pointer gesture.
+        clock->setGeometry(200,200,300,300);activity->setGeometry(600,200,360,250);
+        QPoint grip(clock->width()-5,clock->height()-5), global=clock->mapToGlobal(grip);
+        mouse(clock,QEvent::MouseButtonPress,grip,global);
+        mouse(clock,QEvent::MouseMove,grip+QPoint(94,0),global+QPoint(94,0));
+        check(clock->geometry()==QRect(200,200,400,300)
+              && !clock->geometry().intersects(activity->geometry()),
+              "resize snaps right edge to neighbouring widget without overlap or anchor movement");
+        mouse(clock,QEvent::MouseMove,grip+QPoint(70,0),global+QPoint(70,0));
+        check(clock->geometry()==QRect(200,200,370,300),
+              "resize releases a snap without accumulating previous-event offsets");
+        mouse(clock,QEvent::MouseButtonRelease,grip,global+QPoint(70,0));
+        clock->setGeometry(200,200,300,300);activity->move(200,700);
+        drag(clock,QPoint(295,295),QPoint(0,194));
+        check(clock->geometry()==QRect(200,200,300,500),"resize snaps bottom to peer top");
+        clock->setGeometry(200,200,300,300);activity->setGeometry(600,200,360,405);
+        drag(clock,QPoint(295,295),QPoint(96,100));
+        check(clock->geometry()==QRect(200,200,400,405),"resize can align two compatible edges at once");
+        activity->hide();clock->setGeometry(200,200,300,300);
+        drag(clock,QPoint(295,295),QPoint(94,0));
+        check(clock->width()==394,"hidden widgets do not attract resize");
+        activity->show();activity->move(600,750);clock->setGeometry(200,200,300,300);
+        drag(clock,QPoint(295,295),QPoint(94,0));
+        check(clock->width()==394,"distant widgets outside perpendicular span do not attract resize");
+        activity->hide();clock->setGeometry(canvas.width()-500,canvas.height()-500,300,300);
+        drag(clock,QPoint(295,295),QPoint(182,182));
+        check(clock->size()==QSize(500,500) && canvas.rect().contains(clock->geometry()),
+              "resize snaps to desktop boundaries without moving its fixed corner");
+        drag(clock,QPoint(495,495),QPoint(400,400));
+        check(clock->size()==QSize(500,500),"resize remains inside the canvas beyond its edge");
+        clock->setGeometry(200,200,300,300);
+        drag(clock,QPoint(295,295),QPoint(-500,-500));
+        check(clock->size()==clock->minimumSize(),"resize respects minimum readable widget dimensions");
+        clock->setGeometry(200,200,300,300);
+        grip=QPoint(295,295);global=clock->mapToGlobal(grip);
+        mouse(clock,QEvent::MouseButtonPress,grip,global);canvas.setGlobalEditMode(false);
+        mouse(clock,QEvent::MouseMove,grip+QPoint(94,0),global+QPoint(94,0));
+        mouse(clock,QEvent::MouseButtonRelease,grip,global+QPoint(94,0));
+        check(clock->size()==QSize(300,300),"leaving edit mode cancels an in-flight resize");
+        // Aspect-preserving clients (monitor and smart space) share this solver.
+        const QRect bounds(0,0,1200,900),resizeStart(100,100,400,200);
+        auto scaled=WidgetResizeSnap::geometry(resizeStart,QSize(494,247),QSize(200,100),
+            QSize(1000,500),bounds,{QRect(600,100,300,250)},2.0);
+        check(scaled==QRect(100,100,500,250),"aspect resize snaps while preserving ratio");
+        auto anchored=WidgetResizeSnap::geometry(QRect(800,0,400,200),QSize(494,247),
+            QSize(200,100),QSize(1000,500),bounds,{QRect(400,0,300,300)},2.0,
+            Qt::RightEdge|Qt::TopEdge);
+        check(anchored==QRect(700,0,500,250),"right-anchored monitor grows left to a neighbour and remains flush right");
+        auto limited=WidgetResizeSnap::geometry(resizeStart,QSize(694,347),QSize(200,100),
+            QSize(695,500),bounds,{QRect(800,100,300,250)},2.0);
+        check(limited.width()==694,"snap cannot exceed maximum size");
+        activity->show();
+        clock->setGeometry(clockBeforeSnap);activity->setGeometry(activityBeforeSnap);
+        canvas.setGlobalEditMode(false);settle(100);
+        auto fixtureIcon=[&](const QString &path)->DesktopIcon *{
+            for(auto *icon:canvas.findChildren<DesktopIcon *>(QString(),Qt::FindDirectChildrenOnly))
+                if(icon->item().filePath==path)return icon;
+            return nullptr;
+        };
+        auto avoidsWidgets=[&](DesktopIcon *icon){
+            return icon && !icon->geometry().intersects(clock->geometry().adjusted(-8,-8,8,8))
+                && !icon->geometry().intersects(activity->geometry().adjusted(-8,-8,8,8));
+        };
+        settle(100);
+        for(const QString &path:{desktop+"/fixture.txt",desktop+"/fixture-folder"}){
+            check(avoidsWidgets(fixtureIcon(path)),"synced file and folder icons avoid both widget areas");
+            QMimeData mime;mime.setUrls({QUrl::fromLocalFile(path)});
+            for(auto *target:{static_cast<LiquidDesklet *>(clock),static_cast<LiquidDesklet *>(activity)}){
+                const QPoint at=target->geometry().center();
+                QDragEnterEvent enter(at,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);
+                QApplication::sendEvent(&canvas,&enter);
+                QDropEvent drop(at,Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);
+                QApplication::sendEvent(&canvas,&drop);
+                check(!FileClipboard::busy(),"existing desktop drop repositions synchronously without a file transfer");
+                settle(80);
+                check(drop.isAccepted() && avoidsWidgets(fixtureIcon(path)),"file and folder dropped on a widget snap to an unoccupied cell");
+                check(QFileInfo::exists(path)
+                    && !QFileInfo::exists(primaryDesktop+'/'+QFileInfo(path).fileName()),
+                    "drop from alternate desktop preserves its physical source without a primary-desktop duplicate");
+            }
+        }
+        const QString copySource=desktop+"/copy-fixture.txt";
+        const QString copyTarget=primaryDesktop+"/copy-fixture.txt";
+        const QByteArray copyContent="desktop copy fixture";
+        QFile copyFile(copySource);
+        check(copyFile.open(QIODevice::WriteOnly) && copyFile.write(copyContent)==copyContent.size(),
+            "alternate desktop copy fixture is created");copyFile.close();
+        QMimeData copyMime;copyMime.setUrls({QUrl::fromLocalFile(copySource)});
+        const QPoint copyPosition=clock->geometry().center();
+        QDragEnterEvent copyEnter(copyPosition,Qt::CopyAction,&copyMime,Qt::LeftButton,Qt::ControlModifier);
+        QApplication::sendEvent(&canvas,&copyEnter);
+        QDropEvent copyDrop(copyPosition,Qt::CopyAction,&copyMime,Qt::LeftButton,Qt::ControlModifier);
+        QApplication::sendEvent(&canvas,&copyDrop);
+        QElapsedTimer copyWait;copyWait.start();
+        do {settle(20);} while(FileClipboard::busy() && copyWait.elapsed()<8000);
+        check(copyDrop.isAccepted() && !FileClipboard::busy(),"real copy drop completes its bounded file job");
+        QFile copied(copyTarget),retained(copySource);
+        check(copied.open(QIODevice::ReadOnly) && retained.open(QIODevice::ReadOnly)
+            && copied.readAll()==copyContent && retained.readAll()==copyContent,
+            "copy from alternate desktop creates a primary copy and preserves the source contents");
+        if(auto *icon=fixtureIcon(desktop+"/fixture.txt")){
+            const QRect original=activity->geometry();
+            activity->move(icon->pos());settle(100);
+            check(avoidsWidgets(icon),"moving a widget over an icon relocates the icon");
+            activity->setGeometry(original);settle(100);
+        }
+        // Real X11 property changes on an isolated X server exercise the recorder.
+        Display *display=XOpenDisplay(nullptr);check(display!=nullptr,"activity X11 connection opens");
+        if(display){
+            const Window rootWindow=DefaultRootWindow(display);
+            const Atom activeAtom=XInternAtom(display,"_NET_ACTIVE_WINDOW",False);
+            const Atom pidAtom=XInternAtom(display,"_NET_WM_PID",False);
+            Window window=XCreateSimpleWindow(display,rootWindow,0,0,20,20,0,0,0);
+            char instance[]="desklet-recorder-test", klass[]="DeskletTestEditor";
+            XClassHint hint{instance,klass};XSetClassHint(display,window,&hint);
+            unsigned long foreignPid=424242;
+            XChangeProperty(display,window,pidAtom,XA_CARDINAL,32,PropModeReplace,reinterpret_cast<unsigned char *>(&foreignPid),1);
+            XChangeProperty(display,rootWindow,activeAtom,XA_WINDOW,32,PropModeReplace,reinterpret_cast<unsigned char *>(&window),1);XSync(display,False);
+            settle(100);recorder->sample();settle(120);recorder->sample();
+            auto appTime=[&]{return recorder->ledger().days.value(QDate::currentDate()).apps.value("desklettesteditor").ms;};
+            check(appTime()>=100,"X11 foreground class accrues actual elapsed time");
+            recorder->setLocked(true);const auto locked=appTime();settle(120);recorder->sample();
+            check(appTime()==locked,"lock screen excludes foreground time");recorder->setLocked(false);
+            auto bus=QDBusConnection::sessionBus();check(bus.registerService("org.ukui.ScreenSaver"),"isolated UKUI lock service registered");
+            bus.send(QDBusMessage::createSignal("/","org.ukui.ScreenSaver","lock"));settle(70);
+            const auto ukuiLocked=appTime();settle(120);recorder->sample();check(appTime()==ukuiLocked,"native UKUI lock signal pauses accounting");
+            bus.send(QDBusMessage::createSignal("/","org.ukui.ScreenSaver","unlock"));settle(70);
+            settle(120);recorder->sample();check(appTime()>ukuiLocked,"native UKUI unlock signal resumes accounting");
+            bus.unregisterService("org.ukui.ScreenSaver");
+            recorder->setRecording(false);const auto paused=appTime();settle(120);recorder->sample();
+            check(appTime()==paused,"paused recording excludes foreground time");recorder->setRecording(true);
+            XDeleteProperty(display,rootWindow,activeAtom);XDestroyWindow(display,window);XSync(display,False);settle(50);recorder->sample();
+            const auto hidden=appTime();settle(100);recorder->sample();check(appTime()==hidden,"missing foreground window accrues no application time");
+            XCloseDisplay(display);
+        }
+        const int activityBuilds=activity->materialBuilds();recorder->sample();settle(100);
+        check(activity->materialBuilds()==activityBuilds,"activity sampling does not regenerate material");
+        clock->findChild<QPushButton *>("timerTab")->click();
+        auto *minutes=clock->findChild<QSpinBox *>("countdownMinutes");minutes->setValue(5);
+        auto *start=clock->findChild<QPushButton *>("countdownStart");start->click();
+        check(clock->countdown().state==CountdownState::Running && !minutes->isEnabled(),"countdown begins and protects its active duration");
+        start->click();check(clock->countdown().state==CountdownState::Paused,"UI pauses countdown");
+        start->click();check(clock->countdown().state==CountdownState::Running,"UI resumes countdown");
+        clock->findChild<QPushButton *>("countdownCancel")->click();check(clock->countdown().state==CountdownState::Ready,"UI cancels countdown");
+        auto *pause=activity->findChild<QPushButton *>("activityRecording");pause->click();check(!recorder->isRecording(),"recording can be paused explicitly");pause->click();
+        const auto before=clock->material();clock->grab();const auto faceBefore=clock->faceMaterial();
+        setWallpaper(bluePath);canvas.loadLayout();canvas.refreshAll();settle(700);clock->grab();
+        check(before!=clock->material(),"wallpaper refresh reaches new clock material");
+        check(faceBefore!=clock->faceMaterial(),"wallpaper refresh also invalidates the cached clock lens");
+        check(!clock->property("clockFaceDarkInk").toBool(),"dark wallpaper keeps light clock ink");
+        const QString whitePath=root+"/desklet-white.png";color.fill(Qt::white);color.save(whitePath);
+        setWallpaper(whitePath);canvas.loadLayout();canvas.refreshAll();settle(700);
+        clock->findChild<QPushButton *>("clockTab")->click();clock->grab();
+        check(clock->property("clockFaceDarkInk").toBool(),"white wallpaper selects contrasting dark dial marks and hands");
+        for(LiquidDesklet *desklet:std::initializer_list<LiquidDesklet *>{clock,activity}){
+            const QVector<QColor> cells=desklet->materialCells();
+            check(!cells.isEmpty() && Palette::minContrast(desklet->inkColor(),cells)>=Palette::PrimaryTextContrast
+                  && Palette::minContrast(desklet->mutedColor(),cells)>=Palette::SecondaryTextContrast,
+                  "white wallpaper desklet text meets 7:1 primary and 4.5:1 secondary contrast");
+        }
+        QDir().mkpath("artifacts");clock->grab().save(QString("artifacts/clock-white-%1.png").arg(clock->devicePixelRatioF()));
+        canvas.setActivityWidgetVisible(false);setWallpaper(redPath);canvas.loadLayout();canvas.refreshAll();settle(300);canvas.setActivityWidgetVisible(true);settle(200);
+        const QImage material=activity->material();const QColor sample=material.pixelColor(material.width()/2,material.height()/2);
+        check(sample.red()>sample.blue()+40,"hidden activity widget refreshes wallpaper on reveal");
+        clock->move(123,145);clock->savePlacement();LiquidDesklet::setAutoStart("clock",true);LiquidDesklet::setAutoStart("activity",true);
+        check(LiquidDesklet::autoStartEnabled("clock") && LiquidDesklet::autoStartEnabled("activity"),"independent startup flags persist");
+        const QImage timerPreview=clock->grab().toImage();timerPreview.save(root+"/clock.png");clock->findChild<QPushButton *>("clockTab")->click();clock->grab().save(root+"/clock-analogue.png");activity->grab().save(root+"/activity.png");
+        const QString output=QDir::currentPath()+"/../test-results/desklets-"+QString::number(clock->devicePixelRatioF());QDir().mkpath(output);timerPreview.save(output+"/countdown.png");clock->grab().save(output+"/clock.png");activity->grab().save(output+"/activity.png");
+        recorder->flush();QFile f(recorder->dataPath());check(f.open(QIODevice::ReadOnly) && QJsonDocument::fromJson(f.readAll()).isObject(),"activity data saves atomically as valid local JSON");
+    }
+    {
+        DesktopCanvas canvas;canvas.showAndActivate();
+        QElapsedTimer startup; startup.start();
+        while ((!canvas.clockWidgetVisible() || !canvas.activityWidgetVisible())
+               && startup.elapsed()<5000) settle(20);
+        check(canvas.clockWidgetVisible() && canvas.activityWidgetVisible(),"saved startup choices restore both widgets");
+        auto *clock=canvas.findChild<ClockDesklet *>();check(clock && clock->pos()==QPoint(123,145),"widget position survives host restart");
+    }
+    {
+        LiquidDesklet::setAutoStart("clock",false);LiquidDesklet::setAutoStart("activity",false);
+        DesktopCanvas canvas;canvas.show();canvas.setGlobalEditMode(true);
+        canvas.setClockWidgetVisible(true);canvas.setActivityWidgetVisible(true);
+        check(canvas.findChild<ClockDesklet *>()->editMode() && canvas.findChild<ActivityDesklet *>()->editMode(),
+              "widgets created during layout editing inherit the global mode");
+        auto *clock=canvas.findChild<ClockDesklet *>();clock->move(0,0);clock->savePlacement();
+    }
+    {
+        DesktopCanvas canvas;canvas.show();canvas.setClockWidgetVisible(true);
+        check(canvas.findChild<ClockDesklet *>()->pos()==QPoint(0,0),"restart restores a flush top-left position without adding a margin");
+    }
+    return failures ? 1 : 0;
+}

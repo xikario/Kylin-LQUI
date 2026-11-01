@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-10",
+  "pid": 34445,
+  "gpu": true,
+  "trayIcon": ":/fcitx-liquid/tray/direct.png",
+  "binary_matches_build": true,
+  "assets_match_generated_files": true,
+  "shortcut_regression": "real isolated Fcitx/Rime Shift, Caps Lock, Ctrl+Space passed"
+}

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Kylin-LQUI Settings
+Name[zh_CN]=Kylin-LQUI 设置
+Comment=Configure desktop partitions and liquid widgets
+Comment[zh_CN]=配置桌面分区、液态外观与小组件
+Exec=ukui-fences-launcher --settings
+Icon=ukui-fences-settings
+StartupWMClass=ukui-fences-settings
+Terminal=false
+StartupNotify=false
+Categories=Settings;DesktopSettings;

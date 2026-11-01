@@ -1,0 +1,1559 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peony Manager — 麒麟系统插件管理器</title>
+    <!-- 避免使用 Tailwind JS CDN（Qt 5.12 Chromium 不支持），使用静态 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .cli-form label {display:block;font-size:12px;color:#374151;margin:14px 0 5px;}
+        .cli-form input[type=text], .cli-form input[type=number], .cli-form textarea {box-sizing:border-box;width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;background:white;color:#111827;font-size:12px;user-select:text;}
+        .cli-form textarea {font-family:monospace;min-height:100px;resize:vertical;}
+        .cli-form button {padding:8px 11px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;background:white;}
+        .cli-form .cli-primary {background:#2563eb;color:white;border-color:#2563eb;}
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+        .app-body {
+            background: #f8f9fa;
+            color: #2c3e50;
+            user-select: none;
+        }
+        .app-shell {
+            width: 100%;
+            height: 100%;
+            background: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+        .bg-\[\#2563eb\] { background-color: #2563eb; }
+        .bg-\[\#f8f9fa\] { background-color: #f8f9fa; }
+        .bg-\[\#f3f4f6\] { background-color: #f3f4f6; }
+        .bg-\[\#eef0f3\] { background-color: #eef0f3; }
+        .bg-\[\#eef2ff\] { background-color: #eef2ff; }
+        .bg-\[\#f0f9ff\] { background-color: #f0f9ff; }
+        .text-\[\#2563eb\] { color: #2563eb; }
+        .text-\[\#374151\] { color: #374151; }
+        .text-\[\#4b5563\] { color: #4b5563; }
+        .text-\[\#555\] { color: #555; }
+        .text-\[\#9ca3af\] { color: #9ca3af; }
+        .border-\[\#cbd5e1\] { border-color: #cbd5e1; }
+        .border-\[\#d1d5db\] { border-color: #d1d5db; }
+        .border-\[\#e5e7eb\] { border-color: #e5e7eb; }
+        .hover\:bg-\[\#eef0f3\]:hover { background-color: #eef0f3; }
+        .hover\:bg-\[\#f3f4f6\]:hover { background-color: #f3f4f6; }
+        .active\:bg-\[\#e5e7eb\]:active { background-color: #e5e7eb; }
+        .toolbar-icon-button {
+            width: 34px;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 34px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #ffffff;
+            color: #475569;
+            transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+        }
+        .toolbar-icon-button:hover {
+            background: #f8fafc;
+            border-color: #93c5fd;
+            color: #2563eb;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+        }
+        .toolbar-icon-button:active {
+            background: #eff6ff;
+            transform: translateY(1px);
+        }
+        .toolbar-icon-button i {
+            font-size: 13px;
+        }
+        /* Custom scrollbars matching UKUI look */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="app-body">
+
+<!-- Main desktop application surface. Native window chrome is provided by PyQt. -->
+<div class="app-shell">
+
+    <!-- Application Toolbar -->
+    <div class="h-14 bg-white border-b border-[#e5e7eb] px-4 flex items-center justify-between shrink-0">
+        <!-- Search and Refresh Controls (Left Align) -->
+        <div class="flex items-center space-x-3 w-1/2 max-w-md">
+            <!-- Search Wrapper -->
+            <div class="relative w-full">
+                <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-[#9ca3af] pointer-events-none">
+                    <i class="fa-solid fa-magnifying-glass text-xs"></i>
+                </span>
+                <input 
+                    type="text" 
+                    id="search-input"
+                    placeholder="输入插件名称、包名或描述..." 
+                    class="w-full pl-9 pr-3 py-1.5 bg-[#f3f4f6] border border-[#cbd5e1] rounded-md text-xs placeholder-[#9ca3af] focus:outline-none focus:ring-1 focus:ring-[#2563eb] focus:border-[#2563eb] transition-all"
+                    oninput="handleSearch(this.value)"
+                />
+            </div>
+            <!-- Refresh Button -->
+            <button 
+                onclick="refreshPlugins()" 
+                class="toolbar-icon-button focus:outline-none"
+                title="重新扫描插件目录"
+                aria-label="重新扫描插件目录"
+            >
+                <i id="refresh-icon" class="fa-solid fa-rotate"></i>
+            </button>
+        </div>
+
+        <!-- Operations (Right Align) -->
+        <div class="flex items-center space-x-2">
+            <!-- Install Local Plugin Button -->
+            <button 
+                onclick="showFeatureUnavailable('本地插件安装需要安全 helper 和 polkit 授权，当前版本仅开放真实扫描与全局设置。')"
+                class="flex items-center space-x-1.5 px-3 py-1.5 bg-[#eef2ff] text-[#2563eb] border border-blue-100 hover:bg-[#dbeafe] rounded-md text-xs font-medium transition-all focus:outline-none"
+            >
+                <i class="fa-solid fa-folder-plus text-[10px]"></i>
+                <span>添加本地插件</span>
+            </button>
+            
+            <!-- Global Setting Shortcut -->
+            <button 
+                onclick="switchToGlobalSettings()"
+                class="p-1.5 bg-white border border-[#cbd5e1] hover:bg-[#f3f4f6] rounded-md text-xs text-[#374151] transition-all focus:outline-none"
+                title="文件管理器全局偏好设置"
+            >
+                <i class="fa-solid fa-sliders text-xs"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Content Area: Three-Column Layout -->
+    <div class="flex-1 flex overflow-hidden min-h-0 bg-[#f8f9fa]">
+        
+        <!-- ================= LEFT COLUMN: Categories Navigation ================= -->
+        <aside class="w-56 border-r border-[#e5e7eb] bg-[#f8f9fa] py-3 flex flex-col shrink-0 justify-between">
+            <div class="space-y-4">
+                <!-- Segment 1: Global Settings Toggle -->
+                <div class="px-2">
+                    <button 
+                        id="nav-global-settings"
+                        onclick="switchToGlobalSettings()"
+                        class="w-full flex items-center space-x-2.5 px-3 py-2 rounded-md text-xs transition-all duration-150 focus:outline-none text-gray-700 hover:bg-gray-100"
+                    >
+                        <span class="w-4 text-center"><i class="fa-solid fa-gear text-[11px] text-[#2563eb]"></i></span>
+                        <span class="font-semibold">Peony 全局偏好设置</span>
+                    </button>
+                </div>
+
+                <div class="border-t border-[#e5e7eb] mx-2"></div>
+
+                <!-- Segment 2: Plugin Categories -->
+                <nav class="space-y-0.5 px-2">
+                    <div class="text-[10px] text-gray-400 px-3 pb-1.5 font-bold uppercase tracking-wider">插件分类</div>
+                    <div id="category-list">
+                        <!-- Loaded via JavaScript -->
+                    </div>
+                </nav>
+            </div>
+
+            <!-- Bottom Note -->
+            <div class="px-4 py-3 bg-[#eef0f3]/60 mx-2 rounded-md border border-[#e5e7eb]">
+                <div class="flex items-center space-x-1.5 text-xs font-semibold text-gray-700 mb-1">
+                    <i class="fa-solid fa-circle-question text-[#2563eb]"></i>
+                    <span>什么是 Peony 插件？</span>
+                </div>
+                <p class="text-[10px] text-gray-500 leading-relaxed">
+                    Peony 为麒麟操作系统核心文件管理器。通过开关扩展功能，您可以自主定制鼠标右键菜单、文件关联动作和多设备网络协同表现。
+                </p>
+            </div>
+        </aside>
+
+        <!-- ================= MIDDLE COLUMN: Main Context List / Global Settings Area ================= -->
+        <main class="flex-1 bg-white flex flex-col overflow-hidden min-w-[420px] border-r border-[#e5e7eb]">
+            <!-- List Header Metrics -->
+            <div id="mid-column-header" class="px-4 py-2 border-b border-[#e5e7eb] bg-[#f8f9fa] flex items-center justify-between shrink-0 text-xs text-gray-500">
+                <span id="plugins-count-info">正在装载...</span>
+                <span class="flex items-center space-x-2">
+                    <span class="inline-flex items-center"><span class="w-2 h-2 rounded-full bg-green-500 mr-1"></span>已启用</span>
+                    <span class="inline-flex items-center"><span class="w-2 h-2 rounded-full bg-gray-300 mr-1"></span>已禁用</span>
+                </span>
+            </div>
+
+            <!-- Scrollable Content Frame -->
+            <div class="flex-1 overflow-y-auto" id="mid-content-container">
+                <!-- Loaded via JavaScript: Plugins list or Global Settings panels -->
+            </div>
+        </main>
+
+        <!-- ================= RIGHT COLUMN: Plugin Detail Panel ================= -->
+        <aside class="w-80 bg-[#f8f9fa] flex flex-col shrink-0 overflow-y-auto" id="plugin-detail-panel">
+            <!-- Loaded via JavaScript -->
+        </aside>
+
+    </div>
+
+    <!-- Bottom Notification Toast Bar for Pending Restarts -->
+    <div id="restart-banner" class="hidden shrink-0 bg-amber-50 border-t border-amber-200 px-4 py-2.5 flex items-center justify-between transition-all duration-300">
+        <div class="flex items-center space-x-2">
+            <span class="flex h-2 w-2 relative">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+            </span>
+            <i class="fa-solid fa-triangle-exclamation text-amber-600 text-xs"></i>
+            <span class="text-xs text-amber-800 font-medium">配置已变更。部分更改将在重启 Peony 文件管理器后生效。</span>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button onclick="openPendingChangesRegistry()" class="text-[11px] text-amber-700 hover:text-amber-900 font-semibold underline mr-2 focus:outline-none">
+                查看待变更清单 (<span id="pending-count-badge">0</span>)
+            </button>
+            <button onclick="triggerPeonyRestart()" class="flex items-center space-x-1 bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded text-xs font-medium shadow-sm transition-all focus:outline-none">
+                <i class="fa-solid fa-power-off text-[10px]"></i>
+                <span>立即重启 Peony</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Application Status Footer -->
+    <footer class="h-8 bg-[#eef0f3] border-t border-[#d1d5db] px-4 flex items-center justify-between text-[11px] text-[#555] select-none shrink-0">
+        <div class="flex items-center space-x-2">
+            <span class="flex items-center space-x-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                <span class="text-gray-600">Peony 文件系统监控守护服务已连接</span>
+            </span>
+            <span class="text-[#cbd5e1]">|</span>
+            <span class="text-[10px] font-mono text-gray-500">配置源: org.ukui.peony.settings</span>
+        </div>
+        <div class="flex items-center space-x-3">
+            <span>活跃插件数: <strong id="active-plugins-sum" class="text-gray-700">0</strong></span>
+            <span>待处理改动: <strong id="pending-changes-sum" class="text-amber-700">0</strong></span>
+        </div>
+    </footer>
+
+</div>
+
+<!-- Advanced Local Plugin Importer Wizard (Three-Step Process) -->
+<div id="install-modal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg border border-[#cbd5e1] shadow-2xl w-full max-w-lg mx-4 overflow-hidden animate-fade-in">
+        <!-- Modal Title -->
+        <div class="px-4 py-3 bg-[#eef0f3] border-b border-[#cbd5e1] flex items-center justify-between">
+            <span class="text-xs font-bold text-[#1f2937] flex items-center space-x-1.5">
+                <i class="fa-solid fa-shield-halved text-[#2563eb]"></i>
+                <span>添加本地 Peony 插件向导</span>
+            </span>
+            <button onclick="closeInstallModal()" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+        </div>
+        
+        <!-- Steps Indicator Breadcrumb -->
+        <div class="bg-[#f8f9fa] border-b border-[#e5e7eb] px-6 py-2.5 flex items-center justify-between text-[11px]">
+            <div id="step-tab-1" class="font-bold text-[#2563eb] flex items-center space-x-1">
+                <span class="w-4 h-4 rounded-full bg-blue-100 text-[#2563eb] inline-flex items-center justify-center font-mono">1</span>
+                <span>选择文件</span>
+            </div>
+            <div class="text-gray-300"><i class="fa-solid fa-chevron-right text-[10px]"></i></div>
+            <div id="step-tab-2" class="text-gray-400 flex items-center space-x-1">
+                <span class="w-4 h-4 rounded-full bg-gray-100 text-gray-400 inline-flex items-center justify-center font-mono">2</span>
+                <span>安全兼容性检查</span>
+            </div>
+            <div class="text-gray-300"><i class="fa-solid fa-chevron-right text-[10px]"></i></div>
+            <div id="step-tab-3" class="text-gray-400 flex items-center space-x-1">
+                <span class="w-4 h-4 rounded-full bg-gray-100 text-gray-400 inline-flex items-center justify-center font-mono">3</span>
+                <span>授权安装及重启</span>
+            </div>
+        </div>
+
+        <!-- Modal Step Contents -->
+        <div class="p-5 min-h-[180px]">
+            <!-- STEP 1 CONTAINER -->
+            <div id="wizard-step-1" class="space-y-3">
+                <p class="text-xs text-gray-500">
+                    请加载本地打包好的 Peony 拓展动态链接库组件（支持 <code class="bg-gray-100 px-1 py-0.5 rounded font-mono text-[10px]">.deb</code> 安装包或解包后的二进制文件 <code class="bg-gray-100 px-1 py-0.5 rounded font-mono text-[10px]">.so</code> 库）。
+                </p>
+                <div class="space-y-1.5">
+                    <label class="block text-xs font-semibold text-gray-700">文件路径</label>
+                    <div class="flex items-center space-x-2">
+                        <input type="text" id="mock-file-path" readonly value="未选择文件" class="flex-1 px-3 py-1.5 bg-[#f3f4f6] border border-[#cbd5e1] rounded text-xs text-gray-500 focus:outline-none" />
+                        <button onclick="simulateBrowseFile()" class="px-3 py-1.5 bg-white border border-[#cbd5e1] hover:bg-gray-50 text-xs rounded transition-all font-medium focus:outline-none">选择本地文件...</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2 CONTAINER (Hidden initially) -->
+            <div id="wizard-step-2" class="hidden space-y-3">
+                <div class="p-3 bg-blue-50 border border-blue-100 rounded text-xs text-blue-800 space-y-1">
+                    <div class="font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-circle-notch animate-spin text-blue-600"></i>
+                        <span>正在执行静态二进制依赖与运行环境安全审计...</span>
+                    </div>
+                    <p class="text-[10px] text-blue-600">正在对比当前系统内核版本、glibc 动态链接链及 UKUI 桌面依赖项。</p>
+                </div>
+                <div class="space-y-1.5 border border-[#e5e7eb] rounded p-2.5 bg-[#f8f9fa] text-[11px] font-mono text-gray-600">
+                    <div class="flex justify-between"><span>应用名称:</span> <span id="audit-app-name" class="font-bold text-gray-800">未载入</span></div>
+                    <div class="flex justify-between"><span>目标架构:</span> <span class="text-green-600">arm64 / aarch64</span></div>
+                    <div class="flex justify-between"><span>Peony ABI:</span> <span class="text-green-600">libpeony3 3.26</span></div>
+                    <div class="flex justify-between"><span>开发接口:</span> <span class="text-green-600">libpeony-dev</span></div>
+                    <div class="flex justify-between"><span>安全源签名验证:</span> <span class="text-amber-600">外部未签名第三方插件</span></div>
+                </div>
+            </div>
+
+            <!-- STEP 3 CONTAINER (Hidden initially) -->
+            <div id="wizard-step-3" class="hidden space-y-3">
+                <div class="p-3 bg-red-50 border border-red-100 text-red-800 rounded-md space-y-1">
+                    <h4 class="text-xs font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-triangle-exclamation text-red-600"></i>
+                        <span>高权限与系统运行风险告知</span>
+                    </h4>
+                    <p class="text-[10px] leading-relaxed text-red-700">
+                        该本地插件被识别为外部自定义插件，运行可能需要管理员授权 (polkit 认证) 将其注册到系统库。
+                        插件安装后，系统底层资源会更新，必须重启 Peony 主视窗引擎才可展现鼠标关联菜单。
+                    </p>
+                </div>
+                <div class="flex items-center space-x-2 p-2 bg-[#f8f9fa] rounded border border-[#e5e7eb]">
+                    <input type="checkbox" id="accept-risk-install" class="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer" />
+                    <label for="accept-risk-install" class="text-xs text-gray-600 cursor-pointer">我已知悉相关风险，确认要提权安装此非标准库扩展。</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Actions Footer -->
+        <div class="px-4 py-3 bg-[#f8f9fa] border-t border-[#e5e7eb] flex items-center justify-between">
+            <button id="wizard-btn-prev" onclick="wizardPrev()" class="invisible px-3 py-1.5 border border-[#cbd5e1] bg-white text-gray-700 hover:bg-gray-50 rounded text-xs font-medium focus:outline-none">上一步</button>
+            <div class="flex space-x-2">
+                <button onclick="closeInstallModal()" class="px-3 py-1.5 border border-[#cbd5e1] bg-white text-gray-700 hover:bg-gray-50 rounded text-xs font-medium focus:outline-none">取消</button>
+                <button id="wizard-btn-next" onclick="wizardNext()" class="px-3 py-1.5 bg-[#2563eb] text-white hover:bg-blue-700 rounded text-xs font-medium shadow-sm focus:outline-none">下一步</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pending Changes Registry Modal -->
+<div id="pending-changes-modal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg border border-amber-200 shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        <div class="px-4 py-3 bg-amber-50 border-b border-amber-100 flex items-center justify-between text-amber-800 font-bold text-xs">
+            <span class="flex items-center space-x-1.5">
+                <i class="fa-solid fa-list-check"></i>
+                <span>待重启生效变更清单</span>
+            </span>
+            <button onclick="closePendingChangesRegistry()" class="text-amber-500 hover:text-amber-700"><i class="fa-solid fa-xmark text-sm"></i></button>
+        </div>
+        <div class="p-4 space-y-3">
+            <p class="text-xs text-gray-600 leading-normal">以下插件状态或参数已被修改。您需要立即重启 Peony 后台守护服务以将其注入桌面环境：</p>
+            
+            <!-- List Container -->
+            <div id="pending-changes-list" class="max-h-48 overflow-y-auto border border-amber-200 rounded bg-amber-50/10 divide-y divide-amber-100 text-xs">
+                <!-- Loaded via JS -->
+            </div>
+        </div>
+        <!-- Modal Actions Footer -->
+        <div class="px-4 py-3 bg-[#f8f9fa] border-t border-amber-100 flex items-center justify-between">
+            <button onclick="undoAllPendingChanges()" class="px-3 py-1.5 border border-[#cbd5e1] bg-white text-red-600 hover:bg-red-50 rounded text-xs font-medium focus:outline-none">撤销全部改动</button>
+            <button onclick="triggerPeonyRestartFromModal()" class="px-3 py-1.5 bg-amber-600 text-white hover:bg-amber-700 rounded text-xs font-medium shadow-sm focus:outline-none">立即重启 Peony</button>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Confirmation Dialog Modal -->
+<div id="risk-modal" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg border border-red-200 shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <!-- Header -->
+        <div class="px-4 py-3 bg-red-50 border-b border-red-100 flex items-center space-x-2 text-red-700 font-bold text-xs">
+            <i class="fa-solid fa-triangle-exclamation text-sm text-red-600 animate-pulse"></i>
+            <span>高风险系统级扩展操作警告</span>
+        </div>
+        <!-- Context Body -->
+        <div class="p-4 space-y-3">
+            <p class="text-xs text-gray-600 leading-relaxed">
+                您正在更改一个属于系统内核/核心模块关联的插件：
+            </p>
+            <div class="p-2.5 bg-gray-50 border border-gray-200 rounded text-xs font-mono text-gray-700 space-y-1">
+                <div>插件：<span id="risk-modal-name" class="font-bold text-gray-800"></span></div>
+                <div>性质：<span class="text-red-600 font-semibold">系统核心架构件</span></div>
+            </div>
+            <p class="text-[11px] text-gray-500">
+                修改此项可能会导致磁盘 VFS 无法正常访问、文件保险箱锁定崩溃或安全系统检测阻断。确认需要强行修改该配置状态吗？
+            </p>
+        </div>
+        <!-- Actions -->
+        <div class="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-end space-x-2">
+            <button onclick="cancelRiskAction()" class="px-3 py-1.5 border border-[#cbd5e1] bg-white text-gray-700 hover:bg-gray-50 rounded text-xs font-medium focus:outline-none">取消操作</button>
+            <button onclick="confirmRiskAction()" class="px-3 py-1.5 bg-red-600 text-white hover:bg-red-700 rounded text-xs font-medium shadow-sm focus:outline-none">我承担风险并修改</button>
+        </div>
+    </div>
+</div>
+
+<!-- Peony Daemon Restarting Simulated Overlay Screen -->
+<div id="restarting-overlay" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-md flex flex-col items-center justify-center z-50 transition-all">
+    <div class="bg-white p-6 rounded-lg shadow-2xl max-w-xs w-full flex flex-col items-center space-y-4">
+        <!-- Spinner animation -->
+        <div class="w-10 h-10 border-4 border-t-[#2563eb] border-[#f3f4f6] rounded-full animate-spin"></div>
+        <div class="text-center space-y-1">
+            <h4 class="text-xs font-bold text-gray-800">正在重置 Peony VFS 服务</h4>
+            <p class="text-[10px] text-gray-500">同步动态链接库配置、更新系统关联菜单项...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Toast notifications -->
+<div id="toast-notification" class="fixed top-12 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white text-xs px-4 py-2.5 rounded-md shadow-lg flex items-center space-x-2 z-50 opacity-0 transition-all duration-300 pointer-events-none">
+    <i class="fa-solid fa-circle-check text-green-400"></i>
+    <span id="toast-text">操作成功</span>
+</div>
+
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script>
+    /* ================= DATA STRUCTURE: Core Database ================= */
+    // 真实数据由 PyQt5 QtWebChannel 后端提供
+    let plugins = [];
+    let globalPreferences = {};
+    let appSystem = {};
+    let peonyBridge = null;
+    let bridgeReadyPromise = null;
+
+    /* ================= CATEGORIES AND GLOBALS ================= */
+    const categories = [
+        { id: "all", name: "全部插件", icon: "fa-cubes" },
+        { id: "context-menu", name: "右键菜单", icon: "fa-bars-staggered" },
+        { id: "vfs", name: "虚拟文件系统", icon: "fa-network-wired" },
+        { id: "properties", name: "属性页与标记", icon: "fa-tags" },
+        { id: "sys-view", name: "系统视图", icon: "fa-window-restore" },
+        { id: "device", name: "设备与协同", icon: "fa-mobile-screen-button" }
+    ];
+
+    let currentCategory = "all";
+    let searchQuery = "";
+    let selectedPluginId = null;
+    let pendingRiskActionContext = null;
+
+    // Wizard wizard state
+    let wizardStep = 1;
+    let selectedWizardFilePath = "";
+    let loading = false;
+
+    function ensureBridge() {
+        if (bridgeReadyPromise) {
+            return bridgeReadyPromise;
+        }
+
+        bridgeReadyPromise = new Promise(function(resolve, reject) {
+            if (typeof qt === "undefined" || typeof QWebChannel === "undefined") {
+                reject(new Error("QtWebChannel 未注入，请通过 Peony Manager GUI 启动"));
+                return;
+            }
+
+            new QWebChannel(qt.webChannelTransport, function(channel) {
+                peonyBridge = channel.objects.peonyBridge;
+                if (!peonyBridge) {
+                    reject(new Error("peonyBridge 未注册"));
+                    return;
+                }
+                resolve(peonyBridge);
+            });
+        });
+
+        return bridgeReadyPromise;
+    }
+
+    function parseBridgeJson(payload) {
+        if (typeof payload === "string") {
+            return JSON.parse(payload);
+        }
+        return payload || {};
+    }
+
+    function bridgeCall(methodName, args) {
+        args = args || [];
+        return ensureBridge().then(function(bridge) {
+            return new Promise(function(resolve, reject) {
+                if (!bridge[methodName]) {
+                    reject(new Error("后端方法不存在: " + methodName));
+                    return;
+                }
+                bridge[methodName].apply(bridge, args.concat(function(result) {
+                    try {
+                        resolve(parseBridgeJson(result));
+                    } catch (err) {
+                        reject(err);
+                    }
+                }));
+            });
+        });
+    }
+
+    function normalizePlugin(p) {
+        if (p.pendingState === undefined || p.pendingState === null) {
+            p.pendingState = p.enabled;
+        }
+        return p;
+    }
+
+    function isVisiblePlugin(plugin) {
+        return plugin.installed || plugin.id === "peony-copy-path" || plugin.id === "peony-cli-panel";
+    }
+
+    function loadInitialState() {
+        loading = true;
+        document.getElementById("plugins-count-info").textContent = "正在加载...";
+        bridgeCall("getInitialState").then(applyState).catch(function(err) {
+            document.getElementById("plugins-count-info").textContent = "后端未连接 — 请通过 Peony Manager 桌面程序启动";
+            showToast("后端连接失败: " + err.message, true);
+            showMainInterface();
+            loading = false;
+        });
+    }
+
+    function applyState(state) {
+        appSystem = state.system || {};
+        plugins = (state.plugins || []).map(normalizePlugin);
+        globalPreferences = state.globalSettings || {};
+        if (plugins.length > 0 && !selectedPluginId) {
+            const copyPathPlugin = plugins.find(p => p.id === "peony-cli-panel") || plugins.find(p => p.id === "peony-copy-path");
+            selectedPluginId = copyPathPlugin ? copyPathPlugin.id : plugins[0].id;
+        }
+        renderCategories();
+        showMainInterface();
+        updateFooterStats();
+        checkPendingRestartRequirements();
+        loading = false;
+    }
+
+    window.onload = function() {
+        loadInitialState();
+    };
+
+    /* ================= STREAMING_CHUNK: Main Rendering Logic ================= */
+    function renderCategories() {
+        const categoryList = document.getElementById("category-list");
+        categoryList.innerHTML = "";
+
+        categories.forEach(cat => {
+            const isActive = currentCategory === cat.id;
+            const activeClasses = isActive 
+                ? "bg-blue-600 text-white shadow-sm font-semibold" 
+                : "text-gray-700 hover:bg-gray-100 active:bg-gray-200";
+
+            const count = getPluginCountForCategory(cat.id);
+
+            const categoryHTML = `
+                <button 
+                    onclick="switchCategory('${cat.id}')"
+                    class="w-full flex items-center justify-between px-3 py-1.5 rounded-md text-xs transition-all duration-150 focus:outline-none mb-0.5 ${activeClasses}"
+                >
+                    <div class="flex items-center space-x-2">
+                        <span class="w-4 text-center"><i class="fa-solid ${cat.icon} text-[10px]"></i></span>
+                        <span>${cat.name}</span>
+                    </div>
+                    <span class="text-[9px] px-1.5 py-0.5 rounded-full ${isActive ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-600'}">
+                        ${count}
+                    </span>
+                </button>
+            `;
+            categoryList.innerHTML += categoryHTML;
+        });
+    }
+
+    function getPluginCountForCategory(catId) {
+        if (catId === "all") return plugins.filter(isVisiblePlugin).length;
+        return plugins.filter(p => p.category === catId && isVisiblePlugin(p)).length;
+    }
+
+    function switchCategory(catId) {
+        currentCategory = catId;
+        
+        // Remove active state from Global preference item
+        document.getElementById("nav-global-settings").className = "w-full flex items-center space-x-2.5 px-3 py-2 rounded-md text-xs transition-all duration-150 focus:outline-none text-gray-700 hover:bg-gray-100";
+        
+        renderCategories();
+        showMainInterface();
+    }
+
+    function showMainInterface() {
+        const midHeader = document.getElementById("mid-column-header");
+        const container = document.getElementById("mid-content-container");
+
+        if (currentCategory === "global-settings") {
+            // Render Global Settings View
+            midHeader.innerHTML = `
+                <span class="font-bold text-[#374151]">Peony 全局偏好设置</span>
+                <span class="text-[10px] text-gray-400">系统底层控制项</span>
+            `;
+            renderGlobalSettingsPanel(container);
+            renderDetailPanel(null); // Clear plugin detail panel
+            return;
+        }
+
+        // Render standard plugin list
+        midHeader.innerHTML = `
+            <span id="plugins-count-info">正在筛选...</span>
+            <span class="flex items-center space-x-2">
+                <span class="inline-flex items-center"><span class="w-2 h-2 rounded-full bg-green-500 mr-1"></span>已启用</span>
+                <span class="inline-flex items-center"><span class="w-2 h-2 rounded-full bg-gray-300 mr-1"></span>已禁用</span>
+            </span>
+        `;
+        renderPluginList(container);
+    }
+
+    /* ================= STREAMING_CHUNK: Render Plugin List ================= */
+    function renderPluginList(container) {
+        container.innerHTML = "";
+
+        // Query filtering pipeline. Show installed plugins plus the planned copy-path plugin.
+        let filtered = plugins.filter(p => isVisiblePlugin(p) && (currentCategory === "all" || p.category === currentCategory));
+        
+        if (searchQuery !== "") {
+            filtered = filtered.filter(p => 
+                p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                p.package.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                p.description.toLowerCase().includes(searchQuery.toLowerCase())
+            );
+        }
+
+        // Update count metrics
+        document.getElementById("plugins-count-info").textContent = `过滤出 ${filtered.length} 个插件 (已安装 ${plugins.filter(p => p.installed).length} 个)`;
+
+        if (filtered.length === 0) {
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-64 text-center px-4">
+                    <i class="fa-solid fa-puzzle-piece text-gray-200 text-4xl mb-3"></i>
+                    <p class="text-xs text-gray-400 font-medium">没有找到相匹配的插件</p>
+                    <span class="text-[10px] text-gray-400 mt-1">您可以试着通过上方“添加本地插件”增加自定义拓展。</span>
+                </div>
+            `;
+            renderDetailPanel(null);
+            return;
+        }
+
+        filtered.forEach(plugin => {
+            const isSelected = selectedPluginId === plugin.id;
+            const isModified = plugin.enabled !== plugin.pendingState;
+            
+            // Build risk badge styles
+            let riskBadgeClass = "bg-gray-100 text-gray-600 border-gray-200";
+            if (plugin.riskLevel === "high") {
+                riskBadgeClass = "bg-red-50 text-red-600 border-red-100";
+            } else if (plugin.riskLevel === "medium") {
+                riskBadgeClass = "bg-amber-50 text-amber-600 border-amber-100";
+            }
+
+            // Status backgrounds and modifications
+            let rowBorderClass = "border-gray-100";
+            let modifiedLabel = "";
+            if (isModified) {
+                modifiedLabel = `<span class="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[9px] font-bold">待重启生效</span>`;
+                rowBorderClass = "border-amber-300 bg-amber-50/20";
+            }
+
+            // Source Class
+            let sourceBadge = `<span class="px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-100 rounded text-[9px]">${plugin.source}</span>`;
+            if (plugin.source === "第三方插件" || plugin.source === "用户自定义") {
+                sourceBadge = `<span class="px-1.5 py-0.5 bg-purple-50 text-purple-600 border border-purple-100 rounded text-[9px]">${plugin.source}</span>`;
+            }
+
+            // Highlight special plugin "复制完整路径"
+            const highlightBorder = isSelected ? "border-l-4 border-l-[#2563eb] bg-blue-50/30" : "";
+            const statePill = !plugin.installed
+                ? `<span class="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1"></span>未安装</span>`
+                : plugin.enabled === null
+                ? `<span class="text-xs text-gray-500">状态未知 · 请刷新</span>`
+                : plugin.enabled
+                ? `<span class="inline-flex items-center px-2 py-1 rounded-full bg-green-50 text-green-700 border border-green-100 text-[10px] font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-green-500 mr-1"></span>已启用</span>`
+                : `<span class="inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-500 border border-gray-200 text-[10px] font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-gray-400 mr-1"></span>已禁用</span>`;
+
+            const rowHTML = `
+                <div 
+                    onclick="selectPlugin('${plugin.id}')"
+                    class="px-4 py-3 border-b ${rowBorderClass} flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-all duration-150 ${highlightBorder}"
+                >
+                    <!-- Left info metadata -->
+                    <div class="flex-1 min-w-0 pr-4 space-y-1">
+                        <div class="flex items-center space-x-2 flex-wrap gap-y-1">
+                            <h3 class="text-xs font-bold text-gray-900 ${plugin.id === 'peony-copy-path' ? 'text-blue-800' : ''}">${plugin.name}</h3>
+                            <span class="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-mono">${plugin.package}</span>
+                            ${sourceBadge}
+                            <span class="px-1.5 py-0.5 border rounded text-[9px] ${riskBadgeClass}">${plugin.riskLevel === 'high' ? '高风险' : plugin.riskLevel === 'medium' ? '中风险' : '低风险'}</span>
+                            ${modifiedLabel}
+                        </div>
+                        <p class="text-[11px] text-gray-500 line-clamp-1">${plugin.description}</p>
+                    </div>
+
+                    <!-- Read-only state indicator -->
+                    <div class="flex items-center space-x-4 shrink-0" onclick="event.stopPropagation()" title="插件开关当前为只读状态">
+                        ${statePill}
+                    </div>
+                </div>
+            `;
+            container.innerHTML += rowHTML;
+        });
+
+        // Trigger right detail panel render
+        if (!filtered.some(p => p.id === selectedPluginId)) {
+            selectedPluginId = filtered[0].id;
+        }
+
+        const currentSelected = plugins.find(p => p.id === selectedPluginId && isVisiblePlugin(p));
+        renderDetailPanel(currentSelected);
+    }
+
+    /* ================= STREAMING_CHUNK: Render Global Settings ================= */
+    function renderGlobalSettingsPanel(container) {
+        container.innerHTML = `
+            <div class="p-5 space-y-6">
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-gray-800 border-b border-[#e5e7eb] pb-1.5">右键上下文菜单控制</h3>
+                    
+                    <!-- Toggle 1 -->
+                    <div class="flex items-center justify-between p-2.5 bg-[#f8f9fa] rounded border border-[#e5e7eb]">
+                        <div class="space-y-0.5">
+                            <div class="text-xs font-semibold text-gray-700">右键菜单全局开关</div>
+                            <div class="text-[10px] text-gray-400">关闭后将不加载任何第三方右键菜单扩展</div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="gpref-menuGlobalOn" class="sr-only peer" ${globalPreferences.menuGlobalOn ? 'checked' : ''} onchange="updateGlobalPreference('menuGlobalOn', this.checked)">
+                            <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                        </label>
+                    </div>
+
+                    <!-- Toggle 2 -->
+                    <div class="flex items-center justify-between p-2.5 bg-[#f8f9fa] rounded border border-[#e5e7eb]">
+                        <div class="space-y-0.5">
+                            <div class="text-xs font-semibold text-gray-700">桌面文件右键菜单</div>
+                            <div class="text-[10px] text-gray-400">允许在桌面图标文件的右键快捷菜单中增加快捷指令项</div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="gpref-desktopFileMenuOn" class="sr-only peer" ${globalPreferences.desktopFileMenuOn ? 'checked' : ''} onchange="updateGlobalPreference('desktopFileMenuOn', this.checked)">
+                            <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                        </label>
+                    </div>
+
+                    <!-- Toggle 3 -->
+                    <div class="flex items-center justify-between p-2.5 bg-[#f8f9fa] rounded border border-[#e5e7eb]">
+                        <div class="space-y-0.5">
+                            <div class="text-xs font-semibold text-gray-700">桌面背景右键菜单</div>
+                            <div class="text-[10px] text-gray-400">允许在桌面无图标空白处右键呼出文件管理器关联扩展</div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="gpref-desktopBgMenuOn" class="sr-only peer" ${globalPreferences.desktopBgMenuOn ? 'checked' : ''} onchange="updateGlobalPreference('desktopBgMenuOn', this.checked)">
+                            <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-gray-800 border-b border-[#e5e7eb] pb-1.5">文件浏览与视图设置</h3>
+                    
+                    <!-- Toggle 4 -->
+                    <div class="flex items-center justify-between p-2.5 bg-[#f8f9fa] rounded border border-[#e5e7eb]">
+                        <div class="space-y-0.5">
+                            <div class="text-xs font-semibold text-gray-700">在终端中打开</div>
+                            <div class="text-[10px] text-gray-400">默认右键空白背景提供拉起命令行操作（对 ukui-terminal）</div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="gpref-openTerminalOn" class="sr-only peer" ${globalPreferences.openTerminalOn ? 'checked' : ''} onchange="updateGlobalPreference('openTerminalOn', this.checked)">
+                            <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                        </label>
+                    </div>
+
+                    <!-- Toggle 5 -->
+                    <div class="flex items-center justify-between p-2.5 bg-[#f8f9fa] rounded border border-[#e5e7eb]">
+                        <div class="space-y-0.5">
+                            <div class="text-xs font-semibold text-gray-700">显示文件扩展名</div>
+                            <div class="text-[10px] text-gray-400">显式渲染诸如 .txt, .deb, .so 等动态文件名后缀</div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="gpref-showExtension" class="sr-only peer" ${globalPreferences.showExtension ? 'checked' : ''} onchange="updateGlobalPreference('showExtension', this.checked)">
+                            <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                        </label>
+                    </div>
+
+                    <!-- Toggle 6 -->
+                    <div class="flex items-center justify-between p-2.5 bg-[#f8f9fa] rounded border border-[#e5e7eb]">
+                        <div class="space-y-0.5">
+                            <div class="text-xs font-semibold text-gray-700">显示隐藏文件</div>
+                            <div class="text-[10px] text-gray-400">是否渲染含有“.”为前缀的安全文件/缓存目录</div>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="gpref-showHidden" class="sr-only peer" ${globalPreferences.showHidden ? 'checked' : ''} onchange="updateGlobalPreference('showHidden', this.checked)">
+                            <div class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function switchToGlobalSettings() {
+        currentCategory = "global-settings";
+        
+        // Remove selection from all category buttons
+        renderCategories();
+        
+        // Highlight Global preference sidebar nav
+        document.getElementById("nav-global-settings").className = "w-full flex items-center space-x-2.5 px-3 py-2 rounded-md text-xs transition-all duration-150 focus:outline-none bg-blue-600 text-white shadow-sm font-semibold";
+        
+        showMainInterface();
+    }
+
+    function updateGlobalPreference(key, val) {
+        globalPreferences[key] = val;
+        showToast("正在写入系统配置...");
+        bridgeCall("setGlobalSetting", [key, val]).then(function(result) {
+            if (result.success) {
+                showToast("系统配置已写入，重启 Peony 或新窗口生效");
+            } else {
+                globalPreferences[key] = !val;
+                showToast("写入失败: " + (result.error || "未知错误"), true);
+                if (currentCategory === "global-settings") {
+                    showMainInterface();
+                }
+            }
+        }).catch(function(err) {
+            showToast("通信错误: " + err.message, true);
+        });
+    }
+
+    /* ================= STREAMING_CHUNK: Render Detail Panel ================= */
+    function renderDetailPanel(plugin) {
+        const detailContainer = document.getElementById("plugin-detail-panel");
+        if (plugin && plugin.id === "peony-cli-panel" && currentCategory !== "global-settings") {
+            renderCliPanelSettings(detailContainer);
+            return;
+        }
+        
+        if (!plugin || currentCategory === "global-settings") {
+            detailContainer.innerHTML = `
+                <div class="flex-1 flex flex-col items-center justify-center h-full text-center p-6 bg-[#f8f9fa]">
+                    <i class="fa-solid fa-square-poll-horizontal text-gray-300 text-3xl mb-2"></i>
+                    <p class="text-xs text-gray-400 font-medium">选定插件后查看详细参数配置</p>
+                </div>
+            `;
+            return;
+        }
+
+        const isModified = plugin.enabled !== plugin.pendingState;
+        
+        // Setup state label text
+        let statusLabelText = plugin.pendingState === null ? "状态未知 · 无法读取系统设置" : plugin.pendingState ? "已配置启用" : "已配置禁用";
+        let statusLabelClass = plugin.pendingState 
+            ? "bg-green-50 text-green-700 border-green-200" 
+            : "bg-gray-100 text-gray-500 border-gray-200";
+
+        if (!plugin.installed) {
+            statusLabelText = "未安装";
+            statusLabelClass = "bg-blue-50 text-blue-700 border-blue-100";
+        } else if (isModified) {
+            statusLabelText = "待重启生效";
+            statusLabelClass = "bg-amber-100 text-amber-800 border-amber-300 animate-pulse";
+        }
+
+        // Render Dependencies list tags
+        const depHTML = plugin.dependencies.map(dep => `
+            <span class="inline-flex items-center space-x-1 px-1.5 py-0.5 bg-[#f3f4f6] text-gray-600 rounded text-[9px] font-mono border border-gray-200">
+                <i class="fa-solid fa-circle-nodes text-[8px] text-gray-400"></i>
+                <span>${dep}</span>
+            </span>
+        `).join("");
+
+        // Highlight "复制完整路径" style specifics
+        const isCoreFeatured = plugin.id === "peony-copy-path";
+        const footerActionsHTML = isCoreFeatured
+            ? `
+                    <button 
+                        onclick="removeCopyPathPlugin()"
+                        class="flex items-center space-x-1 px-2.5 py-1.5 border border-red-100 bg-white text-red-600 hover:bg-red-50 rounded text-xs transition-all focus:outline-none ${plugin.installed ? '' : 'opacity-50 cursor-not-allowed'}"
+                        title="只移除 Peony Manager 安装的复制完整路径插件"
+                        ${plugin.installed ? '' : 'disabled'}
+                    >
+                        <i class="fa-regular fa-trash-can text-[10px]"></i>
+                        <span>移除插件</span>
+                    </button>
+
+                    <div class="flex items-center gap-2">
+                        <button 
+                            onclick="showCopyPathBuildStatus()"
+                            class="px-2.5 py-1.5 bg-white hover:bg-gray-50 text-gray-600 border border-gray-200 rounded text-xs transition-all font-medium focus:outline-none"
+                            title="查看本机是否已具备构建产物和加载条件"
+                        >
+                            <span>构建状态</span>
+                        </button>
+                        <button 
+                            onclick="chooseAndInstallCopyPathPlugin()"
+                            class="px-2.5 py-1.5 bg-white hover:bg-blue-50 text-blue-700 border border-blue-100 rounded text-xs transition-all font-medium focus:outline-none"
+                            title="选择 libpeony-copy-path.so 并提权安装"
+                        >
+                            <span>选择 .so</span>
+                        </button>
+                        <button 
+                            onclick="installBuiltCopyPathPlugin()"
+                            class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 rounded text-xs transition-all font-medium shadow-sm focus:outline-none"
+                            title="安装项目内置构建产物"
+                        >
+                            <span>${plugin.installed ? '重装内置' : '安装内置'}</span>
+                        </button>
+                    </div>
+            `
+            : `
+                    <button 
+                        onclick="showFeatureUnavailable('插件卸载涉及系统包和动态库，当前版本暂不开放。')"
+                        class="flex items-center space-x-1 px-2.5 py-1.5 border border-gray-200 bg-gray-50 text-gray-400 rounded text-xs transition-all focus:outline-none cursor-not-allowed"
+                        title="当前版本暂不支持卸载插件"
+                    >
+                        <i class="fa-regular fa-trash-can text-[10px]"></i>
+                        <span>卸载暂未开放</span>
+                    </button>
+
+                    <button 
+                        onclick="forceEnableDisable('${plugin.id}')"
+                        class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-500 border border-gray-200 rounded text-xs transition-all font-medium focus:outline-none"
+                        title="当前版本暂不写入 disabled-extensions"
+                    >
+                        <span>开关暂未开放</span>
+                    </button>
+            `;
+
+        detailContainer.innerHTML = `
+            <div class="flex flex-col h-full bg-white border-l border-[#cbd5e1]">
+                <!-- Header -->
+                <div class="p-4 border-b border-[#e5e7eb] bg-[#f8f9fa]">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h2 class="text-xs font-bold text-gray-900 flex items-center space-x-1">
+                                ${isCoreFeatured ? '<i class="fa-solid fa-star text-amber-500"></i>' : ''}
+                                <span>${plugin.name}</span>
+                            </h2>
+                            <span class="text-[9px] text-gray-400 font-mono inline-block mt-0.5">${plugin.package}</span>
+                        </div>
+                        <span class="px-2 py-0.5 rounded text-[9px] font-semibold border ${statusLabelClass}">
+                            ${statusLabelText}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Parameters Body -->
+                <div class="p-4 flex-1 space-y-4 overflow-y-auto">
+                    
+                    <!-- Feature Description -->
+                    <div class="space-y-1">
+                        <h3 class="text-[10px] font-bold text-gray-400 uppercase">功能说明</h3>
+                        <p class="text-xs text-gray-700 leading-relaxed bg-[#f8f9fa] p-2.5 rounded border border-[#e5e7eb]">
+                            ${plugin.description}
+                        </p>
+                    </div>
+
+                    <!-- Trigger Conditions -->
+                    <div class="space-y-1">
+                        <h3 class="text-[10px] font-bold text-gray-400 uppercase">菜单出现条件</h3>
+                        <div class="p-2.5 bg-[#f0f9ff] text-blue-800 rounded border border-blue-100 text-xs flex items-start space-x-1.5">
+                            <i class="fa-solid fa-circle-info text-[11px] mt-0.5 text-blue-500"></i>
+                            <div class="text-[11px] leading-relaxed">${plugin.conditions}</div>
+                        </div>
+                    </div>
+
+                    <!-- Path Info -->
+                    <div class="space-y-1">
+                        <h3 class="text-[10px] font-bold text-gray-400 uppercase">插件文件链接路径</h3>
+                        <div class="p-2 bg-[#f8f9fa] border border-[#e5e7eb] rounded text-[9px] font-mono text-gray-500 break-all select-all leading-normal">
+                            ${plugin.path}
+                        </div>
+                    </div>
+
+                    <!-- Detail specs -->
+                    <div class="grid grid-cols-2 gap-2 text-[10px]">
+                        <div class="bg-[#f8f9fa] p-2 rounded border border-[#e5e7eb]">
+                            <div class="text-gray-400">包版本号</div>
+                            <div class="font-bold text-gray-700 font-mono mt-0.5">${plugin.version}</div>
+                        </div>
+                        <div class="bg-[#f8f9fa] p-2 rounded border border-[#e5e7eb]">
+                            <div class="text-gray-400">安全防护评估</div>
+                            <div class="font-bold mt-0.5 text-[9px] ${
+                                plugin.riskLevel === 'high' ? 'text-red-600' : plugin.riskLevel === 'medium' ? 'text-amber-600' : 'text-green-600'
+                            }">
+                                ${plugin.riskText}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dependencies list -->
+                    <div class="space-y-1.5">
+                        <h3 class="text-[10px] font-bold text-gray-400 uppercase">底层依赖服务</h3>
+                        <div class="flex flex-wrap gap-1">
+                            ${depHTML}
+                        </div>
+                    </div>
+
+                    ${!plugin.installed ? `
+                    <div class="p-2.5 bg-blue-50 border border-blue-100 rounded text-[11px] text-blue-800 leading-normal flex items-start space-x-1.5">
+                        <i class="fa-solid fa-screwdriver-wrench mt-0.5 text-blue-500"></i>
+                        <div>
+                            这是“复制完整路径”插件的规划项。当前系统未检测到对应动态库，后续需要通过安全 helper 安装到 Peony 扩展目录后才会出现在文件管理器右键菜单中。
+                        </div>
+                    </div>
+                    ` : ''}
+
+                    <!-- Pending changes indicator -->
+                    ${isModified ? `
+                    <div class="p-2.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800 leading-normal flex items-start space-x-1.5">
+                        <i class="fa-solid fa-clock mt-0.5 text-amber-600"></i>
+                        <div>
+                            此状态变更已记录，需重启 Peony 主视窗守护进程以向系统内核应用此关联菜单。
+                        </div>
+                    </div>
+                    ` : ''}
+
+                </div>
+
+                <!-- Footer Action Buttons inside Detail Panel -->
+                <div class="p-4 border-t border-[#e5e7eb] bg-[#f8f9fa] flex items-center justify-between gap-2 shrink-0">
+                    ${footerActionsHTML}
+                </div>
+            </div>
+        `;
+    }
+
+    /* ================= STREAMING_CHUNK: Interactions and State Changes ================= */
+    function escapeCliHtml(value) {
+        return String(value).replace(/[&<>"']/g, function(c) {
+            return {"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[c];
+        });
+    }
+
+    function renderCliPanelSettings(container) {
+        container.innerHTML = '<div class="p-4 text-xs text-gray-500">正在读取 CLI 配置…</div>';
+        bridgeCall("getCliPanelSettings").then(function(result) {
+            if (selectedPluginId !== "peony-cli-panel" || currentCategory === "global-settings") return;
+            if (!result.success) throw new Error(result.error || "配置读取失败");
+            const s = result.settings;
+            container.innerHTML = `
+              <div class="cli-form flex flex-col h-full bg-white border-l border-gray-200">
+                <div class="p-4 border-b border-gray-200 bg-gray-50">
+                  <h2 class="text-sm font-bold">右侧 CLI 终端</h2>
+                  <p class="text-xs text-gray-500 mt-2">原生 Qt · 点击后加载 · 随文管关闭</p>
+                </div>
+                <div class="p-4 flex-1 overflow-y-auto">
+                  <div class="p-3 rounded bg-blue-50 text-blue-800 text-xs">${result.installed ? '插件已安装' : '插件尚未安装'}；默认不展开，也不启动 CLI。<br>收起保留会话，终端页签 × 结束会话。</div>
+                  <label><input id="cli-enabled" type="checkbox" ${s.enabled ? 'checked' : ''}> 显示目录右键入口</label>
+                  <label for="cli-name">CLI 名称</label>
+                  <input id="cli-name" type="text" maxlength="80" value="${escapeCliHtml(s.name)}">
+                  <label for="cli-menu">右键菜单文字</label>
+                  <input id="cli-menu" type="text" maxlength="120" value="${escapeCliHtml(s.menuLabel)}">
+                  <label for="cli-command">启动命令</label>
+                  <textarea id="cli-command" maxlength="4096" spellcheck="false">${escapeCliHtml(s.command)}</textarea>
+                  <p class="text-xs text-gray-500 mt-2">自动以右键目标目录为工作目录。可填写 CLI 绝对路径和参数，或你自己的 shell 命令。</p>
+                  <label for="cli-width">初始宽度（25–65%）</label>
+                  <input id="cli-width" type="number" min="25" max="65" value="${s.widthPercent}">
+                  <label for="cli-font-family">正文字体</label>
+                  <select id="cli-font-family" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;background:white;font-size:12px;">
+                    <option value="Sarasa Fixed SC" ${s.fontFamily === 'Sarasa Fixed SC' ? 'selected' : ''}>更纱等宽 · 中文 / 代码混排</option>
+                    <option value="Noto Sans Mono CJK SC" ${s.fontFamily === 'Noto Sans Mono CJK SC' ? 'selected' : ''}>Noto 系统等宽</option>
+                  </select>
+                  <label><input id="cli-system-font" type="checkbox" ${s.followSystemFont ? 'checked' : ''} onchange="document.getElementById('cli-font').disabled=this.checked"> 跟随系统字号</label>
+                  <label for="cli-font">自定义字号（关闭跟随系统后使用，8–24）</label>
+                  <input id="cli-font" type="number" min="8" max="24" value="${s.fontSize}" ${s.followSystemFont ? 'disabled' : ''}>
+                  <label for="cli-padding">正文留白（0–24）</label>
+                  <input id="cli-padding" type="number" min="0" max="24" value="${s.contentPadding}">
+                  <p class="text-xs text-gray-500 mt-2">终端背景和文字颜色跟随文管主题；完整路径在终端页签的悬停提示中显示。</p>
+                  <label for="cli-history">滚动缓存行数（100–10000）</label>
+                  <input id="cli-history" type="number" min="100" max="10000" value="${s.historyLines}">
+                  <p class="text-xs text-gray-500 mt-4">Ctrl+Shift+C / V 复制粘贴；首次展开后 Ctrl+Alt+T 收起或展开。切换文件目录不会打断正在运行的 CLI。</p>
+                  <p class="text-xs text-gray-500 mt-2" style="word-break:break-all">配置：${escapeCliHtml(result.configPath)}</p>
+                  <div class="flex flex-wrap gap-2 mt-4">
+                    <button class="cli-primary" onclick="saveCliPanelSettings()">保存配置</button>
+                    <button onclick="installCliPanelPlugin()" ${result.built ? '' : 'disabled'}>${result.installed ? '更新插件' : '安装插件'}</button>
+                    ${result.installed ? '<button onclick="removeCliPanelPlugin()">移除入口</button>' : ''}
+                  </div>
+                  <p id="cli-result" role="status" class="text-xs text-gray-500 mt-3"></p>
+                  <div id="cli-restart-action" style="display:none" class="mt-3"><button onclick="triggerPeonyRestart()">重启文管使插件生效</button><p class="text-xs text-gray-500 mt-2">将关闭当前文管窗口；运行中的 CLI 会一并结束。</p></div>
+                </div>
+              </div>`;
+        }).catch(function(error) {
+            if (selectedPluginId === "peony-cli-panel") container.innerHTML = '<div class="p-4 text-xs text-red-600">' + escapeCliHtml(error.message) + '</div>';
+        });
+    }
+
+    function saveCliPanelSettings() {
+        const settings = {enabled: document.getElementById("cli-enabled").checked,
+            name: document.getElementById("cli-name").value, menuLabel: document.getElementById("cli-menu").value,
+            command: document.getElementById("cli-command").value,
+            widthPercent: Number(document.getElementById("cli-width").value),
+            fontSize: Number(document.getElementById("cli-font").value),
+            followSystemFont: document.getElementById("cli-system-font").checked,
+            fontFamily: document.getElementById("cli-font-family").value,
+            contentPadding: Number(document.getElementById("cli-padding").value),
+            historyLines: Number(document.getElementById("cli-history").value)};
+        bridgeCall("saveCliPanelSettings", [JSON.stringify(settings)]).then(function(result) {
+            if (!result.success) throw new Error(result.error || "保存失败");
+            document.getElementById("cli-result").textContent = "已保存；右键入口下次打开菜单时更新，命令和外观用于新会话。";
+            showToast("CLI 配置已保存");
+        }).catch(function(error) { showToast(error.message, true); });
+    }
+
+    function cliPanelInstallAction(method) {
+        const status = document.getElementById("cli-result");
+        status.textContent = "正在处理系统插件，可能需要系统密码授权…";
+        bridgeCall(method).then(function(result) {
+            if (!result.success) throw new Error(result.error || "操作失败");
+            status.textContent = "已完成；重启文管后生效。修改 CLI 配置本身无需重启。";
+            document.getElementById("cli-restart-action").style.display = "block";
+        }).catch(function(error) { status.textContent = error.message; showToast(error.message, true); });
+    }
+    function installCliPanelPlugin() { cliPanelInstallAction("installCliPanelPlugin"); }
+    function removeCliPanelPlugin() { cliPanelInstallAction("removeCliPanelPlugin"); }
+
+    function handleSearch(val) {
+        searchQuery = val;
+        showMainInterface();
+    }
+
+    function selectPlugin(id) {
+        selectedPluginId = id;
+        showMainInterface();
+    }
+
+    // Toggle switch logic handler
+    function handlePluginToggle(id, isChecked) {
+        const plugin = plugins.find(p => p.id === id);
+        const checkbox = document.getElementById(`toggle-${id}`);
+        if (checkbox && plugin) {
+            checkbox.checked = plugin.enabled;
+        }
+        showFeatureUnavailable("插件启用/禁用需要确认 Peony disabled-extensions 的真实标识，当前版本先保持只读。");
+    }
+
+    function applyPluginStateChange(id, isChecked) {
+        const plugin = plugins.find(p => p.id === id);
+        plugin.pendingState = isChecked;
+        
+        showMainInterface();
+        updateFooterStats();
+        checkPendingRestartRequirements();
+        showToast(`已暂存 "${plugin.name}" 变更预置`);
+    }
+
+    function forceEnableDisable(id) {
+        showFeatureUnavailable("插件开关暂未开放；当前版本只允许修改 Peony 全局偏好设置。");
+    }
+
+    /* ================= STREAMING_CHUNK: High Risk Authorization ================= */
+    function openRiskConfirmModal(plugin) {
+        document.getElementById("risk-modal-name").innerText = plugin.name;
+        document.getElementById("risk-modal").classList.remove("hidden");
+    }
+
+    function cancelRiskAction() {
+        document.getElementById("risk-modal").classList.add("hidden");
+        pendingRiskActionContext = null;
+        showMainInterface();
+    }
+
+    function confirmRiskAction() {
+        document.getElementById("risk-modal").classList.add("hidden");
+        if (pendingRiskActionContext) {
+            const { id, nextVal } = pendingRiskActionContext;
+            applyPluginStateChange(id, nextVal);
+            
+            // Sync checkbox display state manually
+            const checkbox = document.getElementById(`toggle-${id}`);
+            if (checkbox) checkbox.checked = nextVal;
+        }
+        pendingRiskActionContext = null;
+    }
+
+    /* ================= STREAMING_CHUNK: Pending Changes Registry ================= */
+    function checkPendingRestartRequirements() {
+        const changedPlugins = plugins.filter(p => p.installed && p.enabled !== p.pendingState);
+        const banner = document.getElementById("restart-banner");
+        
+        if (changedPlugins.length > 0) {
+            document.getElementById("pending-count-badge").innerText = changedPlugins.length;
+            banner.classList.remove("hidden");
+        } else {
+            banner.classList.add("hidden");
+        }
+    }
+
+    function openPendingChangesRegistry() {
+        const listContainer = document.getElementById("pending-changes-list");
+        listContainer.innerHTML = "";
+
+        const changedPlugins = plugins.filter(p => p.installed && p.enabled !== p.pendingState);
+        
+        if (changedPlugins.length === 0) {
+            listContainer.innerHTML = `<div class="p-4 text-center text-gray-400">目前没有任何待重启的更改</div>`;
+        } else {
+            changedPlugins.forEach(p => {
+                const origText = p.enabled ? "启用" : "禁用";
+                const newText = p.pendingState ? "启用" : "禁用";
+                
+                listContainer.innerHTML += `
+                    <div class="p-2.5 flex items-center justify-between">
+                        <div>
+                            <span class="font-bold text-gray-800">${p.name}</span>
+                            <span class="text-[9px] bg-gray-100 text-gray-500 px-1 ml-1 font-mono">${p.package}</span>
+                        </div>
+                        <div class="flex items-center space-x-2 text-[11px]">
+                            <span class="text-gray-400">${origText}</span>
+                            <i class="fa-solid fa-arrow-right text-gray-400 text-[10px]"></i>
+                            <span class="font-bold text-amber-700">${newText}</span>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        document.getElementById("pending-changes-modal").classList.remove("hidden");
+    }
+
+    function closePendingChangesRegistry() {
+        document.getElementById("pending-changes-modal").classList.add("hidden");
+    }
+
+    function undoAllPendingChanges() {
+        plugins.forEach(p => {
+            p.pendingState = p.enabled;
+        });
+        closePendingChangesRegistry();
+        checkPendingRestartRequirements();
+        updateFooterStats();
+        showMainInterface();
+        showToast("已恢复所有尚未重启的临时改动");
+    }
+
+    function triggerPeonyRestartFromModal() {
+        closePendingChangesRegistry();
+        triggerPeonyRestart();
+    }
+
+    function triggerPeonyRestart() {
+        document.getElementById("restarting-overlay").classList.remove("hidden");
+
+        bridgeCall("restartPeony", [false]).then(function(result) {
+            if (result.success) {
+                plugins.forEach(function(p) {
+                    p.enabled = p.pendingState;
+                });
+                showToast("Peony 已重启");
+            } else {
+                showToast("重启失败: " + (result.error || "未知错误"), true);
+            }
+        }).catch(function(err) {
+            showToast("通信错误: " + err.message, true);
+        }).then(function() {
+            document.getElementById("restarting-overlay").classList.add("hidden");
+            checkPendingRestartRequirements();
+            updateFooterStats();
+            showMainInterface();
+        });
+    }
+
+    function refreshPlugins() {
+        const refIcon = document.getElementById("refresh-icon");
+        refIcon.classList.add("animate-spin");
+
+        bridgeCall("scanPlugins").then(function(data) {
+            plugins = (data.plugins || []).map(normalizePlugin);
+                renderCategories();
+                showMainInterface();
+                updateFooterStats();
+                checkPendingRestartRequirements();
+                showToast("已重扫插件目录");
+            })
+            .catch(function(err) {
+                showToast("扫描失败: " + (err.message || "未知错误"), true);
+            })
+            .then(function() {
+                refIcon.classList.remove("animate-spin");
+            });
+    }
+
+    function chooseAndInstallCopyPathPlugin() {
+        showToast("请选择已编译的 libpeony-copy-path.so");
+        bridgeCall("chooseAndInstallCopyPathPlugin").then(function(result) {
+            if (result.success) {
+                showToast("复制完整路径插件已加载，Peony 已重启");
+                return bridgeCall("scanPlugins");
+            }
+            if (result.code !== "cancelled") {
+                showToast(result.error || "加载失败", true);
+            }
+            return null;
+        }).then(function(data) {
+            if (!data) return;
+            plugins = (data.plugins || []).map(normalizePlugin);
+            selectedPluginId = "peony-copy-path";
+            renderCategories();
+            showMainInterface();
+            updateFooterStats();
+            checkPendingRestartRequirements();
+        }).catch(function(err) {
+            showToast("加载失败: " + err.message, true);
+        });
+    }
+
+    function installBuiltCopyPathPlugin() {
+        showToast("正在安装内置复制完整路径插件...");
+        bridgeCall("installCopyPathPlugin", [""]).then(function(result) {
+            if (result.success) {
+                showToast("复制完整路径插件已安装，Peony 已重启");
+                return bridgeCall("scanPlugins");
+            }
+            showToast(result.error || "安装失败", true);
+            return null;
+        }).then(function(data) {
+            if (!data) return;
+            plugins = (data.plugins || []).map(normalizePlugin);
+            selectedPluginId = "peony-copy-path";
+            renderCategories();
+            showMainInterface();
+            updateFooterStats();
+            checkPendingRestartRequirements();
+        }).catch(function(err) {
+            showToast("安装失败: " + err.message, true);
+        });
+    }
+
+    function removeCopyPathPlugin() {
+        showToast("正在移除复制完整路径插件...");
+        bridgeCall("removeCopyPathPlugin").then(function(result) {
+            if (result.success) {
+                showToast("复制完整路径插件已移除，Peony 已重启");
+                return bridgeCall("scanPlugins");
+            }
+            showToast(result.error || "移除失败", true);
+            return null;
+        }).then(function(data) {
+            if (!data) return;
+            plugins = (data.plugins || []).map(normalizePlugin);
+            selectedPluginId = "peony-copy-path";
+            renderCategories();
+            showMainInterface();
+            updateFooterStats();
+            checkPendingRestartRequirements();
+        }).catch(function(err) {
+            showToast("移除失败: " + err.message, true);
+        });
+    }
+
+    function showCopyPathBuildStatus() {
+        bridgeCall("getCopyPathPluginStatus").then(function(result) {
+            const defaultSource = result.defaultSource || "未找到";
+            const tools = result.devTools || {};
+            const buildTool = tools.qmake ? "qmake 已就绪" : (tools.moc ? "本地 moc 已就绪" : "缺少 Qt 构建工具");
+            const message = result.installed
+                ? `已安装: ${result.targetPath}`
+                : `未安装；默认产物: ${defaultSource}；${buildTool}`;
+            showToast(message, !result.installed && !result.defaultSource);
+        }).catch(function(err) {
+            showToast("状态检查失败: " + err.message, true);
+        });
+    }
+
+    function updateFooterStats() {
+        const activeCount = plugins.filter(p => p.installed && p.pendingState === true).length;
+        const pendingChanges = plugins.filter(p => p.installed && p.enabled !== p.pendingState).length;
+
+        document.getElementById("active-plugins-sum").innerText = activeCount;
+        document.getElementById("pending-changes-sum").innerText = pendingChanges;
+    }
+
+    /* ================= STREAMING_CHUNK: Simulated Wizard for Adding Local Plugins ================= */
+    function openInstallModal() {
+        wizardStep = 1;
+        selectedWizardFilePath = "";
+        updateWizardUI();
+        document.getElementById("install-modal").classList.remove("hidden");
+    }
+
+    function closeInstallModal() {
+        document.getElementById("install-modal").classList.add("hidden");
+    }
+
+    function simulateBrowseFile() {
+        // 占位：后续改为 QFileDialog 选择真实文件
+        const mockPaths = [
+            "/home/zhouzhang/下载/peony-copy-path.deb",
+            "/home/zhouzhang/下载/libpeony-example-plugin.so",
+        ];
+        const path = mockPaths[Math.floor(Math.random() * mockPaths.length)];
+        selectedWizardFilePath = path;
+        document.getElementById("mock-file-path").value = path;
+    }
+
+    function updateWizardUI() {
+        // Toggle Step Containers
+        document.getElementById("wizard-step-1").classList.add("hidden");
+        document.getElementById("wizard-step-2").classList.add("hidden");
+        document.getElementById("wizard-step-3").classList.add("hidden");
+        document.getElementById(`wizard-step-${wizardStep}`).classList.remove("hidden");
+
+        // Tabs highlight mapping
+        for (let i = 1; i <= 3; i++) {
+            const tab = document.getElementById(`step-tab-${i}`);
+            const span = tab.querySelector("span");
+            if (i === wizardStep) {
+                tab.className = "font-bold text-[#2563eb] flex items-center space-x-1";
+                span.className = "w-4 h-4 rounded-full bg-blue-100 text-[#2563eb] inline-flex items-center justify-center font-mono";
+            } else if (i < wizardStep) {
+                tab.className = "font-semibold text-green-600 flex items-center space-x-1";
+                span.className = "w-4 h-4 rounded-full bg-green-100 text-green-600 inline-flex items-center justify-center font-mono";
+                span.innerHTML = "<i class='fa-solid fa-check text-[8px]'></i>";
+            } else {
+                tab.className = "text-gray-400 flex items-center space-x-1";
+                span.className = "w-4 h-4 rounded-full bg-gray-100 text-gray-400 inline-flex items-center justify-center font-mono";
+                span.innerHTML = i;
+            }
+        }
+
+        // Action controls
+        const prevBtn = document.getElementById("wizard-btn-prev");
+        const nextBtn = document.getElementById("wizard-btn-next");
+
+        if (wizardStep === 1) {
+            prevBtn.classList.add("invisible");
+            nextBtn.innerText = "下一步 (兼容性自检)";
+        } else if (wizardStep === 2) {
+            prevBtn.classList.remove("invisible");
+            nextBtn.innerText = "下一步 (签署与验证)";
+        } else {
+            prevBtn.classList.remove("invisible");
+            nextBtn.innerText = "确认授权并配置";
+        }
+    }
+
+    function wizardNext() {
+        if (wizardStep === 1) {
+            if (!selectedWizardFilePath || selectedWizardFilePath === "未选择文件") {
+                showToast("请点击选择一个本地文件或包路径", true);
+                return;
+            }
+            
+            // Extract display title inside Step 2
+            const filename = selectedWizardFilePath.substring(selectedWizardFilePath.lastIndexOf('/') + 1);
+            document.getElementById("audit-app-name").innerText = filename;
+
+            wizardStep = 2;
+            updateWizardUI();
+        } else if (wizardStep === 2) {
+            wizardStep = 3;
+            updateWizardUI();
+            document.getElementById("accept-risk-install").checked = false;
+        } else if (wizardStep === 3) {
+            const riskAccepted = document.getElementById("accept-risk-install").checked;
+            if (!riskAccepted) {
+                showToast("必须勾选并已知悉系统底层修改风险，方可继续。", true);
+                return;
+            }
+
+            // Successfully added a plugin! Let's inject it into DB
+            const filename = selectedWizardFilePath.substring(selectedWizardFilePath.lastIndexOf('/') + 1);
+            const rawSlug = filename.replace(".deb", "").replace(".so", "").replace("libpeony-", "");
+            
+            // Build custom package details
+            const isCopyPathStar = rawSlug.includes("copy-path");
+            let targetPluginId = `peony-user-${rawSlug}`;
+            
+            if (isCopyPathStar) {
+                // If they re-installed our copy path star!
+                const copyPath = plugins.find(p => p.id === "peony-copy-path");
+                copyPath.installed = true;
+                copyPath.pendingState = true;
+                selectedPluginId = "peony-copy-path";
+            } else {
+                const newPlg = {
+                    id: targetPluginId,
+                    name: `本地插件: ${rawSlug.toUpperCase()}`,
+                    description: `通过向导外挂安装的未受官方数字认证的第三方加载项。源物理装载路径: ${selectedWizardFilePath}。`,
+                    enabled: false,
+                    pendingState: true,
+                    installed: true,
+                    package: `peony-${rawSlug}`,
+                    category: "context-menu",
+                    type: "用户自定义扩展",
+                    riskText: "中风险：影响共享、打印、外部服务",
+                    riskLevel: "medium",
+                    path: `/usr/lib/aarch64-linux-gnu/peony-extensions/external-${rawSlug}.so`,
+                    version: "1.0.0-user",
+                    conditions: "选中指定目标文件或拓展视图时。依自定义脚本触发。",
+                    source: "用户自定义",
+                    dependencies: ["glib-2.0", "peony-extension"]
+                };
+                plugins.push(newPlg);
+                selectedPluginId = targetPluginId;
+            }
+
+            closeInstallModal();
+            checkPendingRestartRequirements();
+            updateFooterStats();
+            showMainInterface();
+            showToast("本地插件添加并预配完毕，正在引导重启使其注入服务系统中...");
+        }
+    }
+
+    function wizardPrev() {
+        if (wizardStep > 1) {
+            wizardStep--;
+            updateWizardUI();
+        }
+    }
+
+    // Uninstall simulation
+    function uninstallPluginSimulate(id) {
+        showFeatureUnavailable("插件卸载涉及系统包管理或 root-owned 动态库，当前版本暂不开放。");
+    }
+
+    /* ================= SYSTEM UTILITIES ================= */
+    function showFeatureUnavailable(message) {
+        showToast(message || "该功能将在后续版本开放。", true);
+    }
+
+    function showToast(text, isWarning = false) {
+        const toast = document.getElementById("toast-notification");
+        const icon = toast.querySelector("i");
+        
+        document.getElementById("toast-text").innerText = text;
+        
+        if (isWarning) {
+            toast.classList.remove("bg-slate-800");
+            toast.classList.add("bg-red-600");
+            icon.className = "fa-solid fa-circle-exclamation text-white";
+        } else {
+            toast.classList.remove("bg-red-600");
+            toast.classList.add("bg-slate-800");
+            icon.className = "fa-solid fa-circle-check text-green-400";
+        }
+
+        toast.classList.remove("opacity-0", "pointer-events-none");
+        toast.classList.add("opacity-100");
+
+        setTimeout(() => {
+            toast.classList.remove("opacity-100");
+            toast.classList.add("opacity-0", "pointer-events-none");
+        }, 3200);
+    }
+</script>
+</body>
+</html>

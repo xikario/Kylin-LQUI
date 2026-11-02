@@ -1,5 +1,6 @@
 #include "PanelLayoutCompat.h"
 #include "DockLayoutMath.h"
+#include "DockIndicatorState.h"
 #include <QApplication>
 #include <QDebug>
 #include <QFile>
@@ -40,6 +41,10 @@ static QList<QRect> rectangleSamples() {
     return values;
 }
 int main(int argc, char **argv) {
+    check(DockIndicator::state({0},0).windows==0&&!DockIndicator::state({0},0).active,"pinned launcher without a window has no running or active marker");
+    check(DockIndicator::state({0,42},0).windows==1&&!DockIndicator::state({0,42},0).active,"no active client never matches the zero-ID pinned placeholder");
+    check(!DockIndicator::state({0,42},77).active&&DockIndicator::state({0,42},42).active,"only the real foreground window receives the blue marker");
+    check(DockIndicator::state({0,42,77},77).windows==2&&DockIndicator::state({0,42,77},77).active,"grouped windows retain their count and active member");
     const auto dense=DockLayout::solve(40,50,32);
     check(!dense.overflow&&dense.content<=50&&dense.cell==1,"pixel-floor icons fit without rounded-up spacing overflow");
     QTemporaryDir temp; qputenv("XDG_CONFIG_HOME", temp.path().toUtf8());

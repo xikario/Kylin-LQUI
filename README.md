@@ -35,10 +35,14 @@ cmake -S code-work/liquid-cli -B code-work/liquid-cli/build
 cmake --build code-work/liquid-cli/build -j2
 ```
 
-Dock 默认保持居中宽度，拥挤时缩小应用图标；同应用多窗口合并为一个入口，保留原生窗口预览。快捷设置复用系统后端，隐藏后退出空闲服务。AI 小站常驻 UI 不代表模型进程持续运行。
+Dock 默认保持居中宽度，拥挤时缩小应用图标；同应用多窗口合并为一个入口，保留原生窗口预览。快捷设置复用系统后端，使用隐藏驻留与入口悬停预备减少首次延迟；隐藏后停止轮询并释放背景场景。AI 小站常驻 UI 不代表模型进程持续运行。
 
 ## 状态与维护
 
+- [2026-11-02 跨聊天整合、当前行为与验证范围](docs/INTEGRATION_20261102.md)
+- [控制中心自适应烟色玻璃](docs/CONTROL_CENTER_ADAPTIVE_GLASS_20261102.md)
+- [声音整框面板与麦克风控制](docs/CONTROL_CENTER_SOUND_PANEL_20261102.md)
+- [夜间交互、玻璃与资源收敛](docs/INTERACTION_PERFORMANCE_20261101.md)
 - [2026-11-01 双评审源码修复（54 项）](docs/REVIEW_REPAIR_20261101.md)
 - [2026-11-01 发布前修复](docs/RELEASE_CHECK_20261101.md)
 - [框架设计](code-work/ukui-liquid-desktop/docs/ARCHITECTURE.md)

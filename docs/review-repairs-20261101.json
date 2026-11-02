@@ -563,6 +563,12 @@
       "cause": "window hide/remap during internal page navigation triggers delayed focus-loss dismissal",
       "tests": 28,
       "realPointerNavigationClicks": 16
+    },
+    "crossThreadIntegration": {
+      "sourceThread": "01a199cc-90a7-77c2-87ae-6d03587b2f87",
+      "status": "integrated-and-validated",
+      "evidence": "docs/INTEGRATION_20261102.md",
+      "controlCenterMode": "hidden-resident"
     }
   }
 }

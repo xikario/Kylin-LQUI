@@ -1,0 +1,44 @@
+{
+  "oldPid": 4158,
+  "newPid": 16962,
+  "previousRelease": "/home/zhouzhang/.local/lib/liquid-cli/release-20261101-235950-30a4170a",
+  "release": "/home/zhouzhang/.local/lib/liquid-cli/release-20261102-153615-58f81ede",
+  "preservedMessages": 52,
+  "conversationUnchanged": true,
+  "configurationUnchanged": true,
+  "draftCharacters": 0,
+  "draftImages": 0,
+  "backendStarted": false,
+  "installedPayloadMatchesBuild": true,
+  "verificationNote": "cmake install removes build RUNPATH; verified against independently installed payload, not uninstalled ELF",
+  "ctest": {
+    "scaleFactors": [
+      1,
+      1.5,
+      2
+    ],
+    "suitesPassed": 3,
+    "suitesFailed": 0
+  },
+  "nativeScreen": {
+    "scaleFactor": 1.5,
+    "messagesInFixture": 52,
+    "cases": [
+      "firstOpen",
+      "reverseAndScroll",
+      "topAnchorAndChildUpdate",
+      "animationDisabled"
+    ],
+    "changedPixelsAfterForcedRepaint": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "testedPixelsPerCase": 716124,
+    "baselineFirstOpenChangedPixels": 4818,
+    "tolerance": 0.005,
+    "screenshots": "Private maintenance directory only"
+  },
+  "limitation": "User screenshot full-area bleed-through was not reproduced exactly; fixes confirmed missing full repaint paths and first-open damage."
+}

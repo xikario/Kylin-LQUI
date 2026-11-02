@@ -1,7 +1,15 @@
 """Cached backdrop cards: one capture per opening, no animated blur or timer."""
 from PyQt5 import QtCore,QtGui,QtWidgets
+from functools import lru_cache
 
 def glyph(name,color='#e6edf7',size=22):
+    app=QtWidgets.QApplication.instance()
+    if app is not None and not app.property('lquiGlyphCacheCleanup'):
+        app.setProperty('lquiGlyphCacheCleanup',True);app.aboutToQuit.connect(_glyph.cache_clear)
+    return QtGui.QIcon(_glyph(name,color,size))
+
+@lru_cache(maxsize=96)
+def _glyph(name,color,size):
     pix=QtGui.QPixmap(size*2,size*2);pix.fill(QtCore.Qt.transparent);p=QtGui.QPainter(pix);p.setRenderHint(QtGui.QPainter.Antialiasing);p.scale(size/24*2,size/24*2);p.setPen(QtGui.QPen(QtGui.QColor(color),1.7,QtCore.Qt.SolidLine,QtCore.Qt.RoundCap,QtCore.Qt.RoundJoin));p.setBrush(QtCore.Qt.NoBrush)
     if name=='wifi':
         for radius in (10,6.8,3.6):p.drawArc(QtCore.QRectF(12-radius,20-radius,radius*2,radius*2),45*16,90*16)
@@ -12,6 +20,9 @@ def glyph(name,color='#e6edf7',size=22):
         p.drawPolygon(QtGui.QPolygonF([QtCore.QPointF(3,9),QtCore.QPointF(7,9),QtCore.QPointF(12,5),QtCore.QPointF(12,19),QtCore.QPointF(7,15),QtCore.QPointF(3,15)]))
         if name=='muted':p.drawLine(16,9,21,15);p.drawLine(21,9,16,15)
         else:p.drawArc(QtCore.QRectF(9,6,11,12),-60*16,120*16);p.drawArc(QtCore.QRectF(7,3,17,18),-55*16,110*16)
+    elif name in ('microphone','microphone-muted'):
+        p.drawRoundedRect(QtCore.QRectF(9,2,6,12),3,3);p.drawArc(QtCore.QRectF(6,7,12,12),180*16,180*16);p.drawLine(12,19,12,22);p.drawLine(8,22,16,22)
+        if name=='microphone-muted':p.drawLine(4,3,20,21)
     elif name=='sun':
         p.drawEllipse(QtCore.QRectF(8,8,8,8))
         for i in range(8):p.save();p.translate(12,12);p.rotate(45*i);p.drawLine(0,-8,0,-10);p.restore()
@@ -31,9 +42,53 @@ def glyph(name,color='#e6edf7',size=22):
     elif name=='close':p.drawLine(6,6,18,18);p.drawLine(18,6,6,18)
     p.end();pix.setDevicePixelRatio(2);result=QtGui.QIcon(pix);disabled=QtGui.QPixmap(pix.size());disabled.setDevicePixelRatio(2);disabled.fill(QtCore.Qt.transparent);faded=QtGui.QPainter(disabled);faded.setOpacity(.45);faded.drawPixmap(0,0,pix);faded.end();result.addPixmap(disabled,QtGui.QIcon.Disabled);return result
 
+class AudioDeviceButton(QtWidgets.QPushButton):
+    """A whole-row device choice with wrapping names and confirmed selection."""
+    def __init__(self,ident,kind):
+        super().__init__();self.device_id=ident;self.kind=kind;self.setProperty('audioDevice',True);self.setMinimumHeight(48)
+        policy=QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Minimum);policy.setHeightForWidth(True);self.setSizePolicy(policy)
+        row=QtWidgets.QHBoxLayout(self);row.setContentsMargins(10,6,10,6);row.setSpacing(8)
+        self.name_label=QtWidgets.QLabel();self.name_label.setWordWrap(True);self.name_label.setTextFormat(QtCore.Qt.PlainText);self.name_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);row.addWidget(self.name_label,1)
+        self.current_label=QtWidgets.QLabel();self.current_label.setFixedWidth(30);self.current_label.setAlignment(QtCore.Qt.AlignCenter);self.current_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);row.addWidget(self.current_label)
+    def set_device(self,name,current):
+        import re
+        self.name_label.setText(re.sub(r' \(echo cancelled with .+\)$','（回声消除）',name));self.setToolTip(name)
+        self.current_label.setText('当前' if current else '');self.setAccessibleName(name+('，当前设备' if current else '，选择设备'))
+        self.setMinimumHeight(self.heightForWidth(self.width()));self.updateGeometry()
+        if self.property('current')!=current:
+            self.setProperty('current',current);self.style().unpolish(self);self.style().polish(self);self.update()
+    def heightForWidth(self,width):
+        return max(48,self.name_label.heightForWidth(max(1,width-58))+12) if hasattr(self,'name_label') else 48
+    def minimumSizeHint(self):return QtCore.QSize(120,48)
+    def sizeHint(self):return QtCore.QSize(220,self.heightForWidth(self.width()))
+    def resizeEvent(self,event):
+        super().resizeEvent(event);self.setMinimumHeight(self.heightForWidth(event.size().width()))
+
+class PageTransition(QtWidgets.QWidget):
+    """Two bounded page snapshots; no layout or optics work during motion."""
+    def __init__(self,owner):
+        super().__init__(owner);self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.before=QtGui.QPixmap();self.after=QtGui.QPixmap();self.progress=0.;self.direction=1;self.hide()
+    def set_frames(self,before,after,direction):
+        self.before=before;self.after=after;self.progress=0.;self.direction=direction
+        self.setGeometry(self.parentWidget().rect());self.show();self.raise_();self.update()
+    def set_progress(self,value):self.progress=float(value);self.update()
+    def clear(self):self.hide();self.before=QtGui.QPixmap();self.after=QtGui.QPixmap()
+    def paintEvent(self,event):
+        p=QtGui.QPainter(self);p.setCompositionMode(QtGui.QPainter.CompositionMode_Source);p.fillRect(self.rect(),QtCore.Qt.transparent)
+        p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver);p.setOpacity(1-self.progress)
+        p.drawPixmap(round(-self.direction*14*self.progress),0,self.before)
+        # Weighted premultiplied images keep overlapping glass opaque instead
+        # of exposing sharp live text through two half-transparent surfaces.
+        p.setCompositionMode(QtGui.QPainter.CompositionMode_Plus);p.setOpacity(self.progress)
+        p.drawPixmap(round(self.direction*14*(1-self.progress)),0,self.after)
+
 class GlassCard(QtWidgets.QFrame):
     def __init__(self,owner,radius=23):super().__init__();self.owner=owner;self.radius=radius;self.accent=False;self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setProperty('glass',True)
     def paintEvent(self,event):
+        # The invisible warmup owns rendering until geometry has settled.
+        # Incidental layout paints must not bake a second set of card sizes.
+        if getattr(self.owner,'opening_pending',False):return
         native=getattr(self.owner,'native_glass',None)
         origin=self.mapToGlobal(QtCore.QPoint())
         if hasattr(self.owner,'material_origin'):
@@ -93,16 +148,15 @@ def diffuse_backdrop(full, size):
 
 def blurred_capture(owner,async_native=False):
     screen=QtWidgets.QApplication.screenAt(owner.geometry().center()) or QtWidgets.QApplication.primaryScreen()
-    area=screen.geometry();region=owner.geometry().intersected(area);offset=region.topLeft()-area.topLeft()
+    area=screen.geometry();region=getattr(owner,'backdrop_region',owner.geometry()).intersected(area);offset=region.topLeft()-area.topLeft()
     full=screen.grabWindow(0,offset.x(),offset.y(),region.width(),region.height())
     if full.isNull():return QtGui.QImage()
     owner.backdrop_origin=region.topLeft()
     if async_native:
-        # Show a diffused crop immediately; a slow wallpaper decoder never
-        # delays mapping or input, and obsolete completions cannot reopen it.
-        image=full.toImage()
-        owner.prepare_material(image,area,region)
-        return diffuse_backdrop(full,region.size())
+        # The opening waits invisibly for its glass frame. Do not build a
+        # second CPU blur that would only be replaced during the animation.
+        owner.prepare_material(full.toImage(),area,region)
+        return QtGui.QImage()
     try:
         from native_glass import NativeGlass
         owner.native_glass=NativeGlass(full.toImage(),area,region)

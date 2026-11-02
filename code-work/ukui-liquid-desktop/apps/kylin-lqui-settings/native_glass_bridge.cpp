@@ -15,7 +15,7 @@
 #endif
 struct MaterialContext {
     LiquidMaterial::Prepared material;QRect region;
-    bool usedGpu=false;
+    bool usedGpu=false,adaptiveSmoke=false;
 };
 // Keep one program/context warm for the process' 60-second reuse window.
 // Closing releases the captured scene and all card textures; no render timer.
@@ -53,6 +53,9 @@ void *lqui_glass_create_region(const unsigned char *pixels,int width,int height,
 void *lqui_glass_create(const unsigned char *pixels,int width,int height,int stride,double dpr,int sx,int sy,int sw,int sh){
     return lqui_glass_create_region(pixels,width,height,stride,dpr,sx,sy,sw,sh,sx,sy,sw,sh);
 }
+void lqui_glass_set_adaptive_smoke(void *handle,int enabled){
+    if(handle)static_cast<MaterialContext*>(handle)->adaptiveSmoke=enabled!=0;
+}
 int lqui_glass_render(void *handle,int x,int y,int width,int height,double dpr,double radius,unsigned char *out,int outWidth,int outHeight,int stride){
     if(!guiThread()||!handle||!out||width<1||height<1||width>4096||height>4096||!std::isfinite(dpr)||!std::isfinite(radius)||dpr<.5||dpr>4||outWidth<1||outHeight<1||stride<outWidth*4)return 0;
     const QSize expected(qRound(width*dpr),qRound(height*dpr));if(expected!=QSize(outWidth,outHeight))return 0;
@@ -74,11 +77,14 @@ int lqui_glass_render(void *handle,int x,int y,int width,int height,double dpr,d
             }
             activeContext=context;session->dpr=dpr;
         }
+        session->renderer.setAdaptiveSmoke(context->adaptiveSmoke);
         QImage image=session->renderer.renderPanel(rect.translated(-context->region.topLeft()),radius);
         context->usedGpu=session->renderer.usedGpu();
         if(image.isNull()||image.size()!=expected)return 0;
         QPainterPath shape;shape.addRoundedRect(QRectF(0,0,width,height),radius,radius);
-        image=LiquidMaterial::bodyTone(image,.34,shape).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        // Adaptive smoke already includes its reading veil. Applying the old
+        // wide veil again would recreate a bright embossed band on white.
+        image=LiquidMaterial::bodyTone(image,.34*(1-session->renderer.adaptiveSmokeAmount()),shape).convertToFormat(QImage::Format_ARGB32_Premultiplied);
         for(int row=0;row<image.height();++row){
             std::memcpy(out+row*stride,image.constScanLine(row),outWidth*4);
         }

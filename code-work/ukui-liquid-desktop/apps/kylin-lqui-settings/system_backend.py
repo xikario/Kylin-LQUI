@@ -15,7 +15,7 @@ def service_error(error):
         return '系统未授权此操作。请完成系统授权；也可从高级网络设置操作。'
     if code.endswith(('ServiceUnknown','NameHasNoOwner')):
         return '对应的系统服务尚未启动，请稍后刷新。'
-    if code.endswith(('NoReply','Timeout','TimedOut')) or isinstance(error,subprocess.TimeoutExpired):
+    if code.endswith(('NoReply','Timeout','TimedOut')) or isinstance(error,(subprocess.TimeoutExpired,TimeoutError)):
         return '系统服务响应超时。正在重新读取实际状态，请稍后刷新确认。'
     if code.endswith(('UnknownMethod','NotSupported')):
         return '当前系统服务不支持此操作，请使用系统高级设置。'
@@ -47,6 +47,19 @@ class SystemBackend(DesktopControls):
             outputs.append({'id':name,'name':field('Description') or name,'volume':round(sum(map(int,volumes))/len(volumes)) if volumes else 0,'muted':field('Mute')=='yes'})
         selected=next((item for item in outputs if item['id']==default),outputs[0] if outputs else None)
         return {'available':bool(selected),'outputs':outputs,'selected':selected}
+    @staticmethod
+    def pulse_field(block,name):
+        match=re.search(r'^\s*'+re.escape(name)+r':\s*(.*)$',block,re.M)
+        return match.group(1).strip() if match else ''
+    def microphone(self):
+        info=self.command(['/usr/bin/pactl','info']);match=re.search(r'^Default Source:\s*(.+)$',info,re.M);default=match.group(1).strip() if match else ''
+        text=self.command(['/usr/bin/pactl','list','sources']);parts=re.split(r'(?m)^Source #(\d+)',text);inputs=[]
+        for index,block in zip(parts[1::2],parts[2::2]):
+            name=self.pulse_field(block,'Name');monitor=self.pulse_field(block,'Monitor of Sink')
+            if not name or name.endswith('.monitor') or monitor not in ('','n/a'):continue
+            volumes=re.findall(r'(\d+)%',self.pulse_field(block,'Volume'))
+            inputs.append({'id':name,'index':index,'name':self.pulse_field(block,'Description') or name,'volume':round(sum(map(int,volumes))/len(volumes)) if volumes else 0,'muted':self.pulse_field(block,'Mute')=='yes'})
+        return {'available':bool(inputs),'inputs':inputs,'selected':next((item for item in inputs if item['id']==default),None)}
     def wifi(self):
         manager=self.props(NM,NMP,NM);devices=self.call(NM,NMP,NM,'GetDevices')[0];networks=[];interfaces=[]
         for path in devices:
@@ -102,6 +115,14 @@ class SystemBackend(DesktopControls):
             try:result[key]=method()
             except (GLib.Error,RuntimeError,OSError,subprocess.SubprocessError,ValueError):result[key]={'available':False}
         return result
+    def controls_snapshot(self):
+        # Wi-Fi discovery, notifications and power services must not delay the
+        # two slider values needed by the first visible frame.
+        result={}
+        for key,method in (('audio',self.audio),('brightness',self.brightness)):
+            try:result[key]=method()
+            except (GLib.Error,RuntimeError,OSError,subprocess.SubprocessError,ValueError):result[key]={'available':False}
+        return result
     def action(self,operation,values):
         if operation=='volume':
             volume=values.get('value')
@@ -114,21 +135,59 @@ class SystemBackend(DesktopControls):
             sink=values.get('id');outputs=self.audio()['outputs']
             if sink not in [item['id'] for item in outputs]:raise ValueError('音频设备已变化，请刷新')
             self.command(['/usr/bin/pactl','set-default-sink',sink])
-            for line in self.command(['/usr/bin/pactl','list','short','sink-inputs']).splitlines():
-                ident=line.split('\t')[0]
-                if ident.isdigit():self.command(['/usr/bin/pactl','move-sink-input',ident,sink])
+            parts=re.split(r'(?m)^Sink Input #(\d+)',self.command(['/usr/bin/pactl','list','sink-inputs']))
+            for ident,block in zip(parts[1::2],parts[2::2]):
+                if self.pulse_field(block,'Client').isdigit() and not re.search(r'media\.role\s*=\s*"filter"',block):
+                    self.command(['/usr/bin/pactl','move-sink-input',ident,sink])
+        elif operation in ('input','input-volume','input-mute'):
+            state=self.microphone();source=values.get('id')
+            if source not in [item['id'] for item in state['inputs']]:raise ValueError('输入设备已变化，请重新选择麦克风。')
+            if operation=='input-volume':
+                value=values.get('value')
+                if type(value) is not int or not 0<=value<=100:raise ValueError('麦克风音量应在 0 到 100 之间')
+                self.command(['/usr/bin/pactl','set-source-volume',source,str(value)+'%'])
+            elif operation=='input-mute':
+                if type(values.get('value')) is not bool:raise ValueError('无效的麦克风静音状态')
+                self.command(['/usr/bin/pactl','set-source-mute',source,'1' if values['value'] else '0'])
+            elif (state.get('selected') or {}).get('id')!=source:
+                self.command(['/usr/bin/pactl','set-default-source',source])
+                indexes={item['index'] for item in state['inputs']}
+                parts=re.split(r'(?m)^Source Output #(\d+)',self.command(['/usr/bin/pactl','list','source-outputs']))
+                for ident,block in zip(parts[1::2],parts[2::2]):
+                    # Move application mic streams, never echo-cancel/loopback
+                    # plumbing or an app recording a speaker-monitor source.
+                    if self.pulse_field(block,'Client').isdigit() and self.pulse_field(block,'Source') in indexes and not re.search(r'media\.role\s*=\s*"filter"',block):
+                        self.command(['/usr/bin/pactl','move-source-output',ident,source])
+            return {'microphone':self.microphone()}
         elif operation=='wifi-enabled':
             if type(values.get('value')) is not bool:raise ValueError('无效的 Wi-Fi 状态')
             self.set_property(NM,NMP,NM,'WirelessEnabled',GLib.Variant('b',values['value']))
         elif operation=='scan':
             wifi=self.wifi()
             if not wifi.get('enabled',True):raise ValueError('请先启用 Wi-Fi 再刷新网络列表。')
+            pending={}
             for device in wifi['devices']:
                 last=self.props(NM,device,NM+'.Device.Wireless').get('LastScan',-1)
                 # NetworkManager rate-limits scans. A recent scan already has
                 # the data the refresh button needs; never restart a connection.
                 if last>=0 and 0<=time.clock_gettime(time.CLOCK_BOOTTIME)*1000-last<10000:continue
-                self.call(NM,device,NM+'.Device.Wireless','RequestScan',GLib.Variant('(a{sv})',({},)))
+                try:self.call(NM,device,NM+'.Device.Wireless','RequestScan',GLib.Variant('(a{sv})',({},)))
+                except GLib.Error as error:
+                    # Another request may already be in flight. Its completed
+                    # generation is just as useful; never toggle the radio.
+                    if not (Gio.DBusError.get_remote_error(error) or '').endswith('NotAllowed'):raise
+                pending[device]=last
+            # RequestScan acknowledges the request, not a fresh AP list. Wait
+            # in the worker for LastScan to advance before publishing results.
+            deadline=time.monotonic()+12
+            while pending:
+                remaining=deadline-time.monotonic()
+                if remaining<=0:raise TimeoutError('Wi-Fi scan did not complete')
+                for device,last in list(pending.items()):
+                    wireless=self.call(NM,device,'org.freedesktop.DBus.Properties','GetAll',GLib.Variant('(s)',(NM+'.Device.Wireless',)),max(1,min(500,round(remaining*1000))))[0]
+                    if wireless.get('LastScan',-1)>last:pending.pop(device)
+                if pending:time.sleep(.15)
+            return {'wifi':self.wifi()}
         elif operation=='connect':
             selected=next((n for n in self.wifi()['networks'] if n['id']==values.get('id')),None)
             if not selected:raise ValueError('网络已变化，请刷新列表')

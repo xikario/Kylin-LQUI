@@ -96,7 +96,7 @@ public:
         if (current) context.doneCurrent();
     }
 
-    QImage render(const QImage &body, const QImage &clear, QSize logical, float radius, const QImage &shape, float refraction, float shade, float highlight, float chroma, float liquidStrength, int control, int finish,float lightSurface) {
+    QImage render(const QImage &body, const QImage &clear, QSize logical, float radius, const QImage &shape, float refraction, float shade, float highlight, float chroma, float liquidStrength, int control, int finish,float lightSurface,QVector2D smoke) {
         if (!attempted) {
             QElapsedTimer elapsed; elapsed.start();
             attempted=true; ready=initialize();
@@ -104,7 +104,7 @@ public:
                 qInfo() << "[FencesStartup] widget-gl-initialized" << elapsed.elapsed() << "ms" << ready;
         }
         if (!ready || !context.makeCurrent(&surface)) return {};
-        const QImage result=draw(body,clear,logical,radius,shape,refraction,shade,highlight,chroma,liquidStrength,control,finish,lightSurface);
+        const QImage result=draw(body,clear,logical,radius,shape,refraction,shade,highlight,chroma,liquidStrength,control,finish,lightSurface,smoke);
         context.doneCurrent(); // textures were released by draw() before this
         return result;
     }
@@ -140,7 +140,7 @@ private:
         "uniform vec2 halfpixel; uniform float viewportScale;\n"
         "uniform vec2 panelSize; uniform float panelRadius; uniform int controlMode;\n"
         "uniform float lightSurface; uniform float shadeStrength; uniform float highlightStrength; uniform float chromaStrength; uniform float liquidStrength;\n"
-        "uniform sampler2D shapeUnit; uniform int shaped; uniform int surfaceFinish;\n"
+        "uniform sampler2D shapeUnit; uniform int shaped; uniform int surfaceFinish; uniform vec2 adaptiveSmoke;\n"
         "float roundedRectangleDist(vec2 p,vec2 b,vec4 r);\n"
         "vec2 gradSdRoundedBox(vec2 p,vec2 b,float r);\n") + upstream + R"GLSL(
 float contourDistance(vec2 position) {
@@ -214,6 +214,19 @@ void main() {
         rgb=mix(rgb,vec3(0.98,0.995,1.0),shine);
         rgb*=1.0-rim*(1.0-facing)*0.04;
     }
+    if(adaptiveSmoke.x>0.0 && controlMode==0) {
+        // One luminance decision for the whole card. Preserve colour/detail
+        // with a bounded slope, instead of a separate gray/black material on
+        // each side of a bright-window boundary. Keep Snell only in a fine rim.
+        float narrowRim=1.0-smoothstep(0.8,5.0,inside);
+        vec3 scene=mix(texture2D(bodyUnit,uv).rgb,optical,narrowRim*0.35);
+        vec3 smoke=vec3(0.22+0.10*adaptiveSmoke.y)+(scene-vec3(adaptiveSmoke.y))*0.22;
+        float line=exp(-pow((inside-1.0)/0.75,2.0));
+        float inner=exp(-pow((inside-3.2)/1.6,2.0));
+        smoke+=vec3(0.16,0.18,0.20)*line*(0.55+0.45*facing);
+        smoke+=vec3(0.025)*inner*facing;
+        rgb=mix(rgb,smoke,adaptiveSmoke.x);
+    }
     float coverage=1.0-smoothstep(-aa*0.5,aa*0.5,d);
     if(shaped>0) coverage=texture2D(shapeUnit,uv).b;
     // QOpenGLFramebufferObject::toImage returns premultiplied ARGB.
@@ -231,7 +244,7 @@ void main() {
     return true;
     }
 
-    QImage draw(const QImage &body,const QImage &clear,QSize logical,float radius,const QImage &shape, float refraction, float shade, float highlight, float chroma, float liquidStrength, int control, int finish,float lightSurface) {
+    QImage draw(const QImage &body,const QImage &clear,QSize logical,float radius,const QImage &shape, float refraction, float shade, float highlight, float chroma, float liquidStrength, int control, int finish,float lightSurface,QVector2D smoke) {
     auto *gl=context.functions();
     auto &program=*programStorage;
     if (!framebuffer || framebuffer->size()!=body.size())
@@ -279,6 +292,7 @@ void main() {
     program.setUniformValue("materialReflectionStrength",dock?(finish==3?.12f:0.f):control ? 0.28f : 0.14f);
     program.setUniformValue("cornerExponent",2.f);
     program.setUniformValue("lightSurface",lightSurface);
+    program.setUniformValue("adaptiveSmoke",smoke);
     program.setUniformValue("shadeStrength",shade/.58f);
     program.setUniformValue("highlightStrength",dock?highlight:highlight/.55f);
     program.setUniformValue("chromaStrength",chroma);
@@ -341,7 +355,7 @@ QImage LiquidOpticsRenderer::renderControl(const QRect &logicalRect, qreal radiu
 }
 QImage LiquidOpticsRenderer::renderSurface(const QRect &logicalRect, qreal radius, const QPainterPath &shape, int control)
 {
-    m_usedGpu = false;
+    m_usedGpu = false;m_smokeAmount=0;
     if (m_source.isNull() || logicalRect.isEmpty()) return {};
     const qreal dpr = m_source.devicePixelRatio();
     if (m_body.isNull() && !control) {
@@ -364,6 +378,22 @@ QImage LiquidOpticsRenderer::renderSurface(const QRect &logicalRect, qreal radiu
         { QPainter p(&body);p.setOpacity(m_clarity);p.drawImage(0,0,raw); }
         { QPainter p(&clear);p.setOpacity(m_clarity);p.drawImage(0,0,raw); }
     }
+    qreal sceneMean=0,brightArea=0;
+    if(m_adaptiveSmoke&&!control) {
+        // Fixed 16x16 sampling cost, independent of DPR and card height.
+        for(int y=0;y<16;++y)for(int x=0;x<16;++x) {
+            const QColor c=body.pixelColor(qMin(body.width()-1,int((x+.5)*body.width()/16)),
+                                           qMin(body.height()-1,int((y+.5)*body.height()/16)));
+            const qreal luminance=.299*c.redF()+.587*c.greenF()+.114*c.blueF();
+            sceneMean+=luminance/256.;
+            const qreal bright=qBound(0.,(luminance-.45)/.40,1.);
+            brightArea+=bright*bright*(3-2*bright)/256.;
+        }
+        // Bright coverage, not a dark wallpaper's mean, activates the finish.
+        // A half-white card gets one coherent shell; dark colours stay intact.
+        const qreal t=qBound(0.,brightArea/.45,1.);
+        m_smokeAmount=t*t*(3-2*t);
+    }
     // Radius must fit collapsed title-only fences too.
     radius = qMin(radius, qMin(logicalRect.width(), logicalRect.height())/2.0);
     QImage result;
@@ -377,7 +407,7 @@ QImage LiquidOpticsRenderer::renderSurface(const QRect &logicalRect, qreal radiu
             m_shapeDpr = dpr;
         }
         result = m_backend->render(body, clear, logicalRect.size(), radius,
-                                  shape.isEmpty() ? QImage() : m_shapeField, m_refraction, m_shade, m_highlight, m_chroma, m_liquidStrength, control,int(m_finish),m_lightSurface);
+                                  shape.isEmpty() ? QImage() : m_shapeField, m_refraction, m_shade, m_highlight, m_chroma, m_liquidStrength, control,int(m_finish),m_lightSurface,QVector2D(m_smokeAmount,sceneMean));
     }
     m_usedGpu = !result.isNull();
     if (!m_usedGpu) {
@@ -443,6 +473,26 @@ QImage LiquidOpticsRenderer::renderSurface(const QRect &logicalRect, qreal radiu
         { QPainter mp(&mask); mp.setRenderHint(QPainter::Antialiasing); mp.fillPath(path, Qt::white); }
         p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
         p.drawImage(0, 0, mask);
+    }
+    if(!m_usedGpu&&m_smokeAmount>0) {
+        // The optional CPU fallback uses the same card-wide tone curve and
+        // alpha coverage. No extra capture, blur or recurring rendering work.
+        for(int y=0;y<result.height();++y) {
+            auto *line=reinterpret_cast<QRgb *>(result.scanLine(y));
+            for(int x=0;x<result.width();++x) {
+                const QRgb old=line[x];const int alpha=qAlpha(old);if(!alpha)continue;
+                const QRgb scene=body.pixel(x,y);
+                const qreal qx=qAbs((x+.5)/dpr-logicalRect.width()/2.)-(logicalRect.width()/2.-radius);
+                const qreal qy=qAbs((y+.5)/dpr-logicalRect.height()/2.)-(logicalRect.height()/2.-radius);
+                const qreal inside=qMax(0.,radius-std::hypot(qMax(0.,qx),qMax(0.,qy))-qMin(qMax(qx,qy),0.));
+                const qreal sheen=std::exp(-std::pow((inside-1.)/.75,2.))*.12;
+                auto channel=[&](int oldValue,int sourceValue){
+                    const qreal smoke=.22+.10*sceneMean+(sourceValue/255.-sceneMean)*.22+sheen;
+                    return qBound(0,qRound(oldValue*(1-m_smokeAmount)+smoke*alpha*m_smokeAmount),alpha);
+                };
+                line[x]=qRgba(channel(qRed(old),qRed(scene)),channel(qGreen(old),qGreen(scene)),channel(qBlue(old),qBlue(scene)),alpha);
+            }
+        }
     }
     result.setDevicePixelRatio(dpr);
     return result;

@@ -566,6 +566,45 @@ private slots:
         }
         dialog->close();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
     }
+    void dockGlassBackingStoreIsComplete(){
+        if(!qEnvironmentVariableIsSet("LIQUID_CLI_NATIVE_SURFACE"))QSKIP("Opt-in composited screen check");
+        QApplication::setCursorFlashTime(0);
+        auto s=config();s.animation="slide";s.width=495;s.height=680;
+        s.hideDelay=10000;
+        Conversation saved(folder());
+        for(int i=0;i<26;++i){
+            saved.append({"user",QString("测试问题 %1：查看资料中的说明").arg(i),{},{},0});
+            saved.append({"assistant",QString("### 测试回答 %1\n\n").arg(i)+QString("这是一段用于检验玻璃底层是否完整的多行文本。\n\n").repeated(8),{},"运行 3 条命令",0});
+        }
+        QVERIFY(saved.save());Drawer d(s,folder());
+        d.findChild<QPushButton*>("pinDrawer")->setChecked(true);
+        const auto screen=QGuiApplication::primaryScreen()->availableGeometry();
+        QWidget background(nullptr,Qt::Tool|Qt::FramelessWindowHint|Qt::WindowStaysOnTopHint);
+        background.setGeometry(screen);background.setStyleSheet("background:#d43abb;");background.show();
+        QTest::qWait(150);
+        auto capture=[&]{return QGuiApplication::primaryScreen()->grabWindow(0,d.x(),d.y(),d.width(),d.height()).toImage().convertToFormat(QImage::Format_RGB32);};
+        for(int pass=0;pass<4;++pass){
+            if(pass==3){s.animation="none";d.applySettings(s);}
+            d.ToggleAt(screen.right()-55,pass==2?screen.top()+5:screen.bottom()-40,32,32);
+            if(pass==1){QTest::qWait(90);d.Hide();QTest::qWait(45);d.Show();}
+            QTRY_VERIFY_WITH_TIMEOUT(d.progress()==1,2000);QTest::qWait(500);
+            if(pass==1){auto *bar=d.chat()->verticalScrollBar();bar->setValue(bar->value()-145);QTest::qWait(100);}
+            if(pass==2){for(auto *bubble:d.findChildren<QFrame*>("assistantBubble"))bubble->update();QTest::qWait(100);}
+            // Read the compositor BEFORE forcing any QWidget repaint/grab.
+            const auto before=capture();d.repaint();QTest::qWait(80);const auto after=capture();
+            QCOMPARE(before.size(),after.size());int changed=0,total=0;
+            for(int y=12;y<before.height()-12;++y)for(int x=12;x<before.width()-12;++x){
+                const auto a=before.pixelColor(x,y),b=after.pixelColor(x,y);
+                if(qMax(qAbs(a.red()-b.red()),qMax(qAbs(a.green()-b.green()),qAbs(a.blue()-b.blue())))>12)++changed;
+                ++total;
+            }
+            const QString output=qEnvironmentVariable("LIQUID_CLI_ARTIFACT_DIR");
+            if(!output.isEmpty()){before.save(output+QString("/surface-%1-before.png").arg(pass));after.save(output+QString("/surface-%1-after.png").arg(pass));}
+            qInfo("Surface pass %d: changed %d / %d pixels",pass,changed,total);
+            QVERIFY2(changed<double(total)*.005,"Settled glass changed after full repaint: backing store was incomplete");
+            QVERIFY(!d.client()->running());d.Hide();QTRY_VERIFY_WITH_TIMEOUT(!d.isVisible(),2000);
+        }
+    }
     void residentWarmupKeepsBackendStopped(){
         QString marker;Drawer d(config(&marker),folder());
         d.prepareResident();QTRY_VERIFY_WITH_TIMEOUT(d.glassBuilds()>0,5000);

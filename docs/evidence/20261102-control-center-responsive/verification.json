@@ -1,0 +1,167 @@
+{
+  "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261102-113708-221d134f",
+  "sourceMatches": true,
+  "panelPluginMatchesBuild": true,
+  "unitAndUiTests": 44,
+  "nativeSurfaceTests": 6,
+  "panelTests": 2,
+  "preloadedOpenMetrics": [
+    {
+      "firstVisibleMs": 65.86,
+      "sliderValuesStable": true
+    },
+    {
+      "firstVisibleMs": 54.34,
+      "sliderValuesStable": true
+    },
+    {
+      "firstVisibleMs": 59.68,
+      "sliderValuesStable": true
+    }
+  ],
+  "realTaskbarHoverAndClick": {
+    "before": {
+      "page": "home",
+      "visible": false,
+      "closing": false,
+      "preparing": false,
+      "resident": true,
+      "preloading": false,
+      "controlsReady": true,
+      "motionRunning": false,
+      "progress": 0.0,
+      "busy": false,
+      "reading": false,
+      "geometry": [
+        7,
+        7,
+        390,
+        660
+      ],
+      "materialBackend": "blur-fallback",
+      "materialRenders": 0
+    },
+    "prepared": {
+      "page": "home",
+      "visible": true,
+      "closing": false,
+      "preparing": true,
+      "resident": true,
+      "preloading": true,
+      "controlsReady": true,
+      "motionRunning": false,
+      "progress": 0.0,
+      "busy": false,
+      "reading": false,
+      "geometry": [
+        1094,
+        485,
+        389,
+        660
+      ],
+      "materialBackend": "snell-gpu",
+      "materialRenders": 10
+    },
+    "hoverDoesNotStealFocus": true,
+    "firstVisibleObservedMs": 106.29,
+    "first": {
+      "page": "home",
+      "visible": true,
+      "closing": false,
+      "preparing": false,
+      "resident": true,
+      "preloading": false,
+      "controlsReady": true,
+      "motionRunning": true,
+      "progress": 0.17348748293126992,
+      "busy": false,
+      "reading": false,
+      "geometry": [
+        1094,
+        1030,
+        389,
+        660
+      ],
+      "materialBackend": "snell-gpu",
+      "materialRenders": 10
+    },
+    "settled": {
+      "page": "home",
+      "visible": true,
+      "closing": false,
+      "preparing": false,
+      "resident": true,
+      "preloading": false,
+      "controlsReady": true,
+      "motionRunning": false,
+      "progress": 1.0,
+      "busy": false,
+      "reading": false,
+      "geometry": [
+        1094,
+        485,
+        389,
+        660
+      ],
+      "materialBackend": "snell-gpu",
+      "materialRenders": 10
+    },
+    "after": {
+      "page": "home",
+      "visible": false,
+      "closing": false,
+      "preparing": false,
+      "resident": true,
+      "preloading": false,
+      "controlsReady": true,
+      "motionRunning": false,
+      "progress": 0.0,
+      "busy": false,
+      "reading": false,
+      "geometry": [
+        1094,
+        485,
+        389,
+        660
+      ],
+      "materialBackend": "blur-fallback",
+      "materialRenders": 0
+    },
+    "verified": true
+  },
+  "quickActionGeometry": {
+    "display": [
+      0,
+      148,
+      121,
+      43
+    ],
+    "power": [
+      128,
+      148,
+      121,
+      43
+    ],
+    "dnd": [
+      256,
+      148,
+      121,
+      43
+    ]
+  },
+  "recordedSliderValuesAndGeometryStable": true,
+  "residentIdle": {
+    "pid": 4708,
+    "seconds": 10.01,
+    "pssMiB": 51.16,
+    "pssDeltaKiB": 0,
+    "oneCoreCpuPercent": 0.0
+  },
+  "panelRestart": {
+    "oldPid": 4936,
+    "newPid": 4668,
+    "aiPidUnchanged": true,
+    "panelConfigUnchanged": true
+  },
+  "residentAutostartExists": true
+}

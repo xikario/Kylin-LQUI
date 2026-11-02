@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Dock adaptation against the real OEM taskbar in private X11/D-Bus/config."""
-import argparse, ast, configparser, json, os, pathlib, re, shutil, signal, socket, subprocess, tempfile, time
+import argparse, ast, configparser, ctypes, json, os, pathlib, re, shutil, signal, socket, subprocess, tempfile, time
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BUILD=pathlib.Path(os.environ.get('LQUI_PANEL_TEST_BUILD',str(ROOT/'build')))
@@ -10,6 +10,7 @@ parser.add_argument('--inspect',action='store_true')
 parser.add_argument('--calendar-native',action='store_true')
 parser.add_argument('--cohesive',action='store_true')
 parser.add_argument('--system-items',action='store_true')
+parser.add_argument('--indicators-only',action='store_true')
 parser.add_argument('--settings-center',type=pathlib.Path)
 parser.add_argument('--launcher',type=pathlib.Path)
 args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
@@ -29,6 +30,20 @@ def anchored(r):
 def check(ok,message):
     assert ok,message
     print('PASS',message,flush=True)
+
+def clear_active_window():
+    # Test-only EWMH event on the private Xvfb server: a pinned placeholder
+    # must not become active merely because both its ID and this value are 0.
+    x=ctypes.CDLL('libX11.so.6');x.XOpenDisplay.argtypes=[ctypes.c_char_p];x.XOpenDisplay.restype=ctypes.c_void_p
+    x.XDefaultRootWindow.argtypes=[ctypes.c_void_p];x.XDefaultRootWindow.restype=ctypes.c_ulong
+    x.XInternAtom.argtypes=[ctypes.c_void_p,ctypes.c_char_p,ctypes.c_int];x.XInternAtom.restype=ctypes.c_ulong
+    x.XChangeProperty.argtypes=[ctypes.c_void_p,ctypes.c_ulong,ctypes.c_ulong,ctypes.c_ulong,ctypes.c_int,ctypes.c_int,ctypes.c_void_p,ctypes.c_int]
+    x.XCloseDisplay.argtypes=[ctypes.c_void_p]
+    display=x.XOpenDisplay(None);assert display
+    try:
+        zero=ctypes.c_ulong(0)
+        x.XChangeProperty(display,x.XDefaultRootWindow(display),x.XInternAtom(display,b'_NET_ACTIVE_WINDOW',0),x.XInternAtom(display,b'WINDOW',0),32,0,ctypes.byref(zero),1)
+    finally:x.XCloseDisplay(display)
 
 with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
     temp=pathlib.Path(directory);home=pathlib.Path.home()
@@ -88,6 +103,20 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
                 check(len({theme_pixels[(key,name)] for key in ('color','glass','mist')})==3,'all three themes update '+name+' artwork')
             call('select',name='liquidIconTheme',index=0,wait=100);call('closeSettings',wait=300)
         initial=call();
+        if args.indicators_only:
+            subprocess.run(['gdbus','call','--session','--dest','com.ukui.search.appdb.service','--object-path','/org/ukui/search/appDataBase/dbManager','--method','org.ukui.search.appDBManager.SetGrouped','true'],check=True,stdout=subprocess.DEVNULL)
+            grouped=call('applications',count=3,grouped=True,wait=1300)
+            check(any(w.get('dockWindows')==3 for w in nodes(grouped['panel']) if w['class']=='UKUITaskButton' and w['visible']),'real grouped windows are counted without the launcher placeholder')
+            for index in (0,1,2):
+                active=call('activateApplication',index=index,wait=250)
+                check(sum(bool(w.get('dockGroupActive')) for w in nodes(active['panel']) if w['class']=='UKUITaskButton' and w['visible'])==1,'exactly one real active group is highlighted')
+            clear_active_window();unfocused=call(wait=250)
+            check(not any(w.get('dockGroupActive') for w in nodes(unfocused['panel']) if w['class']=='UKUITaskButton' and w['visible']),'zero active window leaves every marker inactive')
+            check(any(w.get('dockWindows')==3 for w in nodes(unfocused['panel']) if w['class']=='UKUITaskButton' and w['visible']),'background windows retain their running count')
+            closed=call('applications',count=0,wait=700)
+            check(not any(w.get('dockWindows') or w.get('dockGroupActive') for w in nodes(closed['panel']) if w['class']=='UKUITaskButton' and w['visible']),'closed applications and pinned launchers have no marker')
+            call('shutdown',wait=0);check(process.wait(timeout=8)==0,'indicator fixture shuts down cleanly')
+            raise SystemExit(0)
         if args.system_items:
             snapshot=fixed(initial)
             before_rapid=call(wait=500)
@@ -230,6 +259,10 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
                 leader=[w for w in nodes(active['panel']) if w['class']=='UKUITaskButton' and w.get('dockWindows')==3 and w['visible']]
                 check(len(leader)==1 and leader[0]['dockGroupActive'],'activating group window '+str(index+1)+' highlights the shared indicator')
             capture('BackgroundWidget','grouped-three.png')
+            clear_active_window();unfocused=call(wait=250)
+            check(not any(w.get('dockGroupActive') for w in nodes(unfocused['panel']) if w['class']=='UKUITaskButton' and w['visible']),'zero active window never highlights a pinned launcher or a background group')
+            reactivated=call('activateApplication',index=0,wait=250)
+            check(sum(bool(w.get('dockGroupActive')) for w in nodes(reactivated['panel']) if w['class']=='UKUITaskButton' and w['visible'])==1,'returning focus highlights exactly one real window group')
             two=call('closeFirstApplication',wait=700)
             check(len([w for w in nodes(two['panel']) if w['class']=='UKUITaskButton' and w.get('dockWindows')==2 and w['visible']])==1,'closing the visible group leader promotes another window without losing the icon')
             one=call('applications',count=1,wait=700)

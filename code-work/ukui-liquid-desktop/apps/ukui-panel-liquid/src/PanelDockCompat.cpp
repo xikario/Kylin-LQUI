@@ -1,5 +1,6 @@
 #include "PanelDockCompat.h"
 #include "PanelLayoutCompat.h"
+#include "DockIndicatorState.h"
 #include <QApplication>
 #include <QAbstractButton>
 #include <QBoxLayout>
@@ -140,7 +141,8 @@ void PanelDockCompat::apply() {
             // Keep the host's group and every window button alive: its hover
             // preview, context menu and window switching still own all IDs.
             auto windowId=reinterpret_cast<QVariant (*)(const QWidget*)>(native(w,"_ZNK14UKUITaskButton8windowIdEv"));
-            int windows=0;for(auto b:group.buttons)if(windowId&&windowId(b).toULongLong())++windows;
+            QVector<qulonglong> ids;for(auto b:group.buttons)if(windowId)ids.append(windowId(b).toULongLong());
+            const int windows=DockIndicator::state(ids,0).windows;
             auto leader=group.buttons.first();
             for(auto b:group.buttons){
                 const bool hide=b!=leader;
@@ -288,16 +290,24 @@ bool PanelDockCompat::eventFilter(QObject *object,QEvent *event) {
             if(button->isChecked())option.state|=QStyle::State_On;
             QPainter painter(button);button->style()->drawComplexControl(QStyle::CC_ToolButton,&option,&painter,button);
             const int windows=button->property("liquidDockWindows").toInt();
+            bool groupActive=false;
             if(windows>0){
-                auto active=reinterpret_cast<bool (*)(QWidget*)>(native(button,"_ZN14UKUITaskButton14isActiveWindowEv"));
-                bool groupActive=false;
-                if(active)for(auto *member:button->parentWidget()->findChildren<QAbstractButton*>())
-                    if(member->inherits("UKUITaskButton")&&active(member)){groupActive=true;break;}
+                auto current=reinterpret_cast<WId (*)()>(native(button,"_ZN13KWindowSystem12activeWindowEv"));
+                auto windowId=reinterpret_cast<QVariant (*)(const QWidget*)>(native(button,"_ZNK14UKUITaskButton8windowIdEv"));
+                const WId active=current?current():0;
+                // OEM isActiveWindow also compares the pinned launcher's ID 0
+                // with activeWindow()==0. That lights every pinned group when
+                // no real client has focus (for example, Show Desktop).
+                QVector<qulonglong> ids;
+                if(windowId)for(auto *member:button->parentWidget()->findChildren<QAbstractButton*>())
+                    if(member->inherits("UKUITaskButton"))ids.append(windowId(member).toULongLong());
+                groupActive=DockIndicator::state(ids,active).active;
                 button->setProperty("liquidDockGroupActive",groupActive);
                 painter.setRenderHint(QPainter::Antialiasing);painter.setPen(Qt::NoPen);painter.setBrush(QColor(groupActive?"#3184d4":"#adb6bf"));
                 const qreal width=windows>1?12:4;const QRectF mark((button->width()-width)/2.,button->height()-5,width,windows>1?3:4);
                 if(windows>1)painter.drawRoundedRect(mark,1.5,1.5);else painter.drawEllipse(mark);
             }
+            else button->setProperty("liquidDockGroupActive",false);
             return true;
         }
     }

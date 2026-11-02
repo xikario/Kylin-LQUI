@@ -118,6 +118,10 @@ bool PanelSystemControls::eventFilter(QObject *object,QEvent *event){
     const QString page=widget->property("liquidSystemPage").toString();
     if(!page.isEmpty()&&LquiControl::enabled()){
         auto *button=qobject_cast<QAbstractButton*>(widget);
+        if(event->type()==QEvent::Enter||event->type()==QEvent::FocusIn){
+            QWidget *anchor=home?home.data():widget;
+            LquiControl::prepare(page,QRect(anchor->mapToGlobal(QPoint()),anchor->size()));
+        }
         const auto activate=[&]{QWidget *anchor=home?home.data():widget;return LquiControl::open(page,QRect(anchor->mapToGlobal(QPoint()),anchor->size()));};
         if(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseButtonRelease){
             auto *mouse=static_cast<QMouseEvent*>(event);

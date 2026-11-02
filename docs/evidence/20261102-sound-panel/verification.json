@@ -1,0 +1,94 @@
+{
+  "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261102-141517-d5cb54ae",
+  "sourceMatches": true,
+  "uiAndBackendTests": 60,
+  "nativeSurfaceTests": 7,
+  "soundTargetSnapshotVerified": true,
+  "privateAudioServer": {
+    "modules": [
+      "module-native-protocol-unix",
+      "module-null-sink",
+      "module-null-sink",
+      "module-remap-source"
+    ],
+    "verified": true,
+    "isolatedServer": true,
+    "hardwareModulesLoaded": false,
+    "microphoneVolumeAndMute": true,
+    "defaultInputAndLiveAppStreamMoved": true,
+    "monitorRecordingPreserved": true,
+    "internalAudioPlumbingPreserved": true,
+    "outputAndLivePlaybackMoved": true,
+    "removedDeviceRejected": true
+  },
+  "installedUi": {
+    "pages": [
+      {
+        "page": "sound",
+        "visible": true,
+        "closing": false,
+        "preparing": false,
+        "navigationRunning": false,
+        "resident": true,
+        "preloading": false,
+        "controlsReady": true,
+        "motionRunning": false,
+        "progress": 1.0,
+        "busy": false,
+        "reading": false,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialBackend": "snell-gpu",
+        "materialRenders": 12
+      },
+      {
+        "page": "sound",
+        "visible": true,
+        "closing": false,
+        "preparing": false,
+        "navigationRunning": false,
+        "resident": true,
+        "preloading": false,
+        "controlsReady": true,
+        "motionRunning": false,
+        "progress": 1.0,
+        "busy": false,
+        "reading": false,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialBackend": "snell-gpu",
+        "materialRenders": 12
+      }
+    ],
+    "verified": true
+  },
+  "restart": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261102-141517-d5cb54ae",
+    "oldPid": 29102,
+    "newPid": 53788,
+    "audioSettingsPreserved": true
+  },
+  "realUiStructure": {
+    "geometry": [
+      1094,
+      485,
+      389,
+      660
+    ],
+    "outputCount": 2,
+    "inputCount": 2,
+    "comboCount": 0,
+    "volume": 75,
+    "microphoneVolume": 100,
+    "microphoneMuted": false,
+    "material": "snell-gpu"
+  }
+}

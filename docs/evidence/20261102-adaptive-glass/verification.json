@@ -1,0 +1,48 @@
+{
+  "white": {
+    "originalUnchanged": true,
+    "beforeCenter": 96.0,
+    "afterCenter": 82.0,
+    "beforeLower": 96.0,
+    "afterLower": 82.0,
+    "darkUnchanged": null
+  },
+  "dark": {
+    "originalUnchanged": true,
+    "beforeCenter": 12.37,
+    "afterCenter": 12.37,
+    "beforeLower": 12.37,
+    "afterLower": 12.37,
+    "darkUnchanged": true
+  },
+  "split": {
+    "originalUnchanged": true,
+    "beforeCenter": 96.0,
+    "afterCenter": 97.0,
+    "beforeLower": 0.0,
+    "afterLower": 41.0,
+    "darkUnchanged": null
+  },
+  "installed": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261102-155303-6d769b59",
+    "adaptiveSmoke": true,
+    "materialBackend": "snell-gpu",
+    "materialRenders": 8,
+    "payloadHashesMatch": true
+  },
+  "comparisonMethod": "Each library loaded in a separate process to avoid C++ shared GL backend symbol interposition.",
+  "deployment": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261102-155303-6d769b59",
+    "oldPid": 53788,
+    "newPid": 21417,
+    "audioSettingsPreserved": true
+  },
+  "tests": {
+    "controlCenter": 60,
+    "mappedSurface": 7,
+    "materialGpu": 5,
+    "materialCpu": 5,
+    "allPassed": true
+  },
+  "scope": "Only control-center material contexts opt in; other callers remain unchanged."
+}

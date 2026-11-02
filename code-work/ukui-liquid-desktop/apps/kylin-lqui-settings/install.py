@@ -22,6 +22,7 @@ def install():
         transaction.watch(home/'.local/bin/kylin-lqui-control-center')
         transaction.watch(home/'.local/share/applications/kylin-lqui-settings.desktop')
         transaction.watch(home/'.local/share/applications/kylin-lqui-control-center.desktop')
+        transaction.watch(home/'.config/autostart/kylin-lqui-control-center.desktop')
         transaction.watch(home/'.local/share/applications/ukui-fences-settings.desktop')
         transaction.watch(home/'.local/share/applications/fcitx-liquid-settings.desktop')
         transaction.watch(home/'.local/share/applications/peony-manager.desktop')
@@ -52,6 +53,11 @@ def install():
             applications=home/'.local/share/applications';applications.mkdir(parents=True,exist_ok=True)
             (applications/'kylin-lqui-settings.desktop').write_text('[Desktop Entry]\nType=Application\nName=Kylin-LQUI 设置\nComment=桌面、任务栏、AI 小站与模块状态\nExec="'+str(launcher)+'"\nIcon='+str(base/'current/icon.svg')+'\nTerminal=false\nCategories=Settings;DesktopSettings;\nStartupWMClass=kylin-lqui-settings\n')
             (applications/'kylin-lqui-control-center.desktop').write_text('[Desktop Entry]\nType=Application\nName=Kylin-LQUI 系统控制中心\nExec="'+str(control)+'"\nIcon='+str(base/'current/icon.svg')+'\nNoDisplay=true\nTerminal=false\nCategories=Settings;\n')
+            autostart=home/'.config/autostart/kylin-lqui-control-center.desktop'
+            # Respect an existing user override, including Hidden=true.
+            if not autostart.exists():
+                autostart.parent.mkdir(parents=True,exist_ok=True)
+                autostart.write_text('[Desktop Entry]\nType=Application\nName=Kylin-LQUI 快捷设置预加载\nExec="'+str(control)+'" --resident\nNoDisplay=true\nTerminal=false\nX-Kylin-Lqui-Managed=true\n')
             aliases=[]
             for name,expected in [('ukui-fences-settings.desktop','ukui-fences-launcher'),('fcitx-liquid-settings.desktop','fcitx-liquid-panel'),('peony-manager.desktop','peony-manager/app/main.py')]:
                 alias=applications/name

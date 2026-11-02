@@ -134,7 +134,14 @@ Drawer::Drawer(Settings config,QString conversationFolder):QWidget(nullptr,Qt::T
         Hide();
     });
     connect(&motion,&QVariantAnimation::valueChanged,this,[this](const QVariant &v){place(v.toReal());});
-    connect(&motion,&QVariantAnimation::finished,this,[this]{if(!opened){QWidget::hide();setWindowOpacity(1);}});
+    connect(&motion,&QVariantAnimation::finished,this,[this]{
+        if(!opened){QWidget::hide();setWindowOpacity(1);}
+        else {
+            // Removing the native animation mask does not invalidate all of
+            // Qt's translucent backing store (including child backgrounds).
+            place(1);repaint();
+        }
+    });
     edge=new Edge(this);positionEdge();
     auto *panelWatcher=new QDBusServiceWatcher("org.ukui.AiStationPanel",QDBusConnection::sessionBus(),QDBusServiceWatcher::WatchForOwnerChange,this);
     connect(panelWatcher,&QDBusServiceWatcher::serviceOwnerChanged,this,[this]{syncPanelEntry();if(panelHosted&&!opened)QTimer::singleShot(150,this,&Drawer::prepareResident);});
@@ -451,9 +458,15 @@ void Drawer::place(qreal value) {
 }
 void Drawer::animate(bool show) {
     motion.stop();const qreal from=isVisible()?shown:0.;
-    if(show&&!isVisible()){place(from);QWidget::show();raise();}
+    if(show&&!isVisible()){
+        // Populate the whole backing store before the taskbar mask clips it.
+        // Material-cache readiness alone does not mean these pixels were
+        // painted. Keep this preparation invisible and outside the frame loop.
+        setGeometry(targetGeometry());clearMask();setWindowOpacity(0);
+        QWidget::show();layout()->activate();repaint();place(from);raise();
+    }
     bool reduced=QSettings("org.ukui","style").value("reduceAnimation",false).toBool();
-    if(settings.animation=="none"||reduced){place(show?1:0);if(!show){QWidget::hide();setWindowOpacity(1);}return;}
+    if(settings.animation=="none"||reduced){place(show?1:0);if(show)repaint();else{QWidget::hide();setWindowOpacity(1);}return;}
     // Reversing mid-way continues from the current point with the remaining time.
     const int duration=panelAnchor.isValid()?(show?DockPopupMotion::OpenMs:DockPopupMotion::CloseMs):settings.animationMs;
     motion.setDuration(qMax(40,qRound(duration*qAbs((show?1.:0.)-from))));

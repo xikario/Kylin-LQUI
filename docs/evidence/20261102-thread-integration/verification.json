@@ -1,0 +1,75 @@
+{
+  "verifiedAt": "2026-11-02T16:16:25.510611+08:00",
+  "sourceThread": "01a199cc-90a7-77c2-87ae-6d03587b2f87",
+  "baseCommit": "ef01f8bed41f9510214f41a9250290876d5f7e93",
+  "integration": "All seven groups of already deployed changes are in the same worktree on main; previous fixes retained without replaying commits.",
+  "incomingFilesPreserved": 34,
+  "builds": {
+    "panel": "passed",
+    "liquidCli": "passed"
+  },
+  "freshTests": {
+    "controlCenter": {
+      "passed": 60,
+      "mode": "Private Xvfb, GL disabled for functional tests"
+    },
+    "cli": {
+      "suitesPassed": 3,
+      "scaleFactors": [
+        1,
+        1.5,
+        2
+      ]
+    },
+    "panelTargeted": {
+      "selected": 21,
+      "passed": 20,
+      "skipped": 1,
+      "skip": "GPU unavailable under isolated Xvfb"
+    },
+    "rendererSharingNativeGpu": {
+      "passed": 1,
+      "display": ":0"
+    },
+    "adaptiveMaterialGpu": {
+      "passed": 5,
+      "display": ":0"
+    },
+    "adaptiveMaterialCpu": {
+      "passed": 5
+    },
+    "oemIndicators": {
+      "passed": true,
+      "isolation": "Private Xvfb, D-Bus, bind-mounted configuration"
+    },
+    "workspaceAndPythonSyntax": "passed",
+    "diffWhitespace": "passed"
+  },
+  "reusedVerification": {
+    "mappedSurface": {
+      "passed": 7,
+      "source": "../20261102-adaptive-glass/verification.json",
+      "reason": "No production source or installed native bridge changed during integration; 15 installed source files and bridge match."
+    },
+    "isolatedPulseAudio": "../20261102-sound-panel/verification.json",
+    "aiMappedBackingStore": "../20261102-ai-glass/verification.json"
+  },
+  "installedPayload": {
+    "release": "release-20261102-155303-6d769b59",
+    "sourceFilesMatched": 15,
+    "bridgeMatchesBuild": true,
+    "redeployed": false,
+    "restarted": false
+  },
+  "behaviorChange": {
+    "controlCenter": "Hidden resident frontend with one-time warmup, no hidden polling/render loop; preloaded scene expires after 3 seconds.",
+    "reportedHiddenPssMiB": 51.16,
+    "resourceMeasurementSource": "../20261102-control-center-responsive/verification.json",
+    "adaptiveSmoke": "Opt-in only for control-center contexts; other callers keep their existing default material."
+  },
+  "limits": [
+    "AI station full-area intermittent bleed-through in the user screenshot was not reproduced exactly; confirmed missing repaint paths are fixed.",
+    "Full OEM drag script previously failed the same assertion on both old and updated payloads. Only the dedicated native indicator path is claimed passed here.",
+    "No full desktop/IME/compositor restart or full framework retest was performed during this source integration."
+  ]
+}

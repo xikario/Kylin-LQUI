@@ -1,6 +1,6 @@
 import datetime,json,math,html
 from PyQt5 import QtCore,QtGui,QtWidgets
-from glass_widgets import GlassCard,CardChevron,glyph,blurred_capture
+from glass_widgets import GlassCard,CardChevron,AudioDeviceButton,glyph,blurred_capture
 
 FUSION_STYLE='''
 QWidget{font-family:"Noto Sans CJK SC";font-size:12px;color:#f0f4fa;}
@@ -17,6 +17,10 @@ QPushButton:disabled,QToolButton:disabled{color:#a0acba;background:rgba(180,205,
 QToolButton[round="true"]{border-radius:21px;background:rgba(230,239,252,38);}
 QToolButton[round="true"]:checked{background:#ccdfed;}
 QPushButton[flatText="true"]{background:transparent;text-align:left;padding:1px;}
+QPushButton[quickAction="true"]{background:transparent;text-align:center;padding:0;}
+QPushButton[quickAction="true"]:checked{background:rgba(80,145,190,45);}
+QPushButton[audioDevice="true"]{background:rgba(220,235,255,15);border:1px solid rgba(215,234,255,24);border-radius:10px;padding:0;}
+QPushButton[audioDevice="true"][current="true"]{background:rgba(135,195,235,40);border:1px solid rgba(190,225,250,95);}
 QPushButton[primary="true"]{background:#c18037;}
 QComboBox,QLineEdit{background:rgba(10,18,28,125);color:#f1f5ff;border:1px solid rgba(215,234,255,65);border-radius:8px;padding:6px;}
 QComboBox::drop-down{border:0;width:24px;}
@@ -24,7 +28,7 @@ QComboBox QAbstractItemView{background:#293b4e;color:#f1f5ff;selection-backgroun
 QSlider::groove:horizontal{height:7px;background:rgba(230,240,255,55);border-radius:3px;}
 QSlider::sub-page:horizontal{background:#d5e7f6;border-radius:3px;}
 QSlider::handle:horizontal{width:17px;margin:-5px 0;background:#eef6ff;border:1px solid #b8ccdc;border-radius:8px;}
-QScrollBar:vertical{width:6px;background:transparent;margin:2px;}
+QScrollBar:vertical{width:10px;background:transparent;margin:2px;}
 QScrollBar::handle:vertical{background:#8d9eae;min-height:20px;border-radius:2px;}
 QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}
 QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical{background:transparent;}
@@ -41,36 +45,43 @@ class FusionView:
         if parent_layout is not None:parent_layout.addWidget(frame)
         return frame,box
     def card(self,layout):return self.card_widget(layout)[1]
+    def device_list(self,layout):
+        # Scroll the rows inside a fixed glass surface. A tall scrolling card
+        # extends outside the captured scene and cannot be rendered by Snell.
+        scroll=QtWidgets.QScrollArea();scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        scroll.setMinimumHeight(80)
+        content=QtWidgets.QWidget();rows=QtWidgets.QVBoxLayout(content)
+        rows.setContentsMargins(0,0,0,0);rows.setSpacing(5);rows.setAlignment(QtCore.Qt.AlignTop)
+        scroll.setWidget(content);content.setAutoFillBackground(False);scroll.viewport().setAutoFillBackground(False)
+        layout.addWidget(scroll,1)
+        return scroll,rows
     def icon_button(self,name,tip,callback,size=30):
         button=QtWidgets.QToolButton();button.setIcon(glyph(name));button.setIconSize(QtCore.QSize(19,19));button.setToolTip(tip);button.setAccessibleName(tip);button.setFixedSize(size,size);button.clicked.connect(callback);return button
     def show_page(self,page):
         self.scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded);self.home_mode=page=='home';self.header_frame.setVisible(not self.home_mode)
+        policy=self.status.sizePolicy();policy.setRetainSizeWhenHidden(not self.home_mode);self.status.setSizePolicy(policy)
+        self.status.setMinimumHeight(0 if self.home_mode else 44);self.status.setMaximumHeight(16777215 if self.home_mode else 44)
         self.notification_page=0
         if page not in ('home','bluetooth'):
             self.show_detail(page)
-            if page=='wifi':
-                content=self.scroll.widget();layout=content.layout();frame,box=self.card_widget()
-                while layout.count()>1:
-                    item=layout.takeAt(0)
-                    if item.widget():box.addWidget(item.widget())
-                    elif item.layout():box.addLayout(item.layout())
-                # Reserve one stable reading surface, with advanced settings
-                # anchored at its bottom even while discovery is still empty.
-                layout.takeAt(0);layout.addWidget(frame,1);box.setStretch(1,1);self.network_list.setAlignment(QtCore.Qt.AlignTop)
             if page=='power':
                 content=self.scroll.widget();layout=content.layout();frame,box=self.card_widget();layout.insertWidget(max(0,layout.count()-1),frame)
                 row=QtWidgets.QGridLayout();box.addLayout(row)
                 for i,(action,title) in enumerate([('lock','锁屏'),('suspend','睡眠'),('hibernate','休眠'),('logout','注销'),('reboot','重新启动'),('poweroff','关机')]):
                     button=QtWidgets.QPushButton(title);button.setObjectName('session_'+action);button.clicked.connect(lambda checked=False,a=action,t=title:self.confirm_session(a,t));row.addWidget(button,i//2,i%2)
+                frame.show()
                 self.apply_snapshot()
             self.set_position();return
         self.page=page;self.title.setText('蓝牙' if page=='bluetooth' else '控制中心');self.back.setVisible(page!='home')
         old=self.scroll.takeWidget()
         if old:old.deleteLater()
         self.volume=self.output=self.mute=self.wifi_toggle=self.network_list=self.power_text=self.profile=self.summary=self.calendar=None
+        self.reset_audio_details()
         content=QtWidgets.QWidget();content.setObjectName('content');layout=QtWidgets.QVBoxLayout(content);layout.setContentsMargins(0,0,0,0);layout.setSpacing(7)
         if page=='bluetooth':
-            frame,box=self.card_widget(layout);row=QtWidgets.QHBoxLayout();self.bluetooth_toggle=QtWidgets.QCheckBox('启用蓝牙');self.bluetooth_toggle.clicked.connect(lambda value:self.action('bluetooth-enabled',{'value':value}));row.addWidget(self.bluetooth_toggle,1);scan=QtWidgets.QPushButton('查找设备');scan.clicked.connect(lambda:self.action('bluetooth-scan',{}));row.addWidget(scan);box.addLayout(row);self.bluetooth_list=QtWidgets.QVBoxLayout();box.addLayout(self.bluetooth_list);self.bluetooth_signature=None;layout.addStretch()
+            frame,box=self.card_widget(layout);row=QtWidgets.QHBoxLayout();self.bluetooth_toggle=QtWidgets.QCheckBox('启用蓝牙');self.bluetooth_toggle.clicked.connect(lambda value:self.action('bluetooth-enabled',{'value':value}));row.addWidget(self.bluetooth_toggle,1);scan=QtWidgets.QPushButton('查找设备');scan.clicked.connect(lambda:self.action('bluetooth-scan',{}));row.addWidget(scan);box.addLayout(row);self.bluetooth_scroll,self.bluetooth_list=self.device_list(box);self.bluetooth_signature=None
         else:self.build_home(layout)
         self.scroll.setWidget(content);content.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False);self.apply_snapshot();self.set_position()
     def build_home(self,layout):
@@ -89,40 +100,113 @@ class FusionView:
             button=self.icon_button(shape,{'Previous':'上一首','PlayPause':'播放 / 暂停','Next':'下一首'}[key],lambda checked=False,m=key:self.media_command(m),30);transport.addWidget(button);self.media_buttons[key]=button
         box.addLayout(transport)
         row=QtWidgets.QHBoxLayout();row.setSpacing(7);layout.addLayout(row)
-        display=self.icon_button('display','显示设置',lambda:self.launch_args('ukui-control-center',['-m','Display']),43);display.setStyleSheet('background:rgba(70,80,100,180);border-radius:21px;');row.addWidget(display)
-        power=self.icon_button('power','电池、电源与会话',lambda:self.navigate('power'),43);power.setProperty('primary',True);power.setStyleSheet('background:#bd803d;border-radius:21px;');row.addWidget(power)
-        dndframe,dndbox=self.card_widget(radius=23);dndframe.setFixedHeight(43);row.addWidget(dndframe,1);dndbox.setContentsMargins(8,0,8,0);self.dnd=QtWidgets.QPushButton('勿扰模式');self.dnd.setIcon(glyph('bell'));self.dnd.setCheckable(True);self.dnd.setFixedHeight(41);self.dnd.setProperty('flatText',True);self.dnd.clicked.connect(lambda checked:self.action('dnd',{'value':checked}));dndbox.addWidget(self.dnd);self.dnd_card=dndframe
+        self.quick_cards={};self.quick_buttons={}
+        for name,title,tip,icon,callback in (
+            ('display','显示设置','显示设置','display',lambda:self.launch_args('ukui-control-center',['-m','Display'])),
+            ('power','电源','电池、电源与会话','power',lambda:self.navigate('power')),
+            ('dnd','勿扰模式','勿扰模式','bell',lambda checked:self.action('dnd',{'value':checked}))):
+            frame,box=self.card_widget(radius=21);frame.setFixedHeight(43);frame.setMinimumWidth(0)
+            frame.setSizePolicy(QtWidgets.QSizePolicy.Ignored,QtWidgets.QSizePolicy.Fixed)
+            row.addWidget(frame,1);box.setContentsMargins(0,0,0,0)
+            button=QtWidgets.QPushButton(title);button.setObjectName(name+'_quick_action');button.setIcon(glyph(icon,'#e6b66c' if name=='power' else '#e6edf7'))
+            button.setIconSize(QtCore.QSize(19,19));button.setToolTip(tip);button.setAccessibleName(tip);button.setProperty('quickAction',True);button.setFixedHeight(41);button.setCheckable(name=='dnd');button.clicked.connect(callback)
+            box.addWidget(button);self.quick_cards[name]=frame;self.quick_buttons[name]=button
+        self.dnd=self.quick_buttons['dnd'];self.dnd_card=self.quick_cards['dnd']
         frame,box=self.card_widget(layout);self.brightness,self.brightness_label=self.slider_card(box,'显示亮度','sun',5,100,'brightness');self.brightness.setToolTip('通过系统显示服务调节画面亮度；显示器的其他选项可从显示设置打开。');frame.setFixedHeight(70)
         frame,box=self.card_widget(layout);self.build_audio(box);frame.setFixedHeight(76)
         frame,box=self.card_widget(layout);head=QtWidgets.QHBoxLayout();title=self.label('通知历史');title.setProperty('cardTitle',True);head.addWidget(title,1);self.clear_notifications=QtWidgets.QPushButton('清空');self.clear_notifications.setFixedHeight(25);self.clear_notifications.clicked.connect(lambda:self.action('notifications-clear',{}));head.addWidget(self.clear_notifications);box.addLayout(head);self.notification_reader=QtWidgets.QTextBrowser();self.notification_reader.setObjectName('notificationReader');self.notification_reader.setOpenLinks(False);self.notification_reader.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff);self.notification_reader.setMinimumHeight(55);self.notification_reader.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Ignored);box.addWidget(self.notification_reader,1);self.notification_signature=None
         nav=QtWidgets.QHBoxLayout();self.notification_prev=QtWidgets.QPushButton('‹');self.notification_next=QtWidgets.QPushButton('›');self.notification_prev.setFixedSize(23,22);self.notification_next.setFixedSize(23,22);self.notification_prev.clicked.connect(lambda:self.page_notifications(-1));self.notification_next.clicked.connect(lambda:self.page_notifications(1));self.notification_count=self.label('',True);nav.addWidget(self.notification_prev);nav.addWidget(self.notification_count);nav.addWidget(self.notification_next);nav.addStretch();self.system_notifications=QtWidgets.QPushButton('系统通知');self.system_notifications.setFixedHeight(24);self.system_notifications.clicked.connect(self.open_system_notifications);nav.addWidget(self.system_notifications);box.addLayout(nav)
         foot,box=self.card_widget(layout,17);foot.setFixedHeight(38);box.setContentsMargins(9,3,9,3);row=QtWidgets.QHBoxLayout();self.power_summary_button=QtWidgets.QPushButton('电池');self.power_summary_button.setProperty('flatText',True);self.power_summary_button.clicked.connect(lambda:self.navigate('power'));row.addWidget(self.power_summary_button,1);settings=QtWidgets.QPushButton('设置');settings.clicked.connect(lambda:self.launch_args(str(__import__('pathlib').Path.home()/'.local/bin/kylin-lqui-settings'),['--page','panel:layout']));row.addWidget(settings);row.addWidget(self.icon_button('close','收起',self.dismiss,27));box.addLayout(row)
     def slider_card(self,box,title,icon_name,low,high,operation):
-        head=QtWidgets.QHBoxLayout();head.addWidget(self.label(title),1);readout=self.label('—');head.addWidget(readout);box.addLayout(head);row=QtWidgets.QHBoxLayout();icon=QtWidgets.QLabel();icon.setPixmap(glyph(icon_name,size=17).pixmap(17,17));row.addWidget(icon);slider=QtWidgets.QSlider(QtCore.Qt.Horizontal);slider.setRange(low,high);row.addWidget(slider,1);box.addLayout(row);slider.valueChanged.connect(lambda value:readout.setText(str(value)+'%'));self.bind_slider(slider,operation);return slider,readout
+        head=QtWidgets.QHBoxLayout();head.addWidget(self.label(title),1);readout=self.slider_readout();head.addWidget(readout);box.addLayout(head);row=QtWidgets.QHBoxLayout();icon=QtWidgets.QLabel();icon.setPixmap(glyph(icon_name,size=17).pixmap(17,17));row.addWidget(icon);slider=QtWidgets.QSlider(QtCore.Qt.Horizontal);slider.setRange(low,high);row.addWidget(slider,1);box.addLayout(row);slider.valueChanged.connect(lambda value:readout.setText(str(value)+'%'));self.bind_slider(slider,operation);return slider,readout
+    def slider_readout(self):
+        label=self.label('—');label.setWordWrap(False);label.setFixedSize(72,20);label.setAlignment(QtCore.Qt.AlignRight|QtCore.Qt.AlignVCenter);return label
     def bind_slider(self,slider,operation):
-        slider.sliderReleased.connect(lambda:self.action(operation,{'value':slider.value()}))
+        def commit(value):
+            values={'value':value}
+            if operation=='input-volume':
+                values['id']=(self.data.get('microphone',{}).get('selected') or {}).get('id')
+                if not values['id']:return
+            self.action(operation,values)
+        slider.sliderReleased.connect(lambda:commit(slider.value()))
         def keyboard(action):
             if slider.isSliderDown():return
-            value=slider.sliderPosition();QtCore.QTimer.singleShot(0,lambda:self.action(operation,{'value':value}))
+            value=slider.sliderPosition();QtCore.QTimer.singleShot(0,lambda:commit(value))
         slider.actionTriggered.connect(keyboard)
-    def build_audio(self,box):
-        head=QtWidgets.QHBoxLayout();head.addWidget(self.label('声音'),1);self.volume_label=self.label('—');head.addWidget(self.volume_label)
+    def build_audio(self,box,title='声音'):
+        head=QtWidgets.QHBoxLayout();head.addWidget(self.label(title),1);self.volume_label=self.slider_readout();head.addWidget(self.volume_label)
         if self.page=='home':
             output=self.icon_button('chevron','输出设备与声音设置',lambda:self.navigate('sound'),24);head.addWidget(output)
         box.addLayout(head);row=QtWidgets.QHBoxLayout();self.mute=self.icon_button('sound','静音 / 取消静音',lambda:self.action('mute',{'value':not (self.data.get('audio',{}).get('selected') or {}).get('muted',False)}),26);row.addWidget(self.mute);self.volume=QtWidgets.QSlider(QtCore.Qt.Horizontal);self.volume.setRange(0,100);row.addWidget(self.volume,1);box.addLayout(row);label=self.volume_label;self.volume.valueChanged.connect(lambda value:label.setText(str(value)+'%'));self.bind_slider(self.volume,'volume')
-    def set_position(self):
+    def reset_audio_details(self):
+        self.audio_device_lists={};self.mic_volume=None;self.mic_mute=None;self.mic_label=None
+    def build_sound_panel(self,box):
+        self.build_audio(box,'扬声器与耳机');self.build_audio_devices(box,'output','输出设备')
+        line=QtWidgets.QFrame();line.setFixedHeight(1);line.setStyleSheet('background:rgba(220,235,255,45);border:0;');box.addWidget(line)
+        head=QtWidgets.QHBoxLayout();head.addWidget(self.label('麦克风'),1);self.mic_label=self.slider_readout();head.addWidget(self.mic_label);box.addLayout(head)
+        row=QtWidgets.QHBoxLayout();self.mic_mute=self.icon_button('microphone','麦克风静音 / 取消静音',self.toggle_microphone,26);row.addWidget(self.mic_mute)
+        self.mic_volume=QtWidgets.QSlider(QtCore.Qt.Horizontal);self.mic_volume.setRange(0,100);row.addWidget(self.mic_volume,1);box.addLayout(row)
+        readout=self.mic_label;self.mic_volume.valueChanged.connect(lambda value:readout.setText(str(value)+'%'));self.bind_slider(self.mic_volume,'input-volume')
+        self.build_audio_devices(box,'input','输入设备')
+    def build_audio_devices(self,box,kind,title):
+        box.addWidget(self.label(title,True));scroll,rows=self.device_list(box)
+        empty=self.label('正在读取设备…',True);rows.addWidget(empty)
+        self.audio_device_lists[kind]={'scroll':scroll,'layout':rows,'buttons':{},'empty':empty}
+    def update_audio_devices(self,kind,items,selected,busy,loading=False):
+        view=self.audio_device_lists.get(kind)
+        if view is None:return
+        ids={item['id'] for item in items};buttons=view['buttons']
+        for ident in list(buttons):
+            if ident not in ids:
+                button=buttons.pop(ident);view['layout'].removeWidget(button);button.hide();button.deleteLater()
+        view['empty'].setText('正在读取设备…' if loading else '未检测到输出设备' if kind=='output' else '未检测到麦克风')
+        view['empty'].setVisible(not items)
+        for item in items:
+            ident=item['id'];button=buttons.get(ident)
+            if button is None:
+                button=AudioDeviceButton(ident,kind);buttons[ident]=button;view['layout'].addWidget(button)
+                button.clicked.connect(lambda checked=False,b=button:self.choose_audio_device(b.kind,b.device_id));button.show()
+            button.set_device(item['name'],ident==selected);button.setEnabled(not busy)
+    def choose_audio_device(self,kind,ident):
+        domain='audio' if kind=='output' else 'microphone'
+        if ident==(self.data.get(domain,{}).get('selected') or {}).get('id'):return
+        self.action(kind,{'id':ident})
+    def toggle_microphone(self):
+        selected=self.data.get('microphone',{}).get('selected') or {}
+        if selected.get('id'):self.action('input-mute',{'id':selected['id'],'value':not selected.get('muted',False)})
+    def page_geometry(self,page):
         screen=QtWidgets.QApplication.screenAt(self.anchor.center()) or QtWidgets.QApplication.primaryScreen();area=screen.availableGeometry().adjusted(7,7,-7,-7)
-        self.resize(min(390,area.width()),min(660 if self.page=='home' else 440 if self.page in ('wifi','bluetooth') else 520 if self.page=='power' else 340 if self.page=='sound' else 570,area.height()))
+        # One stable canvas for internal pages keeps the header/back target in
+        # place instead of jumping between 340/440/520/660px bottom anchors.
+        size=QtCore.QSize(min(390,area.width()),min(660,area.height()))
         # Align the visible card edge, excluding the transparent window margin.
-        x=self.anchor.left()-self.layout().contentsMargins().left();y=self.anchor.top()-self.height()-7
+        x=self.anchor.left()-self.layout().contentsMargins().left();y=self.anchor.top()-size.height()-7
         if y<area.top():y=self.anchor.bottom()+7
-        point=QtCore.QPoint(max(area.left(),min(x,area.right()-self.width()+1)),max(area.top(),min(y,area.bottom()-self.height()+1)))
+        point=QtCore.QPoint(max(area.left(),min(x,area.right()-size.width()+1)),max(area.top(),min(y,area.bottom()-size.height()+1)))
+        return QtCore.QRect(point,size)
+    def set_position(self):
+        target=self.page_geometry(self.page)
+        # X11/WM rounding at fractional DPR may settle 390 logical pixels to
+        # 389. Keep that settled width instead of resizing/rebaking every poll.
+        if self.isVisible() and abs(self.width()-target.width())<=1:target.setWidth(self.width())
+        self.resize(target.size());point=target.topLeft()
         self.popup_target=QtCore.QRect(point,self.size());self.material_origin=point
         if self.popup_motion.state()!=QtCore.QAbstractAnimation.Running:self.move(point)
-    def capture_backdrop(self):self.backdrop=blurred_capture(self,async_native=True);self.update();[card.update() for card in self.findChildren(GlassCard)]
-    def apply_snapshot(self):
+    def capture_backdrop(self):
+        # A calendar-first opening can return to the taller home, and near an
+        # edge some pages flip to the other side of the anchor. Capture their
+        # union while hidden; internal navigation must never capture itself.
+        self.backdrop_region=QtCore.QRect(self.geometry())
+        for page in ('home','wifi','bluetooth','sound','power','calendar'):
+            self.backdrop_region=self.backdrop_region.united(self.page_geometry(page))
+        self.backdrop=blurred_capture(self,async_native=True);self.update()
+    def apply_snapshot(self,force=False):
+        if not force and (self.opening_pending or self.navigation_active or self.popup_motion.state()==QtCore.QAbstractAnimation.Running):
+            self.snapshot_pending=True;return
+        self.snapshot_pending=False
         self.apply_detail_snapshot()
-        if self.page!='home':self.status.setVisible(bool(self.status.text()));self.set_position()
+        self.status.setVisible(bool(self.status.text()) and (self.page!='home' or not self.changing))
+        if self.page!='home':self.set_position()
         if self.mute:self.mute.setText('');self.mute.setIcon(glyph('muted' if (self.data.get('audio',{}).get('selected') or {}).get('muted') else 'sound'))
         if self.page=='power':
             for key,enabled in self.data.get('session',{}).get('actions',{}).items():
@@ -164,6 +248,9 @@ class FusionView:
         elif not data.get('devices'):self.bluetooth_list.addWidget(self.label('点击“查找设备”，配对确认由系统处理。',True))
         for device in data.get('devices',[]):
             button=QtWidgets.QPushButton(device['name'].replace('&','&&')+' · '+('断开连接' if device['connected'] else '连接' if device['paired'] else '配对并连接'));button.setEnabled(not self.is_busy('bluetooth'));button.clicked.connect(lambda checked=False,d=device:self.action('bluetooth-device',{'id':d['id']}));self.bluetooth_list.addWidget(button)
+        for i in range(self.bluetooth_list.count()):
+            widget=self.bluetooth_list.itemAt(i).widget()
+            if widget:widget.show()
     def page_notifications(self,delta):self.notification_page=max(0,self.notification_page+delta);self.notification_signature=None;self.update_notifications()
     def update_notifications(self):
         data=self.data.get('notifications',{});entries=data.get('entries',[]);pages=max(1,math.ceil(len(entries)/2));self.notification_page=min(self.notification_page,pages-1);signature=json.dumps([entries,self.notification_page,data.get('systemCount')],sort_keys=True)

@@ -1,0 +1,112 @@
+{
+  "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261102-124641-31ca73e1",
+  "sourceMatches": true,
+  "panelPluginMatchesBuild": true,
+  "controlTests": 49,
+  "nativeSurfaceTests": 7,
+  "navigationDurationMs": 190,
+  "navigationDisplacementLogicalPixels": 14,
+  "navigationGeometryConstant": true,
+  "liveNavigation": {
+    "pages": [
+      {
+        "page": "wifi",
+        "samples": 14,
+        "sawTransition": true,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ]
+      },
+      {
+        "page": "home",
+        "samples": 14,
+        "sawTransition": true,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ]
+      },
+      {
+        "page": "bluetooth",
+        "samples": 14,
+        "sawTransition": true,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ]
+      },
+      {
+        "page": "home",
+        "samples": 16,
+        "sawTransition": true,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ]
+      },
+      {
+        "page": "sound",
+        "samples": 14,
+        "sawTransition": true,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ]
+      },
+      {
+        "page": "home",
+        "samples": 17,
+        "sawTransition": true,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ]
+      },
+      {
+        "page": "power",
+        "samples": 18,
+        "sawTransition": true,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ]
+      },
+      {
+        "page": "home",
+        "samples": 18,
+        "sawTransition": true,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ]
+      }
+    ],
+    "verified": true
+  },
+  "panelRestart": {
+    "oldPid": 4668,
+    "newPid": 27469,
+    "aiPidUnchanged": true,
+    "panelConfigUnchanged": true
+  },
+  "indicatorStateTest": "panel-layout-compat-1.5 passed",
+  "nativeIndicatorIntegration": "dock_oem.py --indicators-only passed: grouped active, zero active, background and closed states",
+  "broaderOemLimitation": "Full dock fixture stopped at the pinned-drag assertion on both the previous installed binary and this binary; not claimed as a full-suite pass."
+}

@@ -37,10 +37,22 @@ xvfb-run -a python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/tests
 
 ## 快捷设置的玻璃桥接
 
-构建 Panel 时会同时生成 `lqui-glass-bridge`，它直接复用开始菜单的 CPU 折射绘制。随后运行统一设置安装脚本，桥接库会一并进入用户本地的版本化安装目录。只安装 Python 设置程序、不构建此库时，会使用可读的磨砂降级。
+构建 Panel 时会同时生成 `lqui-glass-bridge`，它使用共享 Snell GPU 材质与有界卡片缓存；缺少 OpenGL 时走 CPU 回退。控制中心通过可选 C ABI 启用自适应烟色表面，其他调用方默认材质保持不变。随后运行统一设置安装脚本，桥接库会一并进入用户本地的版本化安装目录。只安装 Python 设置程序、不构建此库时，会使用可读的磨砂降级。
 
 ```bash
 cmake --build code-work/ukui-liquid-desktop/apps/ukui-panel-liquid/build --target lqui-glass-bridge -j2
 python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/install.py
 QT_QPA_PLATFORM=offscreen python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/tests/test_native_glass.py
 ```
+
+安装器会在没有用户覆盖时创建快捷设置登录预加载项，运行 `--resident`。它只在启动时预热一次；隐藏后不持续轮询/渲染，入口悬停预备三秒未使用便释放场景。本机已有发布的隐藏 PSS 约 51 MiB，这是减少冷启动延迟的内存成本。详见 [首次响应与驻留说明](CONTROL_CENTER_RESPONSIVENESS_FIX_20261102.md)。
+
+补充回归命令（原生桥路径可按实际构建目录调整）：
+
+```bash
+UKUI_LIQUID_GLASS_NO_GL=1 xvfb-run -a /usr/bin/python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/tests/test_control_center.py
+LQUI_NATIVE_GLASS_LIBRARY="$PWD/code-work/ukui-liquid-desktop/apps/ukui-panel-liquid/build/liblqui-glass-bridge.so" /usr/bin/python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/tests/test_adaptive_glass.py
+# 在独立进程设置 UKUI_LIQUID_GLASS_NO_GL=1，再运行同一材质套件验证 CPU 回退。
+```
+
+`test_control_center_surface.py` 在有合成器的 X11 桌面上验证实际屏幕与完整重绘是否一致，运行时会显示合成测试窗口。GPU 材质通过、控件抓图通过和真实映射画面通过分别记录，不能相互替代。

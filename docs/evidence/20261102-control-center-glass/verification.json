@@ -1,0 +1,98 @@
+{
+  "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261102-091817-2fcda96b",
+  "sourceMatches": true,
+  "unitTests": 29,
+  "mappedSurfaceTests": 5,
+  "nativeNavigationVerified": true,
+  "nativeScreenComparisons": [
+    {
+      "tag": "home",
+      "samples": 3274,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "wifi-0",
+      "samples": 2754,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "bluetooth-0",
+      "samples": 2754,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "sound-0",
+      "samples": 918,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "power-0",
+      "samples": 1020,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "wifi-1",
+      "samples": 2754,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "bluetooth-1",
+      "samples": 2754,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "sound-1",
+      "samples": 918,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "power-1",
+      "samples": 1020,
+      "mismatchFraction": 0.0
+    }
+  ],
+  "fixtureLongListVerified": true,
+  "fixtureLongListScreenComparisons": [
+    {
+      "tag": "home",
+      "samples": 3274,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "wifi-0",
+      "samples": 2754,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "wifi-bottom-0",
+      "samples": 2754,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "bluetooth-0",
+      "samples": 2754,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "sound-0",
+      "samples": 918,
+      "mismatchFraction": 0.0
+    },
+    {
+      "tag": "power-0",
+      "samples": 1020,
+      "mismatchFraction": 0.0
+    }
+  ],
+  "realWheelReachedLastFixtureNetwork": true,
+  "advancedSettingsVisible": true,
+  "cacheEntriesAfterNavigation": 30,
+  "idleMaterialRendersStable": true,
+  "originalHomeMismatchFraction": 0.8127672571777642,
+  "otherComponents": {
+    "launcher": "mapped steady and closing screenshots inspected",
+    "aiStation": "mapped steady and closing screenshots inspected",
+    "desktopFencesAndWidgets": "source callbacks invalidate parent; no matching missing-final-update found"
+  },
+  "personalScreenshots": "kept only in local maintenance directory"
+}

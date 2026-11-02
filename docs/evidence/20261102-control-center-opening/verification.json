@@ -1,0 +1,32 @@
+{
+  "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261102-100324-9b314bbf",
+  "sourceMatches": true,
+  "preservedUserFiles": true,
+  "nativeLibraryUnchanged": true,
+  "controlTests": 36,
+  "mappedSurfaceTests": 6,
+  "openingMetricsDuring60fpsRecording": [
+    {
+      "firstVisibleMs": 285.48,
+      "maxFrameIntervalMs": 20.58
+    },
+    {
+      "firstVisibleMs": 171.68,
+      "maxFrameIntervalMs": 17.44
+    }
+  ],
+  "materialBuildsDuringMotion": 0,
+  "emptyRendersDuringMotion": 0,
+  "automaticScanRequestsFromArrow": 1,
+  "wifiEntryTriggeredScan": true,
+  "wifiScanCompleted": true,
+  "backendScanProbe": {
+    "requests": 1,
+    "beforeCount": 1,
+    "afterCount": 9,
+    "elapsedMs": 2841,
+    "completedGenerationAdvanced": true
+  },
+  "verified": true,
+  "screenshotsAndRecording": "Local maintenance/glass-opening-20261102 only; not committed"
+}

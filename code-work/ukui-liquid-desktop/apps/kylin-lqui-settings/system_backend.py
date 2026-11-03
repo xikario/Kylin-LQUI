@@ -68,14 +68,21 @@ class SystemBackend(DesktopControls):
                      'analog-input-headset-mic':'耳麦麦克风','analog-output-lineout':'线路输出',
                      'analog-input-linein':'线路输入'}
         for item in devices:
-            current=item['id'];seen=set();chain=[];base=None
+            current=item['id'];seen=set();chain=[];chain_ids=[];base=None
             while current in by_id and current not in seen:
-                seen.add(current);block=blocks[current];chain.append(block)
+                seen.add(current);block=blocks[current];chain.append(block);chain_ids.append(current)
                 master=self.pulse_property(block,'device.master_device')
                 if not master:base=by_id[current];break
                 current=master
             own=blocks[item['id']]
             is_filter=bool(self.pulse_property(own,'device.master_device')) or self.pulse_property(own,'device.class')=='filter'
+            if kind=='output':
+                # A filter may be unmuted while its hardware master is muted
+                # after a jack change. Report the entire playback path, without
+                # changing audio as a side effect of polling or hotplug events.
+                item.update(ownMuted=self.pulse_field(own,'Mute')=='yes',
+                            muted=any(self.pulse_field(b,'Mute')=='yes' for b in chain),
+                            muteTargets=chain_ids if base is not None and not (base is item and is_filter) else [])
             if base is None or (base is item and is_filter):
                 # Never invent a physical route for dangling/cyclic filters.
                 if is_filter:item.update(displayName=re.sub(r' \(echo cancelled with .+\)$','（回声消除）',item['name']),detail='虚拟处理通道 · 物理设备暂不可确认')
@@ -198,17 +205,32 @@ class SystemBackend(DesktopControls):
             try:result[key]=method()
             except (GLib.Error,RuntimeError,OSError,subprocess.SubprocessError,ValueError):result[key]={'available':False}
         return result
+    def set_output_mute(self,selected,muted):
+        # Muting just the selected path avoids silencing unrelated routes.
+        # Explicit unmute must also release every verified upstream mute.
+        targets=[selected['id']] if muted else selected.get('muteTargets',[selected['id']])
+        if not targets:raise ValueError('音频处理通道的物理设备已变化，请重新选择输出设备。')
+        for sink in reversed(targets):
+            self.command(['/usr/bin/pactl','set-sink-mute',sink,'1' if muted else '0'])
     def action(self,operation,values):
         if operation=='volume':
             volume=values.get('value')
             if type(volume) is not int or not 0<=volume<=100:raise ValueError('音量应在 0 到 100 之间')
-            self.command(['/usr/bin/pactl','set-sink-volume','@DEFAULT_SINK@',str(volume)+'%'])
+            selected=self.audio().get('selected')
+            if not selected:raise ValueError('音频设备已变化，请刷新')
+            self.command(['/usr/bin/pactl','set-sink-volume',selected['id'],str(volume)+'%'])
+            # A deliberate nonzero slider gesture means "play at this level".
+            # Bind both writes to the same resolved output if the default moves.
+            if volume and selected.get('muted'):self.set_output_mute(selected,False)
             # Confirm just audio; Wi-Fi/power discovery must not delay the
             # committed slider value or its short volume-preview sound.
             return {'audio':self.audio()}
         elif operation=='mute':
             if type(values.get('value')) is not bool:raise ValueError('无效的静音状态')
-            self.command(['/usr/bin/pactl','set-sink-mute','@DEFAULT_SINK@','1' if values['value'] else '0'])
+            selected=self.audio().get('selected')
+            if not selected:raise ValueError('音频设备已变化，请刷新')
+            self.set_output_mute(selected,values['value'])
+            return {'audio':self.audio()}
         elif operation=='output':
             sink=values.get('id');outputs=self.audio()['outputs']
             if sink not in [item['id'] for item in outputs]:raise ValueError('音频设备已变化，请刷新')

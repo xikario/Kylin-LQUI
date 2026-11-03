@@ -678,6 +678,46 @@ Sink #0
         unplugged=b.audio();self.assertEqual(unplugged['selected']['id'],current['id'])
         self.assertEqual(unplugged['selected']['displayName'],'扬声器（回声消除）')
         self.assertTrue(all(args[1] in ('info','list') for args in calls))
+    def test_output_filter_reports_hardware_mute_independent_of_order(self):
+        blocks=['Sink #1\n Name: processed\n Mute: no\n Properties:\n  device.master_device = "remap"\n',
+                'Sink #2\n Name: remap\n Mute: no\n Properties:\n  device.master_device = "hardware"\n',
+                'Sink #0\n Name: hardware\n Mute: yes\n Active Port: analog-output-speaker\n']
+        b=SystemBackend();calls=[]
+        for ordered in (blocks,list(reversed(blocks))):
+            b.command=lambda args:calls.append(args) or ('Default Sink: processed\n' if args[-1]=='info' else ''.join(ordered))
+            selected=b.audio()['selected']
+            self.assertTrue(selected['muted']);self.assertFalse(selected['ownMuted'])
+            self.assertEqual(selected['muteTargets'],['processed','remap','hardware'])
+        self.assertTrue(all(args[1] in ('info','list') for args in calls))
+    def test_explicit_unmute_releases_master_chain_and_mute_only_selected(self):
+        b=SystemBackend();calls=[]
+        selected={'id':'processed','muted':True,'muteTargets':['processed','remap','hardware']}
+        b.audio=lambda:{'selected':selected};b.command=lambda args:calls.append(args)
+        with patch.object(b,'snapshot',side_effect=AssertionError('must not wait for slow services')):
+            b.action('mute',{'value':False})
+        self.assertEqual(calls,[['/usr/bin/pactl','set-sink-mute',sink,'0'] for sink in ('hardware','remap','processed')])
+        calls.clear();b.action('mute',{'value':True})
+        self.assertEqual(calls,[['/usr/bin/pactl','set-sink-mute','processed','1']])
+    def test_nonzero_volume_recovers_muted_master_but_zero_preserves_mute(self):
+        b=SystemBackend();calls=[]
+        selected={'id':'processed','muted':True,'muteTargets':['processed','hardware']}
+        b.audio=lambda:{'selected':selected};b.command=lambda args:calls.append(args)
+        b.action('volume',{'value':46})
+        self.assertEqual(calls,[['/usr/bin/pactl','set-sink-volume','processed','46%'],
+                                ['/usr/bin/pactl','set-sink-mute','hardware','0'],
+                                ['/usr/bin/pactl','set-sink-mute','processed','0']])
+        calls.clear();b.action('volume',{'value':0})
+        self.assertEqual(calls,[['/usr/bin/pactl','set-sink-volume','processed','0%']])
+    def test_unmute_does_not_guess_dangling_or_cyclic_master(self):
+        b=SystemBackend();writes=[]
+        for master in ('missing','processed'):
+            text='Sink #0\n Name: processed\n Mute: yes\n Properties:\n  device.master_device = "'+master+'"\n'
+            def command(args):
+                if args[1] not in ('info','list'):writes.append(args)
+                return 'Default Sink: processed\n' if args[-1]=='info' else text
+            b.command=command
+            with self.assertRaises(ValueError):b.action('mute',{'value':False})
+        self.assertEqual(writes,[])
     def test_microphone_filter_chain_inherits_real_input_port_not_its_name(self):
         text='''Source #4
  Name: noiseReduceSource
@@ -774,12 +814,12 @@ Source #8
         self.assertEqual([args[3] for args in calls],['RequestScan'])
     def test_pulseaudio_legacy_format(self):
         b=SystemBackend();b.command=lambda argv:'Default Sink: test\n' if argv[-1]=='info' else 'Sink #0\n Name: test\n Description: Speakers\n Mute: yes\n Volume: front-left: 32768 / 50% / -18.06 dB, front-right: 32768 / 50% / -18.06 dB\n'
-        self.assertEqual(b.audio()['selected'],{'id':'test','name':'Speakers','volume':50,'muted':True})
+        self.assertEqual(b.audio()['selected'],{'id':'test','name':'Speakers','volume':50,'muted':True,'ownMuted':True,'muteTargets':['test']})
     def test_command_input_validation(self):
         b=SystemBackend();calls=[];b.command=lambda argv:calls.append(argv) or '';b.snapshot=lambda:{};b.audio=lambda:copy.deepcopy(SAMPLE['audio'])
         for value in (-1,101,True,'60; malicious'):
             with self.assertRaises(ValueError):b.action('volume',{'value':value})
-        self.assertEqual(calls,[]);b.action('volume',{'value':57});self.assertEqual(calls,[['/usr/bin/pactl','set-sink-volume','@DEFAULT_SINK@','57%']])
+        self.assertEqual(calls,[]);b.action('volume',{'value':57});self.assertEqual(calls,[['/usr/bin/pactl','set-sink-volume','speaker','57%']])
     def test_volume_confirmation_does_not_wait_for_other_services(self):
         b=SystemBackend();calls=[];b.command=lambda args:calls.append(args) or '';b.audio=lambda:copy.deepcopy(SAMPLE['audio'])
         with patch.object(b,'snapshot',side_effect=AssertionError('slow services must not be queried')):

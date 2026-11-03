@@ -68,7 +68,34 @@ def main():
                         assert SystemBackend().audio()['selected']['volume']==slider.value()
                         results.append({'page':page,'gesture':gesture,'before':initial,'after':slider.value(),'completedMs':elapsed})
                         QtTest.QTest.qWait(100)
-                report={'verified':True,'gestures':results,'feedback':window.volume_feedback.state(),'hardwareModulesLoaded':False}
+                # Reproduce the hardware/filter mismatch on a real private
+                # Pulse server. Its remap sink has the same master property as
+                # the desktop echo-cancel sink, without opening any real mic.
+                command('load-module','module-remap-sink','master=speakers','sink_name=processed')
+                command('set-default-sink','processed')
+                wait(lambda:(window.data.get('audio',{}).get('selected') or {}).get('id')=='processed')
+                routes=[]
+                for page in ('home','sound'):
+                    if page!=window.page:window.navigate(page);wait(lambda:not window.navigation_active and not window.jobs)
+                    for gesture in ('unmute','slider'):
+                        command('set-sink-mute','speakers','1');command('set-sink-mute','processed','0')
+                        wait(lambda:window.data['audio']['selected']['muted'] and not window.jobs)
+                        assert not window.data['audio']['selected']['ownMuted']
+                        QtTest.QTest.qWait(150)
+                        # Merely showing/refreshing the page must preserve mute.
+                        assert SystemBackend().audio()['selected']['muted']
+                        before=window.volume_feedback.completions
+                        if gesture=='unmute':
+                            QtTest.QTest.mouseClick(window.mute,QtCore.Qt.LeftButton)
+                        else:
+                            slider=window.volume
+                            fraction=1 if slider.value()>50 else 3
+                            QtTest.QTest.mouseClick(slider,QtCore.Qt.LeftButton,pos=QtCore.QPoint(slider.width()*fraction//4,slider.height()//2))
+                        wait(lambda:not window.data['audio']['selected']['muted'] and not window.jobs)
+                        assert all(not item['muted'] for item in SystemBackend().audio()['outputs'])
+                        if gesture=='slider':wait(lambda:window.volume_feedback.completions>before)
+                        routes.append({'page':page,'gesture':gesture,'masterUnmuted':True})
+                report={'verified':True,'gestures':results,'masterMuteRecovery':routes,'feedback':window.volume_feedback.state(),'hardwareModulesLoaded':False}
                 print(json.dumps(report))
             finally:recorder.terminate();recorder.wait(timeout=2)
         finally:

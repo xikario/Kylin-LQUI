@@ -1,0 +1,1196 @@
+{
+  "fences:appearance": {
+    "ok": true,
+    "module": "fences",
+    "page": "appearance",
+    "title": "液态外观",
+    "dirty": false,
+    "fields": [
+      {
+        "id": "runtime-fenceLiquidGlass",
+        "name": "fenceLiquidGlass",
+        "kind": "boolean",
+        "label": "启用分区液态玻璃",
+        "value": true,
+        "enabled": true,
+        "ui": {
+          "group": "glass",
+          "order": 10
+        }
+      },
+      {
+        "id": "runtime-fenceGlassHelp",
+        "name": "fenceGlassHelp",
+        "kind": "note",
+        "label": "",
+        "value": "此开关只控制分区，小组件保留各自皮肤。",
+        "enabled": true,
+        "ui": {
+          "group": "glass",
+          "order": 11,
+          "role": "help",
+          "for": "fenceLiquidGlass"
+        }
+      },
+      {
+        "id": "runtime-glassScrim",
+        "name": "glassScrim",
+        "kind": "choice",
+        "label": "玻璃通透档位",
+        "value": 1,
+        "enabled": true,
+        "ui": {
+          "group": "glass",
+          "order": 20
+        },
+        "options": [
+          "易读",
+          "均衡",
+          "通透",
+          "轻微"
+        ]
+      },
+      {
+        "id": "runtime-glassScrimHelp",
+        "name": "glassScrimHelp",
+        "kind": "note",
+        "label": "",
+        "value": "玻璃按背后壁纸的局部亮度自动压暗，保证文字可读。档位越靠后越通透。",
+        "enabled": true,
+        "ui": {
+          "group": "glass",
+          "order": 21,
+          "role": "help",
+          "for": "glassScrim"
+        }
+      },
+      {
+        "id": "runtime-reduceMotion",
+        "name": "reduceMotion",
+        "kind": "boolean",
+        "label": "减少动态效果",
+        "value": false,
+        "enabled": true,
+        "ui": {
+          "group": "motion",
+          "order": 10
+        }
+      },
+      {
+        "id": "runtime-reduceMotionHelp",
+        "name": "reduceMotionHelp",
+        "kind": "note",
+        "label": "",
+        "value": "关闭弹出、折叠和排序动画，状态立即切换。",
+        "enabled": true,
+        "ui": {
+          "group": "motion",
+          "order": 11,
+          "role": "help",
+          "for": "reduceMotion"
+        }
+      },
+      {
+        "id": "runtime-refreshMaterialButton",
+        "name": "refreshMaterialButton",
+        "kind": "action",
+        "label": "刷新壁纸与液态材质",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "actions",
+          "order": 10
+        }
+      }
+    ],
+    "ui": {
+      "version": 1,
+      "layout": "grouped",
+      "groups": [
+        {
+          "key": "glass",
+          "title": "分区液态玻璃",
+          "order": 0,
+          "columns": 1
+        },
+        {
+          "key": "motion",
+          "title": "动态效果",
+          "order": 10,
+          "columns": 1
+        },
+        {
+          "key": "actions",
+          "title": "",
+          "order": 20,
+          "columns": 1
+        }
+      ]
+    }
+  },
+  "fences:wallpaper": {
+    "ok": true,
+    "module": "fences",
+    "page": "wallpaper",
+    "title": "壁纸",
+    "dirty": false,
+    "fields": [
+      {
+        "id": "runtime-wallpaperKind",
+        "name": "wallpaperKind",
+        "kind": "choice",
+        "label": "壁纸类型",
+        "value": 0,
+        "enabled": true,
+        "ui": {
+          "group": "wallpaper",
+          "order": 10
+        },
+        "options": [
+          "静态图片",
+          "视频壁纸（实验性）"
+        ]
+      },
+      {
+        "id": "runtime-wallpaperPreview",
+        "name": "wallpaperPreview",
+        "kind": "preview",
+        "label": "壁纸预览",
+        "value": "iVBORw0KGgoAAAANSUhEUgAAAQQAAACgCAIAAABlkIURAAAACXBIWXMAAA9hAAAPYQGoP6dpAAABsUlEQVR4nO3VMQ0CURRFwb9kNSAJIyRY2QIHSMEJCkgoVgPNMUBB/hYzBt5tTt7yeu8DGOM0ewAchRggYoCIASIGiBggYoCIASIGiBggYoCIASIGiBggYoCIASIGiBggYoCIASIGiBggYoCIASIGiBggYoCIASIGyDp7AP/1eT5mT/jZ+XKbctdngIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBIgaIGCBigIgBslzv2+wNcAg+A0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMEDFAxAARA0QMkC83owhkGzhzAgAAAABJRU5ErkJggg==",
+        "enabled": true,
+        "ui": {
+          "group": "wallpaper",
+          "order": 20,
+          "row": "wallpaperFile",
+          "component": "preview",
+          "alt": "合成静态预览"
+        },
+        "previewStatus": "合成测试图片，不是用户桌面"
+      },
+      {
+        "id": "runtime-wallpaperImagePath",
+        "name": "wallpaperImagePath",
+        "kind": "note",
+        "label": "图片文件",
+        "value": "/example/pictures/wallpaper.png",
+        "enabled": true,
+        "ui": {
+          "group": "wallpaper",
+          "order": 30,
+          "row": "wallpaperFile",
+          "component": "file-picker",
+          "role": "detail",
+          "collapsible": false
+        }
+      },
+      {
+        "id": "runtime-wallpaperImageStatus",
+        "name": "wallpaperImageStatus",
+        "kind": "note",
+        "label": "",
+        "value": "",
+        "enabled": true,
+        "ui": {
+          "group": "wallpaper",
+          "order": 31,
+          "row": "wallpaperFile",
+          "role": "status",
+          "visibleWhen": {
+            "name": "wallpaperKind",
+            "equals": 0
+          }
+        }
+      },
+      {
+        "id": "runtime-wallpaperChooseImage",
+        "name": "wallpaperChooseImage",
+        "kind": "action",
+        "label": "选择图片…",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "wallpaper",
+          "order": 40,
+          "row": "wallpaperFile",
+          "visibleWhen": {
+            "name": "wallpaperKind",
+            "equals": 0
+          }
+        }
+      },
+      {
+        "id": "runtime-wallpaperClearImage",
+        "name": "wallpaperClearImage",
+        "kind": "action",
+        "label": "清空自定义",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "wallpaper",
+          "order": 41,
+          "row": "wallpaperFile",
+          "visibleWhen": {
+            "name": "wallpaperKind",
+            "equals": 0
+          }
+        }
+      },
+      {
+        "id": "runtime-videoWallpaperPath",
+        "name": "videoWallpaperPath",
+        "kind": "text",
+        "label": "视频路径",
+        "value": "/example/videos/sample.mp4",
+        "enabled": true,
+        "ui": {
+          "group": "wallpaper",
+          "order": 50,
+          "row": "wallpaperFile",
+          "component": "file-picker",
+          "visibleWhen": {
+            "name": "wallpaperKind",
+            "equals": 1
+          }
+        }
+      },
+      {
+        "id": "runtime-videoWallpaperStart",
+        "name": "videoWallpaperStart",
+        "kind": "action",
+        "label": "选择视频…",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "wallpaper",
+          "order": 60,
+          "row": "wallpaperFile",
+          "visibleWhen": {
+            "name": "wallpaperKind",
+            "equals": 1
+          }
+        }
+      },
+      {
+        "id": "runtime-wallpaperImageMode",
+        "name": "wallpaperImageMode",
+        "kind": "choice",
+        "label": "显示方式",
+        "value": 1,
+        "enabled": true,
+        "ui": {
+          "group": "display",
+          "order": 10,
+          "visibleWhen": {
+            "name": "wallpaperKind",
+            "equals": 0
+          }
+        },
+        "options": [
+          "系统默认（跟随桌面）",
+          "填满（等比裁切）",
+          "适应（完整显示）",
+          "拉伸（铺满屏幕）",
+          "平铺（原始尺寸重复）",
+          "居中（原始尺寸）"
+        ]
+      },
+      {
+        "id": "runtime-videoWallpaperExperimentalNotice",
+        "name": "videoWallpaperExperimentalNotice",
+        "kind": "note",
+        "label": "",
+        "value": "实验性功能：视频壁纸会增加 CPU / GPU 占用、发热和风扇噪声，启动或切换时可能短暂显示静态画面。需要安静省电时，建议使用静态图片。",
+        "enabled": true,
+        "ui": {
+          "group": "apply",
+          "order": 10,
+          "role": "warning",
+          "visibleWhen": {
+            "name": "wallpaperKind",
+            "equals": 1
+          }
+        }
+      },
+      {
+        "id": "runtime-wallpaperScopeNotice",
+        "name": "wallpaperScopeNotice",
+        "kind": "note",
+        "label": "",
+        "value": "Fences 壁纸只影响 Fences 桌面层，不会修改系统桌面壁纸。",
+        "enabled": true,
+        "ui": {
+          "group": "apply",
+          "order": 20
+        }
+      },
+      {
+        "id": "runtime-wallpaperCopyDetails",
+        "name": "wallpaperCopyDetails",
+        "kind": "note",
+        "label": "图片副本与恢复说明",
+        "value": "已应用图片会保存独立副本，原文件移动或删除后仍可恢复；刷新时优先读取原文件的更新。",
+        "enabled": true,
+        "ui": {
+          "group": "apply",
+          "order": 21,
+          "role": "detail",
+          "collapsible": true
+        }
+      },
+      {
+        "id": "runtime-wallpaperApply",
+        "name": "wallpaperApply",
+        "kind": "action",
+        "label": "应用壁纸",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "apply",
+          "order": 30,
+          "emphasis": "primary"
+        }
+      },
+      {
+        "id": "runtime-wallpaperThemeButton",
+        "name": "wallpaperThemeButton",
+        "kind": "action",
+        "label": "从当前壁纸取色",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "theme",
+          "order": 10
+        }
+      },
+      {
+        "id": "runtime-themePreset",
+        "name": "themePreset",
+        "kind": "choice",
+        "label": "主题配色方案",
+        "value": 0,
+        "enabled": true,
+        "ui": {
+          "group": "theme",
+          "order": 20
+        },
+        "options": [
+          "海湾蓝",
+          "樱花粉",
+          "松石绿",
+          "暮色紫",
+          "石墨灰"
+        ]
+      },
+      {
+        "id": "runtime-themeApplyPreset",
+        "name": "themeApplyPreset",
+        "kind": "action",
+        "label": "应用所选配色",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "theme",
+          "order": 30
+        }
+      },
+      {
+        "id": "runtime-themeApplyExternal",
+        "name": "themeApplyExternal",
+        "kind": "action",
+        "label": "应用外部主题文件",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "theme",
+          "order": 40
+        }
+      },
+      {
+        "id": "runtime-openSystemWallpaper",
+        "name": "openSystemWallpaper",
+        "kind": "action",
+        "label": "打开系统壁纸设置",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "theme",
+          "order": 50
+        }
+      }
+    ],
+    "ui": {
+      "version": 1,
+      "layout": "grouped",
+      "groups": [
+        {
+          "key": "wallpaper",
+          "title": "壁纸 · 修改后需应用",
+          "order": 0,
+          "columns": 1
+        },
+        {
+          "key": "display",
+          "title": "显示方式",
+          "order": 10,
+          "columns": 1
+        },
+        {
+          "key": "apply",
+          "title": "",
+          "order": 20,
+          "columns": 1
+        },
+        {
+          "key": "theme",
+          "title": "主题配色 · 按对应按钮立即执行",
+          "order": 30,
+          "columns": 1
+        }
+      ]
+    }
+  },
+  "fences:activity": {
+    "ok": true,
+    "module": "fences",
+    "page": "activity",
+    "title": "活动统计",
+    "dirty": false,
+    "fields": [
+      {
+        "id": "runtime-activityRecordingEnabled",
+        "name": "activityRecordingEnabled",
+        "kind": "boolean",
+        "label": "记录前台应用时间",
+        "value": true,
+        "enabled": true,
+        "ui": {
+          "group": "recording",
+          "order": 10
+        }
+      },
+      {
+        "id": "runtime-activityRecordingHelp",
+        "name": "activityRecordingHelp",
+        "kind": "note",
+        "label": "",
+        "value": "只统计前台应用停留时间，锁屏、暂停及没有前台窗口时不累计应用时间。",
+        "enabled": true,
+        "ui": {
+          "group": "recording",
+          "order": 11,
+          "role": "help",
+          "for": "activityRecordingEnabled"
+        }
+      },
+      {
+        "id": "runtime-activityMetricsEnabled",
+        "name": "activityMetricsEnabled",
+        "kind": "boolean",
+        "label": "记录 CPU、内存与采样峰值",
+        "value": true,
+        "enabled": true,
+        "ui": {
+          "group": "metrics",
+          "order": 10
+        }
+      },
+      {
+        "id": "runtime-activityMetricsInterval",
+        "name": "activityMetricsInterval",
+        "kind": "number",
+        "label": "采样间隔",
+        "value": 10,
+        "enabled": true,
+        "ui": {
+          "group": "metrics",
+          "order": 20
+        },
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "suffix": " 秒"
+      },
+      {
+        "id": "runtime-activityLogRetention",
+        "name": "activityLogRetention",
+        "kind": "choice",
+        "label": "详细日志保留",
+        "value": 2,
+        "enabled": true,
+        "ui": {
+          "group": "metrics",
+          "order": 30
+        },
+        "options": [
+          "1 天",
+          "3 天",
+          "7 天",
+          "14 天",
+          "30 天"
+        ]
+      },
+      {
+        "id": "runtime-activityMetricsDetails",
+        "name": "activityMetricsDetails",
+        "kind": "note",
+        "label": "统计口径与存储说明",
+        "value": "统计今日前五应用可关联的窗口进程及子进程；CPU 按单核 100% 计，RSS 共享页可能重复。暂停记录或锁屏时停止采样。",
+        "enabled": true,
+        "ui": {
+          "group": "metrics",
+          "order": 40,
+          "role": "detail",
+          "collapsible": true,
+          "row": "metricsDetails"
+        }
+      },
+      {
+        "id": "runtime-activityStorageDetails",
+        "name": "activityStorageDetails",
+        "kind": "note",
+        "label": "统计口径与存储说明",
+        "value": "日汇总保留 60 天；详细日志滚动清理，约每分钟批量写入。旧记录时长保留，指标从启用后累计。",
+        "enabled": true,
+        "ui": {
+          "group": "metrics",
+          "order": 41,
+          "role": "detail",
+          "collapsible": true,
+          "row": "metricsDetails"
+        }
+      },
+      {
+        "id": "runtime-activityHistoryDetails",
+        "name": "activityHistoryDetails",
+        "kind": "action",
+        "label": "查看历史、指标与导出",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "actions",
+          "order": 10
+        }
+      }
+    ],
+    "ui": {
+      "version": 1,
+      "layout": "grouped",
+      "groups": [
+        {
+          "key": "recording",
+          "title": "应用记录",
+          "order": 0,
+          "columns": 1
+        },
+        {
+          "key": "metrics",
+          "title": "资源采样",
+          "order": 10,
+          "columns": 1
+        },
+        {
+          "key": "actions",
+          "title": "",
+          "order": 20,
+          "columns": 1
+        }
+      ]
+    }
+  },
+  "peony:general": {
+    "ok": true,
+    "module": "peony",
+    "page": "general",
+    "title": "文件管理",
+    "dirty": false,
+    "fields": [
+      {
+        "id": "runtime-global:enable-peony-right-menu",
+        "name": "global:enable-peony-right-menu",
+        "kind": "boolean",
+        "label": "启用 Peony 右键扩展",
+        "value": true,
+        "enabled": true,
+        "ui": {
+          "group": "menus",
+          "order": 0
+        }
+      },
+      {
+        "id": "runtime-global:enable-desktop-file-menu",
+        "name": "global:enable-desktop-file-menu",
+        "kind": "boolean",
+        "label": "启用桌面文件右键菜单",
+        "value": true,
+        "enabled": true,
+        "ui": {
+          "group": "menus",
+          "order": 1
+        }
+      },
+      {
+        "id": "runtime-global:enable-desktop-background-menu",
+        "name": "global:enable-desktop-background-menu",
+        "kind": "boolean",
+        "label": "启用桌面背景右键菜单",
+        "value": true,
+        "enabled": false,
+        "ui": {
+          "group": "menus",
+          "order": 2
+        }
+      },
+      {
+        "id": "runtime-global:show-open-terminal",
+        "name": "global:show-open-terminal",
+        "kind": "boolean",
+        "label": "显示“打开终端”",
+        "value": true,
+        "enabled": true,
+        "ui": {
+          "group": "menus",
+          "order": 3
+        }
+      },
+      {
+        "id": "runtime-global:show-file-extension",
+        "name": "global:show-file-extension",
+        "kind": "boolean",
+        "label": "显示文件扩展名",
+        "value": true,
+        "enabled": true,
+        "ui": {
+          "group": "files",
+          "order": 4
+        }
+      },
+      {
+        "id": "runtime-global:show-hidden-file",
+        "name": "global:show-hidden-file",
+        "kind": "boolean",
+        "label": "显示隐藏文件",
+        "value": false,
+        "enabled": true,
+        "ui": {
+          "group": "files",
+          "order": 5
+        }
+      }
+    ],
+    "ui": {
+      "version": 1,
+      "layout": "grouped",
+      "groups": [
+        {
+          "key": "menus",
+          "title": "菜单与终端",
+          "order": 0,
+          "columns": 2
+        },
+        {
+          "key": "files",
+          "title": "文件显示",
+          "order": 10,
+          "columns": 2
+        }
+      ]
+    }
+  },
+  "peony:plugins": {
+    "ok": true,
+    "module": "peony",
+    "page": "plugins",
+    "title": "Peony 扩展",
+    "dirty": false,
+    "fields": [
+      {
+        "id": "runtime-open-manager",
+        "name": "open-manager",
+        "kind": "action",
+        "label": "打开 Peony 插件管理器",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "intro",
+          "order": 0
+        }
+      },
+      {
+        "id": "runtime-restart-note",
+        "name": "restart-note",
+        "kind": "note",
+        "label": "",
+        "value": "启用状态保存后，在下次启动文件管理器时生效。不会关闭你已打开的文件窗口。",
+        "enabled": true,
+        "ui": {
+          "group": "intro",
+          "order": 1
+        }
+      },
+      {
+        "id": "runtime-heading:example-copy.so",
+        "name": "heading:example-copy.so",
+        "kind": "heading",
+        "label": "",
+        "value": "复制路径扩展",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 0,
+          "entity": "example-copy.so",
+          "row": "example-copy.so",
+          "component": "plugin-row",
+          "role": "label"
+        }
+      },
+      {
+        "id": "runtime-description:example-copy.so",
+        "name": "description:example-copy.so",
+        "kind": "note",
+        "label": "",
+        "value": "将所选文件的完整路径复制到剪贴板。",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 0,
+          "entity": "example-copy.so",
+          "row": "example-copy.so",
+          "component": "plugin-row",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-path:example-copy.so",
+        "name": "path:example-copy.so",
+        "kind": "note",
+        "label": "安装路径",
+        "value": "/example/lib/peony/extensions/example-copy.so",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 0,
+          "entity": "example-copy.so",
+          "row": "example-copy.so",
+          "component": "file-picker",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-state:example-copy.so",
+        "name": "state:example-copy.so",
+        "kind": "note",
+        "label": "",
+        "value": "已启用",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 0,
+          "entity": "example-copy.so",
+          "row": "example-copy.so",
+          "component": "plugin-row",
+          "role": "status"
+        }
+      },
+      {
+        "id": "runtime-plugin:example-copy.so",
+        "name": "plugin:example-copy.so",
+        "kind": "boolean",
+        "label": "启用 复制路径扩展",
+        "value": true,
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 0,
+          "entity": "example-copy.so",
+          "row": "example-copy.so",
+          "component": "plugin-row",
+          "role": "control"
+        }
+      },
+      {
+        "id": "runtime-heading:example-terminal.so",
+        "name": "heading:example-terminal.so",
+        "kind": "heading",
+        "label": "",
+        "value": "嵌入式终端",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 1,
+          "entity": "example-terminal.so",
+          "row": "example-terminal.so",
+          "component": "plugin-row",
+          "role": "label"
+        }
+      },
+      {
+        "id": "runtime-description:example-terminal.so",
+        "name": "description:example-terminal.so",
+        "kind": "note",
+        "label": "",
+        "value": "在文件管理窗口内按需打开终端。关闭窗口时释放。",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 1,
+          "entity": "example-terminal.so",
+          "row": "example-terminal.so",
+          "component": "plugin-row",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-path:example-terminal.so",
+        "name": "path:example-terminal.so",
+        "kind": "note",
+        "label": "安装路径",
+        "value": "/example/lib/peony/extensions/example-terminal.so",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 1,
+          "entity": "example-terminal.so",
+          "row": "example-terminal.so",
+          "component": "file-picker",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-state:example-terminal.so",
+        "name": "state:example-terminal.so",
+        "kind": "note",
+        "label": "",
+        "value": "已停用",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 1,
+          "entity": "example-terminal.so",
+          "row": "example-terminal.so",
+          "component": "plugin-row",
+          "role": "status"
+        }
+      },
+      {
+        "id": "runtime-plugin:example-terminal.so",
+        "name": "plugin:example-terminal.so",
+        "kind": "boolean",
+        "label": "启用 嵌入式终端",
+        "value": false,
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 1,
+          "entity": "example-terminal.so",
+          "row": "example-terminal.so",
+          "component": "plugin-row",
+          "role": "control"
+        }
+      },
+      {
+        "id": "runtime-heading:example-unknown.so",
+        "name": "heading:example-unknown.so",
+        "kind": "heading",
+        "label": "",
+        "value": "状态待确认的示例扩展",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 2,
+          "entity": "example-unknown.so",
+          "row": "example-unknown.so",
+          "component": "plugin-row",
+          "role": "label"
+        }
+      },
+      {
+        "id": "runtime-description:example-unknown.so",
+        "name": "description:example-unknown.so",
+        "kind": "note",
+        "label": "",
+        "value": "这是用于验证未知状态的虚构扩展。",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 2,
+          "entity": "example-unknown.so",
+          "row": "example-unknown.so",
+          "component": "plugin-row",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-path:example-unknown.so",
+        "name": "path:example-unknown.so",
+        "kind": "note",
+        "label": "安装路径",
+        "value": "/example/lib/peony/extensions/example-unknown.so",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 2,
+          "entity": "example-unknown.so",
+          "row": "example-unknown.so",
+          "component": "file-picker",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-state:example-unknown.so",
+        "name": "state:example-unknown.so",
+        "kind": "note",
+        "label": "",
+        "value": "状态未知",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 2,
+          "entity": "example-unknown.so",
+          "row": "example-unknown.so",
+          "component": "plugin-row",
+          "role": "status"
+        }
+      },
+      {
+        "id": "runtime-unknown:example-unknown.so",
+        "name": "unknown:example-unknown.so",
+        "kind": "note",
+        "label": "",
+        "value": "无法读取启用状态，请确认 Peony 设置服务可用后刷新。",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 2,
+          "entity": "example-unknown.so",
+          "row": "example-unknown.so",
+          "component": "plugin-row",
+          "role": "status"
+        }
+      },
+      {
+        "id": "runtime-heading:example-missing.so",
+        "name": "heading:example-missing.so",
+        "kind": "heading",
+        "label": "",
+        "value": "尚未安装的示例扩展",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 3,
+          "entity": "example-missing.so",
+          "row": "example-missing.so",
+          "component": "plugin-row",
+          "role": "label"
+        }
+      },
+      {
+        "id": "runtime-description:example-missing.so",
+        "name": "description:example-missing.so",
+        "kind": "note",
+        "label": "",
+        "value": "没有安装时只显示状态与说明，不伪造可操作开关。",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 3,
+          "entity": "example-missing.so",
+          "row": "example-missing.so",
+          "component": "plugin-row",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-path:example-missing.so",
+        "name": "path:example-missing.so",
+        "kind": "note",
+        "label": "安装路径",
+        "value": "/example/lib/peony/extensions/example-missing.so",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 3,
+          "entity": "example-missing.so",
+          "row": "example-missing.so",
+          "component": "file-picker",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-state:example-missing.so",
+        "name": "state:example-missing.so",
+        "kind": "note",
+        "label": "",
+        "value": "未安装",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 3,
+          "entity": "example-missing.so",
+          "row": "example-missing.so",
+          "component": "plugin-row",
+          "role": "status"
+        }
+      },
+      {
+        "id": "runtime-heading:example-long.so",
+        "name": "heading:example-long.so",
+        "kind": "heading",
+        "label": "",
+        "value": "用于检验长中文名称换行与窄屏布局的文件信息扩展",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 4,
+          "entity": "example-long.so",
+          "row": "example-long.so",
+          "component": "plugin-row",
+          "role": "label"
+        }
+      },
+      {
+        "id": "runtime-description:example-long.so",
+        "name": "description:example-long.so",
+        "kind": "note",
+        "label": "",
+        "value": "较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。较长的示例说明。",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 4,
+          "entity": "example-long.so",
+          "row": "example-long.so",
+          "component": "plugin-row",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-path:example-long.so",
+        "name": "path:example-long.so",
+        "kind": "note",
+        "label": "安装路径",
+        "value": "/example/lib/peony/extensions/nested/nested/nested/nested/nested/nested/nested/nested/nested/nested/nested/nested/example-long.so",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 4,
+          "entity": "example-long.so",
+          "row": "example-long.so",
+          "component": "file-picker",
+          "role": "detail"
+        }
+      },
+      {
+        "id": "runtime-state:example-long.so",
+        "name": "state:example-long.so",
+        "kind": "note",
+        "label": "",
+        "value": "已启用",
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 4,
+          "entity": "example-long.so",
+          "row": "example-long.so",
+          "component": "plugin-row",
+          "role": "status"
+        }
+      },
+      {
+        "id": "runtime-plugin:example-long.so",
+        "name": "plugin:example-long.so",
+        "kind": "boolean",
+        "label": "启用 用于检验长中文名称换行与窄屏布局的文件信息扩展",
+        "value": true,
+        "enabled": true,
+        "ui": {
+          "group": "plugins",
+          "order": 4,
+          "entity": "example-long.so",
+          "row": "example-long.so",
+          "component": "plugin-row",
+          "role": "control"
+        }
+      },
+      {
+        "id": "runtime-install-copy",
+        "name": "install-copy",
+        "kind": "action",
+        "label": "安装 / 更新复制路径扩展",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "maintenance",
+          "order": 0,
+          "emphasis": "normal"
+        },
+        "confirm": ""
+      },
+      {
+        "id": "runtime-remove-copy",
+        "name": "remove-copy",
+        "kind": "action",
+        "label": "卸载复制路径扩展",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "maintenance",
+          "order": 1,
+          "emphasis": "destructive"
+        },
+        "confirm": "确认卸载？"
+      },
+      {
+        "id": "runtime-install-cli",
+        "name": "install-cli",
+        "kind": "action",
+        "label": "安装 / 更新嵌入终端",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "maintenance",
+          "order": 2,
+          "emphasis": "normal"
+        },
+        "confirm": ""
+      },
+      {
+        "id": "runtime-remove-cli",
+        "name": "remove-cli",
+        "kind": "action",
+        "label": "卸载嵌入终端",
+        "value": null,
+        "enabled": true,
+        "ui": {
+          "group": "maintenance",
+          "order": 3,
+          "emphasis": "destructive"
+        },
+        "confirm": "确认卸载？"
+      }
+    ],
+    "ui": {
+      "version": 1,
+      "layout": "plugin-list",
+      "groups": [
+        {
+          "key": "intro",
+          "title": "",
+          "order": 0,
+          "columns": 1
+        },
+        {
+          "key": "plugins",
+          "title": "已发现的扩展",
+          "order": 10,
+          "columns": 1
+        },
+        {
+          "key": "maintenance",
+          "title": "扩展维护",
+          "order": 20,
+          "columns": 1
+        }
+      ]
+    }
+  }
+}

@@ -68,18 +68,23 @@ def icon(module,size=24):
     p.end();pixmap.setDevicePixelRatio(2);return QtGui.QIcon(pixmap)
 
 class NavigationDelegate(QtWidgets.QStyledItemDelegate):
-    def sizeHint(self,option,index):return QtCore.QSize(140,40 if not index.data(QtCore.Qt.UserRole+1) else 34)
+    def sizeHint(self,option,index):
+        width=option.widget.viewport().width() if isinstance(option.widget,QtWidgets.QAbstractItemView) else 180
+        font=QtGui.QFont(option.font);font.setBold(True);metrics=QtGui.QFontMetrics(font)
+        available=max(40,width-4-10-31-(17 if index.data(QtCore.Qt.UserRole+2) else 8))
+        bounds=metrics.boundingRect(QtCore.QRect(0,0,available,10000),QtCore.Qt.TextWordWrap,navigation_text(index.data()))
+        return QtCore.QSize(140,max(32 if index.data(QtCore.Qt.UserRole+1) else 36,metrics.height()+14,bounds.height()+12))
     def paint(self,painter,option,index):
         painter.save();painter.setRenderHint(QtGui.QPainter.Antialiasing)
         rect=option.rect.adjusted(2,2,-2,-2);key=index.data(QtCore.Qt.UserRole) or '';module=key.split(':')[0];child=index.data(QtCore.Qt.UserRole+1);group=index.data(QtCore.Qt.UserRole+2)
         selected=bool(option.state&QtWidgets.QStyle.State_Selected);hover=bool(option.state&QtWidgets.QStyle.State_MouseOver)
-        if selected or hover:painter.setPen(QtCore.Qt.NoPen);painter.setBrush(QtGui.QColor('#dbeaff' if selected else '#f1f5fb'));painter.drawRoundedRect(rect,15,15)
+        if selected or hover:painter.setPen(QtCore.Qt.NoPen);painter.setBrush(QtGui.QColor('#DCEBFF' if selected else '#F0F3F8'));painter.drawRoundedRect(rect,6,6)
         left=rect.left()+10
         if not child:icon(module).paint(painter,QtCore.QRect(left,rect.center().y()-11,22,22));left+=31
         else:left+=30
         text=navigation_text(index.data())
-        font=option.font;font.setBold(selected);painter.setFont(font);painter.setPen(QtGui.QColor('#235b9b' if selected else '#30343c'))
-        painter.drawText(QtCore.QRect(left,rect.top(),rect.right()-left-17,rect.height()),QtCore.Qt.AlignVCenter,painter.fontMetrics().elidedText(text,QtCore.Qt.ElideRight,rect.right()-left-17))
+        font=option.font;font.setBold(selected);painter.setFont(font);painter.setPen(QtGui.QColor('#095DB5' if selected else '#1D1D1F'))
+        painter.drawText(QtCore.QRect(left,rect.top(),rect.right()-left-(17 if group else 8),rect.height()),QtCore.Qt.AlignVCenter|QtCore.Qt.TextWordWrap,text)
         if group:
             painter.setPen(QtGui.QPen(QtGui.QColor('#9aa1ad'),1.3));x=rect.right()-11;y=rect.center().y()
             if str(index.data()).startswith('▾'):painter.drawPolyline(QtGui.QPolygonF([QtCore.QPointF(x-3,y-2),QtCore.QPointF(x,y+1),QtCore.QPointF(x+3,y-2)]))
@@ -88,15 +93,14 @@ class NavigationDelegate(QtWidgets.QStyledItemDelegate):
 
 class Switch(QtWidgets.QCheckBox):
     def __init__(self,text='',parent=None):
-        super().__init__(text,parent);self.setCursor(QtCore.Qt.PointingHandCursor);self.setMinimumHeight(33)
-    def sizeHint(self):return QtCore.QSize(230,34)
+        super().__init__(text,parent);self.setAccessibleName(text);self.setCursor(QtCore.Qt.PointingHandCursor);self.setFixedSize(48,32)
+    def sizeHint(self):return QtCore.QSize(48,32)
     def hitButton(self,position):return self.rect().contains(position)
     def paintEvent(self,event):
-        p=QtGui.QPainter(self);p.setRenderHint(QtGui.QPainter.Antialiasing);p.setPen(QtGui.QColor('#30343c' if self.isEnabled() else '#a0a7b1'))
-        p.drawText(self.rect().adjusted(0,0,-60,0),QtCore.Qt.AlignVCenter,p.fontMetrics().elidedText(self.text(),QtCore.Qt.ElideRight,self.width()-60))
-        rect=QtCore.QRectF(self.width()-43,(self.height()-23)/2,41,23);p.setPen(QtCore.Qt.NoPen);p.setBrush(QtGui.QColor('#4e9bf7' if self.isChecked() else '#d6dbe3'));p.drawRoundedRect(rect,12,12)
-        p.setBrush(QtCore.Qt.white);p.drawEllipse(QtCore.QRectF(rect.left()+(21 if self.isChecked() else 3),rect.top()+3,17,17))
-        if self.hasFocus():p.setPen(QtGui.QPen(QtGui.QColor('#9cc9ff'),1));p.setBrush(QtCore.Qt.NoBrush);p.drawRoundedRect(rect.adjusted(-2,-2,2,2),13,13)
+        p=QtGui.QPainter(self);p.setRenderHint(QtGui.QPainter.Antialiasing)
+        rect=QtCore.QRectF(5,(self.height()-22)/2,38,22);p.setPen(QtCore.Qt.NoPen);p.setOpacity(1 if self.isEnabled() else .45);p.setBrush(QtGui.QColor('#007AFF' if self.isChecked() else '#B8BDC7'));p.drawRoundedRect(rect,11,11)
+        p.setBrush(QtCore.Qt.white);p.drawEllipse(QtCore.QRectF(rect.left()+(18 if self.isChecked() else 2),rect.top()+2,18,18))
+        if self.hasFocus():p.setOpacity(1);p.setPen(QtGui.QPen(QtGui.QColor('#007AFF'),2));p.setBrush(QtCore.Qt.NoBrush);p.drawRoundedRect(rect.adjusted(-3,-3,3,3),13,13)
 
 class MaterialPreview(QtWidgets.QAbstractButton):
     def __init__(self,label,variant,parent=None):
@@ -171,7 +175,11 @@ class FlowLayout(QtWidgets.QLayout):
         x=rect.x();y=rect.y();height=0
         for item in self.items:
             if item.widget().isHidden():continue
-            size=item.sizeHint();next_x=x+size.width()
+            size=item.sizeHint()
+            if size.width()>rect.width():
+                size.setWidth(max(1,rect.width()))
+                if item.hasHeightForWidth():size.setHeight(item.heightForWidth(size.width()))
+            next_x=x+size.width()
             if next_x>rect.right()+1 and x>rect.x():x=rect.x();y+=height+self.spacing();height=0
             if place:item.setGeometry(QtCore.QRect(QtCore.QPoint(x,y),size))
             x+=size.width()+self.spacing();height=max(height,size.height())
@@ -182,7 +190,9 @@ class WindowHeader(DragHeader):
     """One client-side header, with standard Qt/system window-control glyphs."""
     def __init__(self,window,search):
         super().__init__(window);self.setObjectName('integratedWindowHeader');self.setFixedHeight(48)
-        row=QtWidgets.QHBoxLayout(self);row.setContentsMargins(0,0,0,0);row.setSpacing(4)
+        row=QtWidgets.QHBoxLayout(self);row.setContentsMargins(12,0,8,0);row.setSpacing(4)
+        logo=QtWidgets.QLabel();logo.setPixmap(window.windowIcon().pixmap(22,22));row.addWidget(logo)
+        brand=QtWidgets.QLabel('Kylin-LQUI 设置');brand.setObjectName('integratedBrand');row.addWidget(brand)
         home=QtWidgets.QToolButton();home.setProperty('windowControl',True);home.setIcon(window_symbol('home'));home.setFixedSize(34,32);home.setToolTip('总览');home.clicked.connect(lambda:window.open_page('overview'));row.addWidget(home)
         row.addStretch();search.setMaximumWidth(360);search.setMinimumWidth(120);row.addWidget(search,2);row.addStretch()
         for name,icon_name,callback in [('minimize',QtWidgets.QStyle.SP_TitleBarMinButton,window.showMinimized),('maximize',QtWidgets.QStyle.SP_TitleBarMaxButton,lambda:window.showNormal() if window.isMaximized() else window.showMaximized()),('close',QtWidgets.QStyle.SP_TitleBarCloseButton,window.close)]:

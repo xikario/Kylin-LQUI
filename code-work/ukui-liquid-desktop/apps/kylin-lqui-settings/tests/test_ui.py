@@ -7,7 +7,8 @@ from main import SettingsWindow
 from design import navigation_text
 
 class Fixture:
-    def __init__(self):self.calls=[];self.page={'ok':True,'fields':[
+    def __init__(self):
+        self.calls=[];self.page={'ok':True,'fields':[
         {'id':'1','kind':'number','label':'液态强度','min':0,'max':100,'step':1,'value':70,'suffix':' %'},
         {'id':'2','kind':'boolean','label':'保持常驻','value':True,'help':'保持界面常驻，模型按需启动。'},
         {'id':'3','kind':'text','label':'翻译语言','value':'简体中文'},
@@ -16,7 +17,8 @@ class Fixture:
         {'id':'6','kind':'multiline','label':'排除规则','value':'*.tmp'},
         {'id':'7','kind':'list','label':'支持格式','items':[{'text':'PDF','checkable':True,'checked':True,'selected':False}]},
         {'id':'8','kind':'tabs','label':'分类','value':0,'options':['一般','高级']},
-    ]}
+    ]};
+        for field in self.page['fields']:field['name']='fixture_'+field['id']
     def call(self,module,method,args,callback):
         self.calls.append((module,method,args))
         result={'ok':False} if method=='Catalog' else self.page

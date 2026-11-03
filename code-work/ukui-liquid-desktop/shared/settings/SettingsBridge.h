@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QPointer>
 #include <QHash>
+#include <QCache>
 #include <functional>
 class QWidget;
 
@@ -37,6 +38,8 @@ private:
     CatalogFactory catalog;
     QHash<QString,QPointer<QWidget>> roots;
     QHash<QString,QPointer<QWidget>> controls;
+    // At most four encoded previews and 8 MiB; never a wallpaper/frame history.
+    QCache<QWidget*,QPair<qint64,QString>> previews{8192};
     quint64 nextId=1;
     bool registered=false;
 };

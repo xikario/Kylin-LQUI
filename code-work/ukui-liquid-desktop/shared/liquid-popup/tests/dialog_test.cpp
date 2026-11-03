@@ -68,6 +68,18 @@ int main(int argc,char **argv) {
     QTemporaryDir home;check(home.isValid(),"temporary home");qputenv("HOME",home.path().toUtf8());
     qputenv("XDG_CONFIG_HOME",(home.path()+"/config").toUtf8());
     QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);QApplication app(argc,argv);
+    {
+        QWidget owner;auto *originalStyle=app.style();
+        {
+            LiquidDialog::SettingsScope settings(&owner);
+            {LiquidDialog::SettingsScope nested(&owner);check(owner.property("lquiCompactSettingsScope").toBool(),"nested settings opt-in is scoped");}
+            LiquidDialog::Dialog dialog(&owner);dialog.resize(360,160);
+            if(qEnvironmentVariable("UKUI_LIQUID_POPUP")!="0")check(dialog.property("liquidCompactSettings").toBool()&&dialog.styleSheet().contains("border-radius:6px"),"settings dialog alone receives compact tokens");
+            QTimer::singleShot(20,&dialog,&QDialog::reject);check(dialog.exec()==QDialog::Rejected,"native settings dialog cancel retains its modal result");
+        }
+        check(!owner.property("lquiCompactSettingsScope").isValid(),"settings opt-in property is restored after cancellation");
+        LiquidDialog::Dialog ordinary(&owner);check(!ordinary.property("liquidCompactSettings").toBool()&&app.style()==originalStyle,"other dialogs and application style remain unchanged");
+    }
     app.setQuitOnLastWindowClosed(false);
     const auto requestedStyle=qEnvironmentVariable("UKUI_DIALOG_TEST_STYLE","Fusion");
     check(app.setStyle(requestedStyle)!=nullptr,"requested Qt style is available");

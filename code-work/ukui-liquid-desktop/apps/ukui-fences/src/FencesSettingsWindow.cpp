@@ -391,27 +391,33 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
         } else hint(layout,"此分区已移除。");
     } else if(id=="appearance") {
         auto *c=card(layout,"分区液态玻璃");
+        c->parentWidget()->setProperty("settingsUiGroup","glass");
         auto *glass=new QCheckBox("启用分区液态玻璃",page);glass->setObjectName("fenceLiquidGlass");c->addWidget(glass);
         connect(glass,&QCheckBox::toggled,m_canvas,&DesktopCanvas::setFenceLiquidGlassEnabled);
         hint(c,"分区采用壁纸折射与边缘高光。此开关只控制分区，小组件保留各自皮肤。");
+        c->itemAt(c->count()-1)->widget()->setObjectName("fenceGlassHelp");
         auto *scrim=new QComboBox(page);scrim->setObjectName("glassScrim");scrim->setAccessibleName("玻璃通透档位");
         scrim->addItems({"易读","均衡","通透","轻微"});scrim->setCurrentIndex(m_canvas->glassScrim());
         scrim->setProperty("settingsImmediate",true);c->addWidget(scrim);
         connect(scrim,QOverload<int>::of(&QComboBox::currentIndexChanged),m_canvas,&DesktopCanvas::setGlassScrim);
         hint(c,"玻璃按背后壁纸的局部亮度自动压暗，保证文字可读。档位越靠后越通透。");
+        c->itemAt(c->count()-1)->widget()->setObjectName("glassScrimHelp");
         auto *motion=new QCheckBox("减少动态效果",page);motion->setObjectName("reduceMotion");
         motion->setChecked(m_canvas->reduceMotion());motion->setProperty("settingsImmediate",true);c->addWidget(motion);
         connect(motion,&QCheckBox::toggled,m_canvas,&DesktopCanvas::setReduceMotion);
         hint(c,"关闭弹出、折叠和排序动画，状态立即切换。");
+        c->itemAt(c->count()-1)->widget()->setObjectName("reduceMotionHelp");
         button(c,"刷新壁纸与液态材质",[this]{m_canvas->refreshAll();},"refreshMaterialButton");
     } else if(id=="wallpaper") {
-        attachForm(card(layout,"Fences 壁纸"),m_canvas->createWallpaperSettingsPage(page));
+        auto *wallpaperCard=card(layout,"Fences 壁纸");wallpaperCard->parentWidget()->setProperty("settingsUiGroup","wallpaper");
+        attachForm(wallpaperCard,m_canvas->createWallpaperSettingsPage(page));
         auto *c=card(layout,"主题配色");
-        button(c,"从当前壁纸取色",[this]{if(!m_canvas->applyWallpaperThemeToFences())LiquidDialog::information(this,"壁纸取色","当前壁纸没有可提取的明显颜色。");},"wallpaperThemeButton");
-        auto *preset=new QComboBox(page);preset->addItems({"海湾蓝","樱花粉","松石绿","暮色紫","石墨灰"});c->addWidget(preset);
-        button(c,"应用所选配色",[this,preset]{const QColor colors[]={QColor("#2f80ed"),QColor("#ff7aa2"),QColor("#14b8a6"),QColor("#8b5cf6"),QColor("#202124")};QColor color=colors[preset->currentIndex()];color.setAlpha(90);m_canvas->applyThemeToFences(color,preset->currentIndex()==1?QColor("#202124"):QColor(Qt::white));});
-        button(c,"应用外部主题文件",[this]{if(m_canvas->loadExternalTheme())m_canvas->applyExternalThemeToFences();else LiquidDialog::information(this,"外部主题","没有找到外部主题文件。可使用壁纸取色或内置配色。");});
-        button(c,"打开系统壁纸设置",[this]{m_canvas->openSystemWallpaper();});
+        c->parentWidget()->setProperty("settingsUiGroup","theme");
+        button(c,"从当前壁纸取色",[this]{LiquidDialog::SettingsScope compact(this);if(!m_canvas->applyWallpaperThemeToFences())LiquidDialog::information(this,"壁纸取色","当前壁纸没有可提取的明显颜色。");},"wallpaperThemeButton");
+        auto *preset=new QComboBox(page);preset->setObjectName("themePreset");preset->setAccessibleName("主题配色方案");preset->addItems({"海湾蓝","樱花粉","松石绿","暮色紫","石墨灰"});c->addWidget(preset);
+        button(c,"应用所选配色",[this,preset]{const QColor colors[]={QColor("#2f80ed"),QColor("#ff7aa2"),QColor("#14b8a6"),QColor("#8b5cf6"),QColor("#202124")};QColor color=colors[preset->currentIndex()];color.setAlpha(90);m_canvas->applyThemeToFences(color,preset->currentIndex()==1?QColor("#202124"):QColor(Qt::white));},"themeApplyPreset");
+        button(c,"应用外部主题文件",[this]{LiquidDialog::SettingsScope compact(this);if(m_canvas->loadExternalTheme())m_canvas->applyExternalThemeToFences();else LiquidDialog::information(this,"外部主题","没有找到外部主题文件。可使用壁纸取色或内置配色。");},"themeApplyExternal");
+        button(c,"打开系统壁纸设置",[this]{m_canvas->openSystemWallpaper();},"openSystemWallpaper");
     } else if(id=="icons") {
         attachForm(card(layout,"图标底座"),m_canvas->createIconSettingsPage(page));
         attachForm(card(layout,"桌面字体"),m_canvas->createFontSettingsPage(page));
@@ -470,23 +476,31 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
         auto *b=button(c,"同步最新农历和节假日",[this]{if(m_canvas->m_calendarWidget)m_canvas->m_calendarWidget->syncCalendarData();});b->setEnabled(m_canvas->calendarWidgetVisible());
     } else if(id=="activity") {
         auto *c=card(layout,"应用时长记录");auto *recording=new QCheckBox("记录前台应用时间",page);c->addWidget(recording);
+        c->parentWidget()->setProperty("settingsUiGroup","recording");
         recording->setObjectName("activityRecordingEnabled");
         auto *recorder=m_canvas->findChild<ActivityRecorder *>();recording->setChecked(recorder?recorder->isRecording():QSettings().value("desklets/activity/recording",true).toBool());
         connect(recording,&QCheckBox::toggled,page,[this](bool on){if(auto *r=m_canvas->findChild<ActivityRecorder *>())r->setRecording(on);else QSettings().setValue("desklets/activity/recording",on);});
         hint(c,"只统计前台应用停留时间，锁屏、暂停及没有前台窗口时不累计应用时间。");
+        c->itemAt(c->count()-1)->widget()->setObjectName("activityRecordingHelp");
         c=card(layout,"前五应用 · 资源指标");
+        c->parentWidget()->setProperty("settingsUiGroup","metrics");
         auto *metrics=new QCheckBox("记录 CPU、内存与采样峰值",page);metrics->setObjectName("activityMetricsEnabled");metrics->setChecked(recorder?recorder->metricsEnabled():QSettings().value("desklets/activity/metricsEnabled",true).toBool());c->addWidget(metrics);
-        auto *row=new QWidget(page);auto *rowLayout=new QHBoxLayout(row);rowLayout->setContentsMargins(0,0,0,0);rowLayout->addWidget(new QLabel("采样间隔",row));
+        auto *row=new QWidget(page);auto *rowLayout=new QHBoxLayout(row);rowLayout->setContentsMargins(0,0,0,0);auto *intervalLabel=new QLabel("采样间隔",row);rowLayout->addWidget(intervalLabel);
         auto *interval=new QSlider(Qt::Horizontal,row);interval->setObjectName("activityMetricsInterval");interval->setRange(5,60);interval->setSingleStep(5);interval->setValue(recorder?recorder->metricsIntervalSeconds():QSettings().value("desklets/activity/metricsInterval",10).toInt());rowLayout->addWidget(interval,1);
         auto *seconds=new QLabel(QString::number(interval->value())+" 秒",row);seconds->setMinimumWidth(48);rowLayout->addWidget(seconds);c->addWidget(row);
+        interval->setAccessibleName("采样间隔");interval->setProperty("settingsSuffix"," 秒");intervalLabel->setBuddy(interval);
+        intervalLabel->setProperty("settingsUiRole","label");intervalLabel->setProperty("settingsUiFor","activityMetricsInterval");seconds->setProperty("sliderValue",true);
         auto *retention=new QComboBox(page);retention->setObjectName("activityLogRetention");for(int days:{1,3,7,14,30})retention->addItem(QString("详细日志保留 %1 天").arg(days),days);
+        retention->setAccessibleName("详细日志保留");for(int i=0;i<retention->count();++i)retention->setItemText(i,QString("%1 天").arg(retention->itemData(i).toInt()));
         retention->setCurrentIndex(qMax(0,retention->findData(recorder?recorder->logRetentionDays():QSettings().value("desklets/activity/logRetentionDays",7).toInt())));c->addWidget(retention);
         auto applyMetrics=[=]{const int days=retention->currentData().toInt();if(auto *r=m_canvas->findChild<ActivityRecorder *>())r->configureMetrics(metrics->isChecked(),interval->value(),days);else {QSettings s;s.setValue("desklets/activity/metricsEnabled",metrics->isChecked());s.setValue("desklets/activity/metricsInterval",interval->value());s.setValue("desklets/activity/logRetentionDays",days);s.sync();}interval->setEnabled(metrics->isChecked());};
         interval->setEnabled(metrics->isChecked());
         connect(metrics,&QCheckBox::toggled,page,[=]{applyMetrics();});connect(retention,QOverload<int>::of(&QComboBox::currentIndexChanged),page,[=]{applyMetrics();});
         connect(interval,&QSlider::valueChanged,page,[=](int value){seconds->setText(QString::number(value)+" 秒");if(!interval->isSliderDown())applyMetrics();});connect(interval,&QSlider::sliderReleased,page,applyMetrics);
         hint(c,"采样设置即时保存。统计今日前五应用可关联的窗口进程及子进程；CPU 按单核 100% 计，RSS 共享页可能重复。暂停记录或锁屏时停止采样。");
+        c->itemAt(c->count()-1)->widget()->setObjectName("activityMetricsDetails");
         hint(c,"日汇总保留 60 天；详细日志按上方天数滚动清理，约每分钟批量写入。旧记录的使用时长保留，资源指标从启用后开始累计。");
+        c->itemAt(c->count()-1)->widget()->setObjectName("activityStorageDetails");
         button(c,recorder?"查看历史、指标与导出":"启用活动统计并查看记录",[this]{auto *r=m_canvas->findChild<ActivityRecorder *>();if(!r){m_canvas->setActivityWidgetVisible(true);r=m_canvas->findChild<ActivityRecorder *>();}if(r)r->showDetails(this);},"activityHistoryDetails");
     } else if(id=="music") {
         auto *c=card(layout,"音乐客户端与自动接入");
@@ -508,6 +522,46 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
             refreshStates();
         },"desktopVisibilityButton");
         button(c,"退出 Fences",[this]{m_canvas->quitApp();});
+    }
+    // Only explicitly migrated forms opt in. Other modules/pages retain the
+    // legacy Bridge traversal and labels until individually migrated.
+    if(id=="appearance"||id=="wallpaper"||id=="activity"){
+        scroll->setProperty("settingsUiVersion",1);
+        QVariantList groups;
+        const auto group=[&](QString key,QString title,int order){groups.append(QVariantMap{{"key",key},{"title",title},{"order",order},{"columns",1}});};
+        const auto mark=[&](QString name,QString key,int order,QString role="control",QString owner=QString()){
+            if(auto *w=page->findChild<QWidget*>(name)){
+                w->setProperty("settingsUiGroup",key);w->setProperty("settingsUiOrder",order);w->setProperty("settingsUiRole",role);
+                if(!owner.isEmpty())w->setProperty("settingsUiFor",owner);
+            }
+        };
+        if(id=="appearance"){
+            group("glass","分区液态玻璃",10);group("motion","动态效果",20);group("actions","",30);
+            mark("fenceLiquidGlass","glass",10);mark("fenceGlassHelp","glass",11,"help","fenceLiquidGlass");
+            mark("glassScrim","glass",20);mark("glassScrimHelp","glass",21,"help","glassScrim");
+            mark("reduceMotion","motion",10);mark("reduceMotionHelp","motion",11,"help","reduceMotion");mark("refreshMaterialButton","actions",10,"action");
+        }else if(id=="activity"){
+            group("recording","应用记录",10);group("metrics","资源采样",20);group("actions","",30);
+            mark("activityRecordingEnabled","recording",10);mark("activityRecordingHelp","recording",11,"help","activityRecordingEnabled");
+            mark("activityMetricsEnabled","metrics",10);mark("activityMetricsInterval","metrics",20);mark("activityLogRetention","metrics",30);
+            for(const QString &name:{"activityMetricsDetails","activityStorageDetails"}){
+                mark(name,"metrics",40,"detail");auto *w=page->findChild<QWidget*>(name);w->setProperty("settingsUiRow","metricsDetails");w->setProperty("settingsUiCollapsible",true);w->setProperty("settingsUiLabel","统计口径与存储说明");
+            }
+            mark("activityHistoryDetails","actions",10,"action");
+        }else{
+            group("wallpaper","壁纸 · 修改后需应用",10);group("display","显示方式",20);group("apply","",30);group("theme","主题配色 · 按对应按钮立即执行",40);
+            mark("wallpaperKind","wallpaper",10);mark("wallpaperPreview","wallpaper",20,"preview");
+            mark("wallpaperImagePath","wallpaper",30,"detail");mark("wallpaperChooseImage","wallpaper",40,"action");mark("wallpaperClearImage","wallpaper",41,"action");
+            mark("wallpaperImageStatus","wallpaper",31,"status");
+            mark("videoWallpaperPath","wallpaper",50);mark("videoWallpaperStart","wallpaper",60,"action");
+            mark("wallpaperImageMode","display",10);mark("videoWallpaperExperimentalNotice","apply",10,"warning");
+            mark("wallpaperScopeNotice","apply",20,"help");mark("wallpaperCopyDetails","apply",21,"detail");
+            if(auto *w=page->findChild<QWidget*>("wallpaperCopyDetails"))w->setProperty("settingsUiCollapsible",true);
+            mark("wallpaperApply","apply",30,"action");if(auto *w=page->findChild<QWidget*>("wallpaperApply"))w->setProperty("settingsUiEmphasis","primary");
+            int themeOrder=10;for(const QString &name:{"wallpaperThemeButton","themePreset","themeApplyPreset","themeApplyExternal","openSystemWallpaper"}){mark(name,"theme",themeOrder,name=="themePreset"?"control":"action");themeOrder+=10;}
+        }
+        scroll->setProperty("settingsUiGroups",groups);
+        for(auto *label:page->findChildren<QLabel*>("cardHeading"))label->setProperty("settingsUiRole","heading");
     }
     SettingsComboPopup::install(page,m_canvas);
     layout->addStretch();return scroll;

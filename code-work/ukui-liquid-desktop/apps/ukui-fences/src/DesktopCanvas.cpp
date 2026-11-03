@@ -2247,21 +2247,30 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
         "QLabel { background: #101827; border: 1px solid #39445a; "
         "border-radius: 10px; color: #cbd5e1; }");
     auto *previewArea = new QWidget(&dlg);
+    previewArea->setObjectName("wallpaperPreview");previewArea->setAccessibleName("当前壁纸预览");
+    previewArea->setProperty("settingsPreviewRole","wallpaper");previewArea->setProperty("settingsPreviewAlt","当前壁纸的真实静态预览");
+    previewArea->setProperty("settingsUiComponent","preview");previewArea->setProperty("settingsUiRow","wallpaperFile");
     auto *previewLayout = new QVBoxLayout(previewArea);previewLayout->setContentsMargins(0,0,0,0);
     auto *videoFrames = new VideoWallpaperPreview(previewArea);
     previewLayout->addWidget(preview);previewLayout->addWidget(videoFrames);
     form->addRow("预览：", previewArea);
 
     auto *pathLabel = new QLabel(&dlg);
+    pathLabel->setObjectName("wallpaperImagePath");pathLabel->setAccessibleName("图片文件");pathLabel->setProperty("settingsUiComponent","file-picker");pathLabel->setProperty("settingsUiRow","wallpaperFile");
     pathLabel->setWordWrap(true);
     pathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     form->addRow("图片：", pathLabel);
+    auto *imageStatus=new QLabel(&dlg);imageStatus->setObjectName("wallpaperImageStatus");imageStatus->setWordWrap(true);
+    imageStatus->setProperty("settingsUiRole","status");imageStatus->setProperty("settingsUiRow","wallpaperFile");
+    imageStatus->setProperty("settingsUiVisibleWhen",QVariantMap{{"name","wallpaperKind"},{"equals",0}});form->addRow("",imageStatus);
 
     auto *pathButtons = new QWidget(&dlg);
     auto *pathLayout = new QHBoxLayout(pathButtons);
     pathLayout->setContentsMargins(0, 0, 0, 0);
     auto *chooseBtn = new QPushButton("选择图片…", pathButtons);
     auto *clearBtn = new QPushButton("清空自定义", pathButtons);
+    chooseBtn->setObjectName("wallpaperChooseImage");clearBtn->setObjectName("wallpaperClearImage");
+    for(auto *button:{chooseBtn,clearBtn}){button->setProperty("settingsUiVisibleWhen",QVariantMap{{"name","wallpaperKind"},{"equals",0}});button->setProperty("settingsUiRow","wallpaperFile");}
     pathLayout->addWidget(chooseBtn);
     pathLayout->addWidget(clearBtn);
     pathLayout->addStretch();
@@ -2286,16 +2295,21 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
     videoRow->setContentsMargins(0,0,0,0);
     auto *videoChoose = new QPushButton("选择视频…", videoButtons);
     videoChoose->setObjectName("videoWallpaperStart");
+    for(auto *w:{static_cast<QWidget*>(videoPath),static_cast<QWidget*>(videoChoose)}){w->setProperty("settingsUiVisibleWhen",QVariantMap{{"name","wallpaperKind"},{"equals",1}});w->setProperty("settingsUiRow","wallpaperFile");}
+    videoPath->setAccessibleName("视频路径");videoPath->setProperty("settingsUiComponent","file-picker");
     videoRow->addWidget(videoPath); videoRow->addWidget(videoChoose);
     form->addRow("视频：", videoButtons);
     auto *videoStatus = new QLabel(&dlg);
     videoStatus->setObjectName("videoWallpaperStatus");
+    videoStatus->setProperty("settingsUiGroup","apply");videoStatus->setProperty("settingsUiRole","status");videoStatus->setProperty("settingsUiOrder",15);
+    videoStatus->setProperty("settingsUiVisibleWhen",QVariantMap{{"name","wallpaperKind"},{"equals",1}});
     videoStatus->setWordWrap(true);form->addRow("",videoStatus);
     videoStatus->setText("选择仅修改草稿；点击应用后保存并生效。视频按屏幕等比填满，保持原片帧率。");
     auto *videoExperimental = new QLabel("实验性功能：视频壁纸会增加 CPU / GPU 占用、发热和风扇噪声，启动或切换时可能短暂显示静态画面。需要安静省电时，建议使用静态图片。", &dlg);
     videoExperimental->setObjectName("videoWallpaperExperimentalNotice");
     videoExperimental->setWordWrap(true);form->addRow("",videoExperimental);
     connect(videoChoose,&QPushButton::clicked,&dlg,[=,&dlg]{
+        LiquidDialog::SettingsScope compact(dlg.window());
         const auto path=LiquidDialog::getOpenFileName(dlg.window(),"选择视频壁纸",
             videoPath->text().isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)
                                        : QFileInfo(videoPath->text()).absolutePath(), "MP4 视频 (*.mp4)");
@@ -2304,6 +2318,7 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
 
     auto *modeCombo = new QComboBox(&dlg);
     modeCombo->setObjectName("wallpaperImageMode");
+    modeCombo->setProperty("settingsUiVisibleWhen",QVariantMap{{"name","wallpaperKind"},{"equals",0}});
     modeCombo->addItem("系统默认（跟随桌面）",
                        static_cast<int>(WallpaperMode::System));
     modeCombo->addItem("填满（等比裁切）",
@@ -2401,14 +2416,17 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
         pathButtons->setEnabled(!video && !*applying);
         modeCombo->setEnabled(!video && !*applying);
         preview->setVisible(!video);videoFrames->setVisible(video);
+        imageStatus->setVisible(!video);
         if(video && QFileInfo(videoPath->text()).canonicalFilePath()
                 ==QSettings().value("wallpaper/videoPath").toString()
                 && !videoPath->text().isEmpty())videoFrames->confirmFile(videoPath->text());
         else videoFrames->setFile(video ? videoPath->text() : QString());
         if (video) {
-            pathLabel->setText("切换为静态图片后可编辑；视频不可用时使用已保存的图片。");
+            pathLabel->setText((chosenPath->isEmpty()?QString("系统桌面壁纸"):*chosenPath)+"\n切换为静态图片后可编辑；视频不可用时保留静态回退来源。");
+            pathLabel->setProperty("settingsUiCollapsible",true);pathLabel->setProperty("settingsUiLabel","静态回退图片");
             return;
         }
+        pathLabel->setProperty("settingsUiCollapsible",false);pathLabel->setProperty("settingsUiLabel","图片文件");
         WallpaperMode mode = static_cast<WallpaperMode>(
             modeCombo->currentData().toInt());
         bool customMode = false;
@@ -2425,15 +2443,16 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
             source = m_wallpaper;
 
         const WallpaperMode previewMode = customMode ? mode : WallpaperMode::Fill;
-        preview->setPixmap(renderPreview(source, previewMode, preview->size()));
+        if(source.isNull()){preview->clear();preview->setText("暂无预览：尚未读取到壁纸图片。");}
+        else preview->setPixmap(renderPreview(source, previewMode, preview->size()));
 
         if (chosenPath->isEmpty()) {
-            pathLabel->setText("未选择自定义图片，当前使用系统桌面壁纸。");
+            pathLabel->setText("系统桌面壁纸");imageStatus->setText("未选择自定义图片，当前使用系统桌面壁纸。");
         } else if (QFileInfo::exists(*chosenPath)) {
-            pathLabel->setText(*chosenPath);
+            pathLabel->setText(*chosenPath);imageStatus->clear();
         } else {
-            pathLabel->setText((customMode ? QStringLiteral("原图片不存在，使用已保存的副本：\n")
-                : QStringLiteral("图片不存在且没有保存副本，将使用系统壁纸：\n")) + *chosenPath);
+            pathLabel->setText(*chosenPath);imageStatus->setText(customMode ? QStringLiteral("原图片不存在，使用已保存的副本。")
+                : QStringLiteral("图片不存在且没有保存副本，将使用系统壁纸。"));
         }
     };
 
@@ -2447,7 +2466,7 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
             return image;
         },[=](const QImage &image){
             *previewLoading=false;
-            if(*requestedPreview==path){*previewPath=path;*previewImage=QPixmap::fromImage(image);updatePreview();if(image.isNull())pathLabel->setText("无法读取图片，请选择其他图片。");}
+            if(*requestedPreview==path){*previewPath=path;*previewImage=QPixmap::fromImage(image);updatePreview();if(image.isNull())imageStatus->setText("无法读取图片，请选择其他图片。");}
             else if(!requestedPreview->isEmpty())previewTimer->start(0);
         });
     });
@@ -2462,6 +2481,7 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
     connect(kindCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg, [=]{updatePreview();});
     connect(videoPath, &QLineEdit::textChanged, &dlg, [=]{updatePreview();});
     connect(chooseBtn, &QPushButton::clicked, &dlg, [=, &dlg] {
+        LiquidDialog::SettingsScope compact(dlg.window());
         const QString startDir = chosenPath->isEmpty()
             ? QStandardPaths::writableLocation(QStandardPaths::PicturesLocation)
             : QFileInfo(*chosenPath).absolutePath();
@@ -2489,12 +2509,14 @@ QWidget *DesktopCanvas::createWallpaperSettingsPage(QWidget *parent)
     });
 
     auto *hint = new QLabel(
-        "提示：Fences 壁纸只影响 Fences 桌面层，不会修改系统桌面壁纸。"
-        "已应用图片会保存独立副本，原文件移动或删除后仍可恢复；刷新时优先读取原文件的更新。",
+        "Fences 壁纸只影响 Fences 桌面层，不会修改系统桌面壁纸。",
         &dlg);
+    hint->setObjectName("wallpaperScopeNotice");
     hint->setWordWrap(true);
     hint->setStyleSheet("color: #64748b;");
     root->addWidget(hint);
+    auto *copyNotice=new QLabel("已应用图片会保存独立副本，原文件移动或删除后仍可恢复；刷新时优先读取原文件的更新。",&dlg);
+    copyNotice->setObjectName("wallpaperCopyDetails");copyNotice->setProperty("settingsUiLabel","图片副本与恢复说明");copyNotice->setWordWrap(true);root->addWidget(copyNotice);
 
     auto *buttons = new QDialogButtonBox(
         QDialogButtonBox::Apply, &dlg);

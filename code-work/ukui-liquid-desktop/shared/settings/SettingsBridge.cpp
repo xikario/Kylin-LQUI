@@ -35,6 +35,13 @@
 #include <QTextEdit>
 #include <QListWidget>
 #include <QItemSelectionModel>
+#include <QLayout>
+#include <QGridLayout>
+#include <QScrollArea>
+#include <QSet>
+#include <QImage>
+#include <algorithm>
+#include <cmath>
 
 namespace LquiSettings {
 namespace {
@@ -42,6 +49,67 @@ int formDepth=0;
 QString json(const QJsonObject &value){return QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact));}
 QString error(const QString &message){return json({{"ok",false},{"error",message}});}
 QString plain(QString text){return text.replace('&',QString()).trimmed();}
+bool inputWidget(QWidget *w){
+    return qobject_cast<QAbstractButton*>(w)||qobject_cast<QAbstractSpinBox*>(w)
+        ||qobject_cast<QSlider*>(w)||qobject_cast<QComboBox*>(w)||qobject_cast<QLineEdit*>(w)
+        ||qobject_cast<QPlainTextEdit*>(w)||qobject_cast<QTextEdit*>(w)||qobject_cast<QListWidget*>(w);
+}
+void inputs(QLayoutItem *item,QList<QWidget*> &result){
+    if(!item)return;
+    if(auto *w=item->widget()){
+        if(inputWidget(w)){result.append(w);return;}
+        if(w->layout())for(int i=0;i<w->layout()->count();++i)inputs(w->layout()->itemAt(i),result);
+    }else if(auto *layout=item->layout())for(int i=0;i<layout->count();++i)inputs(layout->itemAt(i),result);
+}
+struct SemanticWalk {
+    QList<QWidget*> widgets;QSet<QWidget*> visited,ownedLabels;QHash<QWidget*,QString> labels;
+    void widget(QWidget *w){
+        if(!w||visited.contains(w))return;
+        visited.insert(w);widgets.append(w);
+        if(auto *label=qobject_cast<QLabel*>(w))if(label->buddy()){
+            labels[label->buddy()]=plain(label->text());ownedLabels.insert(label);
+        }
+        if(inputWidget(w))return; // Never traverse combo/list internal editors.
+        if(auto *area=qobject_cast<QScrollArea*>(w))widget(area->widget());
+        layout(w->layout());
+    }
+    void item(QLayoutItem *i){if(!i)return;if(i->widget())widget(i->widget());else layout(i->layout());}
+    void layout(QLayout *l){
+        if(!l)return;
+        if(auto *form=qobject_cast<QFormLayout*>(l)){
+            for(int row=0;row<form->rowCount();++row){
+                auto *labelItem=form->itemAt(row,QFormLayout::LabelRole);
+                auto *field=form->itemAt(row,QFormLayout::FieldRole);
+                auto *label=labelItem?qobject_cast<QLabel*>(labelItem->widget()):nullptr;
+                QList<QWidget*> fields;inputs(field,fields);
+                if(label&&fields.size()==1){labels[fields.first()]=plain(label->text());ownedLabels.insert(label);}
+                item(labelItem);item(field);item(form->itemAt(row,QFormLayout::SpanningRole));
+            }
+        }else if(auto *grid=qobject_cast<QGridLayout*>(l)){
+            QList<QPair<QPair<int,int>,int>> order;
+            for(int i=0;i<grid->count();++i){int row,col,rs,cs;grid->getItemPosition(i,&row,&col,&rs,&cs);order.append({{row,col},i});}
+            std::stable_sort(order.begin(),order.end(),[](const auto&a,const auto&b){return a.first<b.first;});
+            for(const auto &entry:order)item(grid->itemAt(entry.second));
+        }else for(int i=0;i<l->count();++i)item(l->itemAt(i));
+    }
+};
+QJsonObject uiFor(QWidget *w,QWidget *root){
+    QJsonObject ui;
+    const QList<QPair<QString,QString>> strings={{"group","Group"},{"row","Row"},{"role","Role"},{"for","For"},{"component","Component"},{"emphasis","Emphasis"},{"entity","Entity"},{"alt","Alt"}};
+    for(const auto &key:strings){
+        QVariant value=w->property(qPrintable("settingsUi"+key.second));
+        if(key.first=="group")for(auto *p=w->parentWidget();!value.isValid()&&p;p=p==root?nullptr:p->parentWidget())value=p->property("settingsUiGroup");
+        if(value.type()==QVariant::String&&!value.toString().isEmpty())ui[key.first]=value.toString();
+    }
+    auto order=w->property("settingsUiOrder");if(order.type()==QVariant::Int)ui["order"]=order.toInt();
+    auto collapsible=w->property("settingsUiCollapsible");if(collapsible.type()==QVariant::Bool)ui["collapsible"]=collapsible.toBool();
+    const auto condition=w->property("settingsUiVisibleWhen").toMap();
+    if(condition.value("name").type()==QVariant::String&&condition.contains("equals")){
+        auto v=condition.value("equals");if(v.type()==QVariant::String||v.type()==QVariant::Bool||v.type()==QVariant::Int||(v.type()==QVariant::Double&&std::isfinite(v.toDouble())))
+            ui["visibleWhen"]=QJsonObject{{"name",condition["name"].toString()},{"equals",QJsonValue::fromVariant(v)}};
+    }
+    return ui;
+}
 }
 bool buildingForm(){return formDepth>0;}
 FormScope::FormScope(){++formDepth;}
@@ -63,7 +131,7 @@ QString Bridge::Catalog(){return json({{"ok",true},{"module",module},{"pages",ca
 QString Bridge::controlId(QWidget *widget){
     QString id=widget->property("lquiControlId").toString();
     if(id.isEmpty()){id=QString::number(nextId++);widget->setProperty("lquiControlId",id);controls[id]=widget;
-        connect(widget,&QObject::destroyed,this,[this,id]{controls.remove(id);});}
+        connect(widget,&QObject::destroyed,this,[this,id,widget]{controls.remove(id);previews.remove(widget);});}
     return id;
 }
 QString Bridge::label(QWidget *widget,QWidget *root) const {
@@ -87,14 +155,42 @@ QJsonObject Bridge::snapshot(const QString &page) {
     if(!root)return {{"ok",false},{"error","模块未提供此设置页"}};
     QJsonArray fields;bool dirty=false;
     QList<QWidget*> widgets{root};widgets.append(root->findChildren<QWidget*>());
+    const bool semantic=root->property("settingsUiVersion").type()==QVariant::Int&&root->property("settingsUiVersion").toInt()==1;
+    SemanticWalk walk;
+    if(semantic){walk.widget(root);for(auto *w:widgets)if(!walk.visited.contains(w))walk.widget(w);widgets=walk.widgets;}
     for(auto *w:widgets) {
         dirty|=w->property("settingsDirty").toBool();
         if(w!=root&&!w->isVisibleTo(root))continue;
         bool internal=false;
-        for(auto *p=w->parentWidget();p&&p!=root;p=p->parentWidget())if(p->isWindow()||qobject_cast<QComboBox*>(p)||qobject_cast<QAbstractSpinBox*>(p)||qobject_cast<QAbstractItemView*>(p)||qobject_cast<QTextEdit*>(p)||qobject_cast<QPlainTextEdit*>(p)||p->objectName()=="liquidDialogTitlebar")internal=true;
+        for(auto *p=w->parentWidget();p&&p!=root;p=p->parentWidget())if(p->isWindow()||qobject_cast<QComboBox*>(p)||qobject_cast<QAbstractSpinBox*>(p)||qobject_cast<QAbstractItemView*>(p)||qobject_cast<QTextEdit*>(p)||qobject_cast<QPlainTextEdit*>(p)||p->objectName()=="liquidDialogTitlebar"||(semantic&&(inputWidget(p)||(!p->property("settingsPreviewRole").toString().isEmpty()&&!inputWidget(w)))))internal=true;
         if(internal)continue;
+        if(semantic&&walk.ownedLabels.contains(w))continue;
         QJsonObject field{{"id",controlId(w)},{"name",w->objectName()},{"label",label(w,root)},{"enabled",w->isEnabled()},{"help",w->property("settingsHelp").toString().isEmpty()?w->toolTip():w->property("settingsHelp").toString()}};
-        if(w->objectName()=="settingsPreview") {field["kind"]="preview";field["label"]="候选窗预览";QByteArray bytes;QBuffer buffer(&bytes);buffer.open(QIODevice::WriteOnly);w->grab().toImage().scaled(680,200,Qt::KeepAspectRatio,Qt::SmoothTransformation).save(&buffer,"PNG");field["value"]=QString::fromLatin1(bytes.toBase64());}
+        if(semantic){
+            auto ui=uiFor(w,root);if(!ui.isEmpty())field["ui"]=ui;
+            if(!w->property("settingsUiLabel").toString().isEmpty())field["label"]=w->property("settingsUiLabel").toString();
+            else if(!w->accessibleName().isEmpty())field["label"]=plain(w->accessibleName());
+            else if(walk.labels.contains(w))field["label"]=walk.labels.value(w);
+        }
+        if(semantic&&!w->property("settingsPreviewRole").toString().isEmpty()){
+            field["kind"]="preview";QPixmap picture;QString status=w->property("settingsPreviewAlt").toString();
+            QList<QLabel*> labels;if(auto *text=qobject_cast<QLabel*>(w))labels.append(text);else labels=w->findChildren<QLabel*>();
+            for(auto *text:labels)if(text->isVisibleTo(root)&&text->pixmap()&&!text->pixmap()->isNull()){picture=*text->pixmap();break;}
+            if(picture.isNull())for(auto *text:labels)if(text->isVisibleTo(root)&&!text->text().isEmpty())status=text->text();
+            QString encoded;const qint64 key=picture.isNull()?0:picture.cacheKey();
+            if(auto *cached=previews.object(w);cached&&cached->first==key){encoded=cached->second;if(encoded.isEmpty()&&!picture.isNull())status="预览不可用：编码失败或超过大小限制。";}
+            else if(!picture.isNull()){
+                auto image=picture.toImage();if(image.width()>1360||image.height()>800)image=image.scaled(1360,800,Qt::KeepAspectRatio,Qt::SmoothTransformation);
+                setProperty("previewEncodeCount",property("previewEncodeCount").toInt()+1);
+                QByteArray bytes;QBuffer buffer(&bytes);buffer.open(QIODevice::WriteOnly);image.save(&buffer,"PNG");
+                if(!bytes.isEmpty()&&bytes.size()<=2*1024*1024)encoded=QString::fromLatin1(bytes.toBase64());
+                else status="预览不可用：编码失败或超过大小限制。";
+                if(previews.size()>=4)previews.remove(previews.keys().first());
+                previews.insert(w,new QPair<qint64,QString>(key,encoded),qMax(1,encoded.size()*2/1024+1));
+            }
+            field["value"]=encoded;field["previewStatus"]=status;
+        }
+        else if(w->objectName()=="settingsPreview") {field["kind"]="preview";field["label"]="候选窗预览";QByteArray bytes;QBuffer buffer(&bytes);buffer.open(QIODevice::WriteOnly);w->grab().toImage().scaled(680,200,Qt::KeepAspectRatio,Qt::SmoothTransformation).save(&buffer,"PNG");field["value"]=QString::fromLatin1(bytes.toBase64());}
         else if(auto *check=qobject_cast<QCheckBox*>(w)){field["kind"]="boolean";field["value"]=check->isChecked();}
         else if(auto *radio=qobject_cast<QRadioButton*>(w)){field["kind"]="boolean";field["value"]=radio->isChecked();}
         else if(auto *slider=qobject_cast<QSlider*>(w)){field["kind"]="number";field["value"]=slider->value();field["min"]=slider->minimum();field["max"]=slider->maximum();field["step"]=slider->singleStep();field["suffix"]=slider->property("settingsSuffix").toString();field["valueLabels"]=QJsonArray::fromStringList(slider->property("settingsValueLabels").toStringList());}
@@ -113,7 +209,8 @@ QJsonObject Bridge::snapshot(const QString &page) {
             if(button->property("color").isValid())field["label"]=field["label"].toString()+" · "+title;
             field["kind"]=button->isCheckable()?"toggle":"action";field["value"]=button->isChecked();
         } else if(auto *text=qobject_cast<QLabel*>(w)) {
-            if(text->text().isEmpty()||text->pixmap()||w->property("sliderValue").toBool())continue;
+            const bool statusField=semantic&&(w->property("settingsUiRole")=="status"||w->property("settingsUiRole")=="warning");
+            if((text->text().isEmpty()&&!statusField)||text->pixmap()||w->property("sliderValue").toBool())continue;
             // Form labels are already associated with their input, so avoid duplicates.
             bool formLabel=false;if(auto *form=qobject_cast<QFormLayout*>(w->parentWidget()?w->parentWidget()->layout():nullptr)){int row;QFormLayout::ItemRole role;form->getWidgetPosition(w,&row,&role);formLabel=role==QFormLayout::LabelRole;}
             if(formLabel)continue;
@@ -122,7 +219,18 @@ QJsonObject Bridge::snapshot(const QString &page) {
         else continue;
         fields.append(field);
     }
-    return {{"ok",true},{"module",module},{"page",page},{"fields",fields},{"dirty",dirty},{"modalActive",bool(QApplication::activeModalWidget())}};
+    QJsonObject result{{"ok",true},{"module",module},{"page",page},{"fields",fields},{"dirty",dirty},{"modalActive",bool(QApplication::activeModalWidget())}};
+    if(semantic){
+        QJsonArray groups;
+        for(const auto &v:root->property("settingsUiGroups").toList()){
+            const auto group=v.toMap();QJsonObject item;
+            for(const QString &key:{"key","title"})if(group.value(key).type()==QVariant::String)item[key]=group.value(key).toString();
+            for(const QString &key:{"order","columns"})if(group.value(key).type()==QVariant::Int)item[key]=group.value(key).toInt();
+            groups.append(item);
+        }
+        result["ui"]=QJsonObject{{"version",1},{"layout","grouped"},{"groups",groups}};
+    }
+    return result;
 }
 QString Bridge::Page(const QString &page){return json(snapshot(page));}
 QString Bridge::Discard(const QString &page){

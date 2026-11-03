@@ -5,6 +5,8 @@
 #include <QFileDialog>
 #include <QColorDialog>
 #include <QLineEdit>
+#include <QPointer>
+#include <QVariant>
 
 namespace LiquidDialog {
 struct Options {
@@ -13,8 +15,21 @@ struct Options {
     bool chrome = true;
     // Native light surface used by the unified settings' image chooser.
     bool settingsSurface = false;
+    bool compactSettings = false;
     LiquidPopup::BackdropProvider backdrop;
     std::function<QRect(QSize)> placement;
+};
+// A transient opt-in for dialogs created by one settings action. The owner's
+// property is restored on every exit, including cancel and nested dialogs.
+class SettingsScope {
+public:
+    explicit SettingsScope(QWidget *owner);
+    ~SettingsScope();
+    SettingsScope(const SettingsScope&)=delete;
+    SettingsScope &operator=(const SettingsScope&)=delete;
+private:
+    QPointer<QWidget> owner;
+    QVariant previous;
 };
 // Opt in only owned windows. Native file/color controls and modal results stay
 // in Qt; OEM windows are never restyled through a global dialog filter.

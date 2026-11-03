@@ -97,6 +97,18 @@ public:
                 "QWidget[liquidSettingsSurface=true] QToolButton{background:transparent;color:#262b34;border:0;padding:5px;}"
                 "QWidget[liquidSettingsSurface=true] QToolButton:hover{background:#dbeaff;border-radius:6px;}"
                 "QWidget[liquidSettingsSurface=true] QDialogButtonBox{background:transparent;border:0;}"));
+            if(options.compactSettings){
+                window->setProperty("liquidCompactSettings",true);
+                const int pixels=qRound(14*qMax(.85,qApp->font().pointSizeF()/10.));
+                window->setStyleSheet(window->styleSheet()+QStringLiteral(
+                    "QWidget[liquidCompactSettings=true],QWidget[liquidCompactSettings=true] QWidget{font-family:'Noto Sans CJK SC','Noto Sans';font-size:%1px;color:#1D1D1F;}"
+                    "QWidget[liquidCompactSettings=true] QPushButton{background:#FFFFFF;border:1px solid #D7D9DF;border-radius:6px;padding:4px 10px;min-height:22px;}"
+                    "QWidget[liquidCompactSettings=true] QPushButton:hover{background:#F0F3F8;}"
+                    "QWidget[liquidCompactSettings=true] QPushButton:pressed{background:#E5EBF3;}"
+                    "QWidget[liquidCompactSettings=true] QLineEdit,QWidget[liquidCompactSettings=true] QComboBox,QWidget[liquidCompactSettings=true] QAbstractItemView{border:1px solid #D7D9DF;border-radius:6px;background:#FFFFFF;padding:4px 8px;selection-background-color:#DCEBFF;selection-color:#095DB5;}"
+                    "QWidget[liquidCompactSettings=true] QLineEdit:focus,QWidget[liquidCompactSettings=true] QComboBox:focus{border:2px solid #007AFF;padding:3px 7px;}"
+                    "QWidget[liquidCompactSettings=true] QToolTip{border:1px solid #D7D9DF;border-radius:6px;background:#FFFFFF;color:#1D1D1F;padding:8px;}").arg(pixels));
+            }
         } else if(options.colors) {
             QPalette palette=window->palette();
             for(auto role:{QPalette::Window,QPalette::Button})palette.setColor(role,QColor("#243749"));
@@ -230,7 +242,7 @@ protected:
             painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
             if(options.settingsSurface) {
                 painter.setRenderHint(QPainter::Antialiasing);painter.setPen(QPen(QColor("#d1d7df"),1));
-                painter.setBrush(QColor("#e7e9ed"));painter.drawRoundedRect(QRectF(window->rect()).adjusted(.5,.5,-.5,-.5),12,12);
+                painter.setBrush(QColor(options.compactSettings?"#F5F5F7":"#e7e9ed"));painter.drawRoundedRect(QRectF(window->rect()).adjusted(.5,.5,-.5,-.5),12,12);
             } else if(LiquidPopup::isEnabled() && !material.isNull())painter.drawImage(window->rect(),material);
             else painter.fillRect(window->rect(),window->palette().color(QPalette::Window));
         } else if(event->type()==QEvent::Hide) {
@@ -462,8 +474,14 @@ QString chooseFile(QWidget *parent,const QString &title,const QString &dir,const
 void install(QWidget *window,const Options &options) {
     if(!window || window->property("liquidDialogInstalled").toBool()
         || qEnvironmentVariable("UKUI_LIQUID_POPUP")=="0")return;
-    new Surface(window,options);
+    Options selected=options;
+    for(auto *p=window->parentWidget();p;p=p->parentWidget())if(p->property("lquiCompactSettingsScope").toBool()){selected.settingsSurface=true;selected.compactSettings=true;break;}
+    new Surface(window,selected);
 }
+SettingsScope::SettingsScope(QWidget *widget):owner(widget),previous(widget?widget->property("lquiCompactSettingsScope"):QVariant()){
+    if(owner)owner->setProperty("lquiCompactSettingsScope",true);
+}
+SettingsScope::~SettingsScope(){if(owner)owner->setProperty("lquiCompactSettingsScope",previous);}
 void installMotion(QWidget *window,bool chrome) {
     Options options;options.material=options.colors=false;options.chrome=chrome;install(window,options);
 }

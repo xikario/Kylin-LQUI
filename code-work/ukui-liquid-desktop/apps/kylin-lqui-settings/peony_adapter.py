@@ -27,34 +27,42 @@ def catalog():
     return {'ok':True,'module':'peony','pages':[{'id':'general','title':'文件管理'},{'id':'terminal','title':'Peony 终端'},{'id':'plugins','title':'Peony 扩展'}]}
 
 def page(name):
-    fields=[]
+    fields=[];groups=[]
+    def group(key,title,order,columns=1):groups.append(dict(key=key,title=title,order=order,columns=columns))
+    def annotate(item,key,order,role='control',**extra):item['ui']=dict(group=key,order=order,role=role,**extra);return item
     if name=='general':
+        group('menus','菜单与终端',10,2);group('files','文件显示',20,2)
         data=gsettings_store.get_all()
-        for key,label in BOOLEAN_LABELS.items():
-            if key in data['settings']:fields.append(field('global:'+key,label,'boolean',data['settings'][key]))
-        if data.get('errors'):fields.append(field('errors','','note','部分系统设置不可用：'+', '.join(data['errors'])))
+        for index,(key,label) in enumerate(BOOLEAN_LABELS.items()):
+            if key in data['settings']:fields.append(annotate(field('global:'+key,label,'boolean',data['settings'][key]),'files' if key in ('show-file-extension','show-hidden-file') else 'menus',index))
+        if data.get('errors'):fields.append(annotate(field('errors','','note','部分系统设置不可用：'+', '.join(data['errors'])),'files',99,'warning'))
     elif name=='terminal':
+        group('terminal','嵌入终端',10)
         data=cli_settings.read()
         for key,label,kind,limits in CLI_FIELDS:
             extra={};value=data[key]
             if kind=='number':extra.update(min=limits[0],max=limits[1],suffix=limits[2],step=1)
             elif kind=='text':extra['maxLength']=limits
             elif kind=='choice':extra['options']=limits;value=limits.index(value)
-            fields.append(field('cli:'+key,label,kind,value,**extra))
-        fields.append(field('terminal-note','','note','设置立即保存。终端仍由用户点击时加载，关闭文件管理窗口时一起退出。'))
+            fields.append(annotate(field('cli:'+key,label,kind,value,**extra),'terminal',len(fields)))
+        fields.append(annotate(field('terminal-note','','note','设置立即保存。终端仍由用户点击时加载，关闭文件管理窗口时一起退出。'),'terminal',99,'help'))
     elif name=='plugins':
-        fields.append(field('open-manager','打开 Peony 插件管理器','action'))
-        fields.append(field('restart-note','','note','启用状态保存后，在下次启动文件管理器时生效。不会关闭你已打开的文件窗口。'))
-        for plugin in scanner.scan_plugins():
-            fields.append(field('heading:'+plugin.file_name,'','heading',plugin.name))
-            fields.append(field('description:'+plugin.file_name,'','note',plugin.description+'\n'+('已安装' if plugin.installed else '未安装')+' · '+plugin.path))
+        group('intro','',0);group('plugins','已发现的扩展',10);group('maintenance','扩展维护',20)
+        fields.append(annotate(field('open-manager','打开 Peony 插件管理器','action'),'intro',0,'action'))
+        fields.append(annotate(field('restart-note','','note','启用状态保存后，在下次启动文件管理器时生效。不会关闭你已打开的文件窗口。'),'intro',1,'help'))
+        for index,plugin in enumerate(scanner.scan_plugins()):
+            def plugin_field(item,role):return annotate(item,'plugins',index,role,entity=plugin.file_name,component='plugin-row',row=plugin.file_name)
+            fields.append(plugin_field(field('heading:'+plugin.file_name,'','heading',plugin.name),'label'))
+            fields.append(plugin_field(field('description:'+plugin.file_name,'','note',plugin.description),'detail'))
+            path=plugin_field(field('path:'+plugin.file_name,'安装路径','note',plugin.path),'detail');path['ui']['component']='file-picker';fields.append(path)
+            fields.append(plugin_field(field('state:'+plugin.file_name,'','note','未安装' if not plugin.installed else '状态未知' if plugin.enabled is None else '已启用' if plugin.enabled else '已停用'),'status'))
             if plugin.installed:
-                if plugin.enabled is None:fields.append(field('unknown:'+plugin.file_name,'','note','无法读取启用状态，请确认 Peony 设置服务可用后刷新。'))
-                else:fields.append(field('plugin:'+plugin.file_name,'启用 '+plugin.name,'boolean',plugin.enabled))
+                if plugin.enabled is None:fields.append(plugin_field(field('unknown:'+plugin.file_name,'','note','无法读取启用状态，请确认 Peony 设置服务可用后刷新。'),'status'))
+                else:fields.append(plugin_field(field('plugin:'+plugin.file_name,'启用 '+plugin.name,'boolean',plugin.enabled),'control'))
         for key,label in [('install-copy','安装 / 更新复制路径扩展'),('remove-copy','卸载复制路径扩展'),('install-cli','安装 / 更新嵌入终端'),('remove-cli','卸载嵌入终端')]:
-            fields.append(field(key,label,'action',confirm='确认'+label+'？' if key.startswith('remove') else ''))
+            fields.append(annotate(field(key,label,'action',confirm='确认'+label+'？' if key.startswith('remove') else ''),'maintenance',len(fields),'action',emphasis='destructive' if key.startswith('remove') else 'normal'))
     else:raise ValueError('设置页不存在')
-    return {'ok':True,'module':'peony','page':name,'fields':fields,'dirty':False}
+    return {'ok':True,'module':'peony','page':name,'fields':fields,'dirty':False,'ui':{'version':1,'layout':'plugin-list' if name=='plugins' else 'grouped','groups':groups}}
 
 def set_value(name,fid,encoded):
     value=json.loads(encoded)['value']

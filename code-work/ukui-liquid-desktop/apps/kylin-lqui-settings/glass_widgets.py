@@ -48,17 +48,22 @@ class AudioDeviceButton(QtWidgets.QPushButton):
         super().__init__();self.device_id=ident;self.kind=kind;self.setProperty('audioDevice',True);self.setMinimumHeight(48)
         policy=QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Minimum);policy.setHeightForWidth(True);self.setSizePolicy(policy)
         row=QtWidgets.QHBoxLayout(self);row.setContentsMargins(10,6,10,6);row.setSpacing(8)
-        self.name_label=QtWidgets.QLabel();self.name_label.setWordWrap(True);self.name_label.setTextFormat(QtCore.Qt.PlainText);self.name_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);row.addWidget(self.name_label,1)
+        text=QtWidgets.QVBoxLayout();text.setSpacing(3);row.addLayout(text,1)
+        self.name_label=QtWidgets.QLabel();self.name_label.setWordWrap(True);self.name_label.setTextFormat(QtCore.Qt.PlainText);self.name_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);text.addWidget(self.name_label)
+        self.detail_label=QtWidgets.QLabel();self.detail_label.setWordWrap(True);self.detail_label.setTextFormat(QtCore.Qt.PlainText);self.detail_label.setProperty('muted',True);self.detail_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);text.addWidget(self.detail_label);self.detail_label.hide()
         self.current_label=QtWidgets.QLabel();self.current_label.setFixedWidth(30);self.current_label.setAlignment(QtCore.Qt.AlignCenter);self.current_label.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents);row.addWidget(self.current_label)
-    def set_device(self,name,current):
+    def set_device(self,name,current,detail='',description=''):
         import re
-        self.name_label.setText(re.sub(r' \(echo cancelled with .+\)$','（回声消除）',name));self.setToolTip(name)
-        self.current_label.setText('当前' if current else '');self.setAccessibleName(name+('，当前设备' if current else '，选择设备'))
+        self.name_label.setText(re.sub(r' \(echo cancelled with .+\)$','（回声消除）',name));self.detail_label.setText(detail);self.detail_label.setVisible(bool(detail));self.setToolTip('\n'.join(filter(None,(description or name,detail))))
+        self.current_label.setText('当前' if current else '');self.setAccessibleName(name+('，'+detail if detail else '')+('，当前设备' if current else '，选择设备'))
         self.setMinimumHeight(self.heightForWidth(self.width()));self.updateGeometry()
         if self.property('current')!=current:
             self.setProperty('current',current);self.style().unpolish(self);self.style().polish(self);self.update()
     def heightForWidth(self,width):
-        return max(48,self.name_label.heightForWidth(max(1,width-58))+12) if hasattr(self,'name_label') else 48
+        if not hasattr(self,'name_label'):return 48
+        available=max(1,width-58);height=self.name_label.heightForWidth(available)+12
+        if self.detail_label.text():height+=self.detail_label.heightForWidth(available)+3
+        return max(48,height)
     def minimumSizeHint(self):return QtCore.QSize(120,48)
     def sizeHint(self):return QtCore.QSize(220,self.heightForWidth(self.width()))
     def resizeEvent(self,event):

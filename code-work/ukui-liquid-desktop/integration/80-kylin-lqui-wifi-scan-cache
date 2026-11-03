@@ -1,0 +1,14 @@
+#!/bin/sh
+# Kylin-LQUI: retain nearby hotspots in dense Wi-Fi deployments.
+# Apply after activation/reapply; do not change profiles, radios or connections.
+case "${2-}" in
+    up|reapply) ;;
+    *) exit 0 ;;
+esac
+case "${1-}" in
+    ''|*[!a-zA-Z0-9_.:-]*) exit 0 ;;
+esac
+[ -d "/sys/class/net/$1/wireless" ] || exit 0
+[ -x /usr/sbin/wpa_cli ] || exit 0
+/usr/sbin/wpa_cli -i "$1" set bss_max_count 1024 >/dev/null 2>&1
+exit 0

@@ -1,0 +1,71 @@
+{
+  "deployment": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261103-093526-b3883c47",
+    "oldPid": 5129,
+    "newPid": 29733,
+    "audioSettingsPreserved": true
+  },
+  "installedUi": {
+    "pages": [
+      {
+        "page": "sound",
+        "visible": true,
+        "closing": false,
+        "preparing": false,
+        "navigationRunning": false,
+        "resident": true,
+        "preloading": false,
+        "controlsReady": true,
+        "motionRunning": false,
+        "progress": 1.0,
+        "busy": false,
+        "reading": false,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialBackend": "snell-gpu",
+        "materialRenders": 12,
+        "adaptiveSmoke": true
+      }
+    ],
+    "verified": true
+  },
+  "tests": {
+    "fullSuitePassed": 64,
+    "adapterSuitePassed": 19,
+    "isolatedPulse": {
+      "modules": [
+        "module-native-protocol-unix",
+        "module-null-sink",
+        "module-null-sink",
+        "module-remap-source"
+      ],
+      "verified": true,
+      "isolatedServer": true,
+      "hardwareModulesLoaded": false,
+      "microphoneVolumeAndMute": true,
+      "defaultInputAndLiveAppStreamMoved": true,
+      "monitorRecordingPreserved": true,
+      "internalAudioPlumbingPreserved": true,
+      "outputAndLivePlaybackMoved": true,
+      "removedDeviceRejected": true
+    }
+  },
+  "currentOutput": {
+    "displayName": "有线耳机（回声消除）",
+    "port": "analog-output-headphones",
+    "volume": 57,
+    "muted": false
+  },
+  "currentInput": {
+    "displayName": "外接麦克风（回声消除）",
+    "port": "analog-input-mic",
+    "volume": 100,
+    "muted": false
+  },
+  "installedFilesMatchTestedSource": true,
+  "limitation": "System routing and UI verified. Audible playback and physical microphone quality were not tested."
+}

@@ -1,0 +1,135 @@
+{
+  "testsPassed": 79,
+  "nativePower": {
+    "before": {
+      "power-policy-ac": 0,
+      "power-policy-battery": 0,
+      "power-policy-current": 0
+    },
+    "beforeGovernors": [
+      "performance",
+      "performance",
+      "performance",
+      "performance",
+      "performance",
+      "performance",
+      "performance",
+      "performance"
+    ],
+    "source": "power-policy-battery",
+    "driverResponded": true,
+    "during": {
+      "power-policy-ac": 0,
+      "power-policy-battery": 1,
+      "power-policy-current": 1
+    },
+    "duringGovernors": [
+      "ondemand",
+      "ondemand",
+      "ondemand",
+      "ondemand",
+      "ondemand",
+      "ondemand",
+      "ondemand",
+      "ondemand"
+    ],
+    "restored": true,
+    "after": {
+      "power-policy-ac": 0,
+      "power-policy-battery": 0,
+      "power-policy-current": 0
+    },
+    "afterGovernors": [
+      "performance",
+      "performance",
+      "performance",
+      "performance",
+      "performance",
+      "performance",
+      "performance",
+      "performance"
+    ]
+  },
+  "deployment": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261103-150510-bdc044c8",
+    "oldPid": 4689,
+    "newPid": 22447,
+    "audioSettingsPreserved": true
+  },
+  "installedUi": {
+    "powerPage": {
+      "page": "power",
+      "visible": true,
+      "closing": false,
+      "preparing": false,
+      "navigationRunning": false,
+      "resident": true,
+      "preloading": false,
+      "controlsReady": true,
+      "motionRunning": false,
+      "progress": 1.0,
+      "busy": false,
+      "reading": false,
+      "geometry": [
+        1094,
+        485,
+        389,
+        660
+      ],
+      "materialBackend": "snell-gpu",
+      "materialRenders": 14,
+      "adaptiveSmoke": true,
+      "audioEventsRunning": true,
+      "audioReading": false,
+      "microphoneReading": false,
+      "volumeFeedback": {
+        "requests": 0,
+        "starts": 0,
+        "completions": 0,
+        "pending": false,
+        "running": false,
+        "lastExit": null,
+        "lastError": ""
+      },
+      "volumeUi": null
+    },
+    "wifiPage": {
+      "page": "wifi",
+      "visible": true,
+      "closing": false,
+      "preparing": false,
+      "navigationRunning": false,
+      "resident": true,
+      "preloading": false,
+      "controlsReady": true,
+      "motionRunning": false,
+      "progress": 1.0,
+      "busy": true,
+      "reading": false,
+      "geometry": [
+        1094,
+        485,
+        389,
+        660
+      ],
+      "materialBackend": "snell-gpu",
+      "materialRenders": 16,
+      "adaptiveSmoke": true,
+      "audioEventsRunning": true,
+      "audioReading": false,
+      "microphoneReading": false,
+      "volumeFeedback": {
+        "requests": 0,
+        "starts": 0,
+        "completions": 0,
+        "pending": false,
+        "running": false,
+        "lastExit": null,
+        "lastError": ""
+      },
+      "volumeUi": null
+    },
+    "verified": true
+  },
+  "installedFilesMatch": true
+}

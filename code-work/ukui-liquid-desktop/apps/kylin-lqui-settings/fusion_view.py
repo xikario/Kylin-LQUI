@@ -21,6 +21,8 @@ QPushButton[quickAction="true"]{background:transparent;text-align:center;padding
 QPushButton[quickAction="true"]:checked{background:rgba(80,145,190,45);}
 QPushButton[audioDevice="true"]{background:rgba(220,235,255,15);border:1px solid rgba(215,234,255,24);border-radius:10px;padding:0;}
 QPushButton[audioDevice="true"][current="true"]{background:rgba(135,195,235,40);border:1px solid rgba(190,225,250,95);}
+QPushButton[powerProfile="true"]{text-align:left;background:rgba(220,235,255,15);border:1px solid rgba(215,234,255,24);border-radius:10px;padding:6px 10px;}
+QPushButton[powerProfile="true"][current="true"]{color:#eef4ff;background:rgba(135,195,235,40);border:1px solid rgba(190,225,250,95);}
 QPushButton[primary="true"]{background:#c18037;}
 QComboBox,QLineEdit{background:rgba(10,18,28,125);color:#f1f5ff;border:1px solid rgba(215,234,255,65);border-radius:8px;padding:6px;}
 QComboBox::drop-down{border:0;width:24px;}
@@ -134,16 +136,16 @@ class FusionView:
             value=slider.sliderPosition();QtCore.QTimer.singleShot(0,lambda:commit(value))
         slider.actionTriggered.connect(keyboard)
     def build_audio(self,box,title='声音'):
-        head=QtWidgets.QHBoxLayout();head.addWidget(self.label(title),1);self.volume_label=self.slider_readout();head.addWidget(self.volume_label)
+        head=QtWidgets.QHBoxLayout();self.audio_title=self.label(title);head.addWidget(self.audio_title,1);self.volume_label=self.slider_readout();head.addWidget(self.volume_label)
         if self.page=='home':
             output=self.icon_button('chevron','输出设备与声音设置',lambda:self.navigate('sound'),24);head.addWidget(output)
         box.addLayout(head);row=QtWidgets.QHBoxLayout();self.mute=self.icon_button('sound','静音 / 取消静音',lambda:self.action('mute',{'value':not (self.data.get('audio',{}).get('selected') or {}).get('muted',False)}),26);row.addWidget(self.mute);self.volume=QtWidgets.QSlider(QtCore.Qt.Horizontal);self.volume.setRange(0,100);row.addWidget(self.volume,1);box.addLayout(row);label=self.volume_label;self.volume.valueChanged.connect(lambda value:label.setText(str(value)+'%'));self.bind_slider(self.volume,'volume')
     def reset_audio_details(self):
-        self.audio_device_lists={};self.mic_volume=None;self.mic_mute=None;self.mic_label=None
+        self.audio_device_lists={};self.mic_volume=None;self.mic_mute=None;self.mic_label=None;self.mic_title=None
     def build_sound_panel(self,box):
         self.build_audio(box,'扬声器与耳机');self.build_audio_devices(box,'output','输出设备')
         line=QtWidgets.QFrame();line.setFixedHeight(1);line.setStyleSheet('background:rgba(220,235,255,45);border:0;');box.addWidget(line)
-        head=QtWidgets.QHBoxLayout();head.addWidget(self.label('麦克风'),1);self.mic_label=self.slider_readout();head.addWidget(self.mic_label);box.addLayout(head)
+        head=QtWidgets.QHBoxLayout();self.mic_title=self.label('麦克风');head.addWidget(self.mic_title,1);self.mic_label=self.slider_readout();head.addWidget(self.mic_label);box.addLayout(head)
         row=QtWidgets.QHBoxLayout();self.mic_mute=self.icon_button('microphone','麦克风静音 / 取消静音',self.toggle_microphone,26);row.addWidget(self.mic_mute)
         self.mic_volume=QtWidgets.QSlider(QtCore.Qt.Horizontal);self.mic_volume.setRange(0,100);row.addWidget(self.mic_volume,1);box.addLayout(row)
         readout=self.mic_label;self.mic_volume.valueChanged.connect(lambda value:readout.setText(str(value)+'%'));self.bind_slider(self.mic_volume,'input-volume')
@@ -166,7 +168,7 @@ class FusionView:
             if button is None:
                 button=AudioDeviceButton(ident,kind);buttons[ident]=button;view['layout'].addWidget(button)
                 button.clicked.connect(lambda checked=False,b=button:self.choose_audio_device(b.kind,b.device_id));button.show()
-            button.set_device(item['name'],ident==selected);button.setEnabled(not busy)
+            button.set_device(item.get('displayName',item['name']),ident==selected,item.get('detail',''),item['name']);button.setEnabled(not busy)
     def choose_audio_device(self,kind,ident):
         domain='audio' if kind=='output' else 'microphone'
         if ident==(self.data.get(domain,{}).get('selected') or {}).get('id'):return

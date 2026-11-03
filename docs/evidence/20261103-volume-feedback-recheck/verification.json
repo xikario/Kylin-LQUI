@@ -1,0 +1,75 @@
+{
+  "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261103-150510-bdc044c8",
+  "actualMouseDemo": true,
+  "completed": true,
+  "originalVolume": 26,
+  "finalVolume": 26,
+  "steps": [
+    {
+      "page": "home",
+      "gesture": "click",
+      "value": 26,
+      "feedback": {
+        "requests": 1,
+        "starts": 1,
+        "completions": 1,
+        "pending": false,
+        "running": false,
+        "lastExit": 0,
+        "lastError": ""
+      },
+      "streamObserved": true,
+      "streamMuted": false
+    },
+    {
+      "page": "home",
+      "gesture": "drag",
+      "value": 20,
+      "feedback": {
+        "requests": 2,
+        "starts": 2,
+        "completions": 2,
+        "pending": false,
+        "running": false,
+        "lastExit": 0,
+        "lastError": ""
+      },
+      "streamObserved": true,
+      "streamMuted": false
+    },
+    {
+      "page": "sound",
+      "gesture": "drag",
+      "value": 26,
+      "feedback": {
+        "requests": 3,
+        "starts": 3,
+        "completions": 3,
+        "pending": false,
+        "running": false,
+        "lastExit": 0,
+        "lastError": ""
+      },
+      "streamObserved": true,
+      "streamMuted": false
+    },
+    {
+      "page": "sound",
+      "gesture": "click",
+      "value": 26,
+      "feedback": {
+        "requests": 4,
+        "starts": 4,
+        "completions": 4,
+        "pending": false,
+        "running": false,
+        "lastExit": 0,
+        "lastError": ""
+      },
+      "streamObserved": true,
+      "streamMuted": false
+    }
+  ],
+  "userAudibilityConfirmed": true,
+  "userConfirmation": "首页和声音详情页两处都听到了"
+}

@@ -39,27 +39,76 @@ class SystemBackend(DesktopControls):
         return result.stdout
     def audio(self):
         info=self.command(['/usr/bin/pactl','info']);match=re.search(r'^Default Sink:\s*(.+)$',info,re.M);default=match.group(1).strip() if match else ''
-        text=self.command(['/usr/bin/pactl','list','sinks']);outputs=[]
+        text=self.command(['/usr/bin/pactl','list','sinks']);outputs=[];blocks={}
         for block in re.split(r'(?m)^Sink #\d+',text)[1:]:
-            def field(name):
-                match=re.search(r'^\s*'+name+r':\s*(.*)$',block,re.M);return match.group(1).strip() if match else ''
-            volumes=re.findall(r'(\d+)%',field('Volume'));name=field('Name')
-            outputs.append({'id':name,'name':field('Description') or name,'volume':round(sum(map(int,volumes))/len(volumes)) if volumes else 0,'muted':field('Mute')=='yes'})
+            volumes=re.findall(r'(\d+)%',self.pulse_field(block,'Volume'));name=self.pulse_field(block,'Name')
+            if not name:continue
+            outputs.append({'id':name,'name':self.pulse_field(block,'Description') or name,'volume':round(sum(map(int,volumes))/len(volumes)) if volumes else 0,'muted':self.pulse_field(block,'Mute')=='yes'})
+            blocks[name]=block
+        self.describe_pulse_routes(outputs,blocks,'output')
         selected=next((item for item in outputs if item['id']==default),outputs[0] if outputs else None)
         return {'available':bool(selected),'outputs':outputs,'selected':selected}
     @staticmethod
     def pulse_field(block,name):
-        match=re.search(r'^\s*'+re.escape(name)+r':\s*(.*)$',block,re.M)
+        match=re.search(r'^[ \t]*'+re.escape(name)+r':[ \t]*(.*)$',block,re.M)
         return match.group(1).strip() if match else ''
+    @staticmethod
+    def pulse_property(block,name):
+        match=re.search(r'^[ \t]*'+re.escape(name)+r'[ \t]*=[ \t]*(.*)$',block,re.M)
+        if not match:return ''
+        value=match.group(1).strip()
+        try:return str(json.loads(value))
+        except (ValueError,TypeError):return value.strip('"')
+    def describe_pulse_routes(self,devices,blocks,kind):
+        # Jack insertion changes Active Port, not the sink/source ID or its
+        # generic card description. Filters inherit their physical endpoint.
+        by_id={item['id']:item for item in devices}
+        port_labels={'analog-output-headphones':'有线耳机','analog-output-speaker':'扬声器',
+                     'analog-input-internal-mic':'内置麦克风','analog-input-mic':'外接麦克风',
+                     'analog-input-headset-mic':'耳麦麦克风','analog-output-lineout':'线路输出',
+                     'analog-input-linein':'线路输入'}
+        for item in devices:
+            current=item['id'];seen=set();chain=[];base=None
+            while current in by_id and current not in seen:
+                seen.add(current);block=blocks[current];chain.append(block)
+                master=self.pulse_property(block,'device.master_device')
+                if not master:base=by_id[current];break
+                current=master
+            own=blocks[item['id']]
+            is_filter=bool(self.pulse_property(own,'device.master_device')) or self.pulse_property(own,'device.class')=='filter'
+            if base is None or (base is item and is_filter):
+                # Never invent a physical route for dangling/cyclic filters.
+                if is_filter:item.update(displayName=re.sub(r' \(echo cancelled with .+\)$','（回声消除）',item['name']),detail='虚拟处理通道 · 物理设备暂不可确认')
+                continue
+            block=blocks[base['id']];port=self.pulse_field(block,'Active Port')
+            match=re.search(r'^[ \t]*'+re.escape(port)+r':[ \t]*(.*?)\s+\(priority:.*$',block,re.M) if port else None
+            port_name=port_labels.get(port) or (match.group(1).strip() if match else '')
+            if not port_name and not is_filter:continue
+            label=port_name or base['name']
+            item.update(port=port,routeLabel=label,physicalId=base['id'])
+            if is_filter:
+                echo=any(self.pulse_field(b,'Driver')=='module-echo-cancel.c' for b in chain)
+                effect='回声消除' if echo else '音频处理'
+                item.update(displayName=label+'（'+effect+'）',detail=base['name']+' · 同一设备的'+effect+'通道')
+            else:
+                item.update(displayName=label,detail=base['name']+' · '+('直接输出' if kind=='output' else '直接输入'))
     def microphone(self):
         info=self.command(['/usr/bin/pactl','info']);match=re.search(r'^Default Source:\s*(.+)$',info,re.M);default=match.group(1).strip() if match else ''
-        text=self.command(['/usr/bin/pactl','list','sources']);parts=re.split(r'(?m)^Source #(\d+)',text);inputs=[]
+        text=self.command(['/usr/bin/pactl','list','sources']);parts=re.split(r'(?m)^Source #(\d+)',text);inputs=[];blocks={}
         for index,block in zip(parts[1::2],parts[2::2]):
             name=self.pulse_field(block,'Name');monitor=self.pulse_field(block,'Monitor of Sink')
             if not name or name.endswith('.monitor') or monitor not in ('','n/a'):continue
             volumes=re.findall(r'(\d+)%',self.pulse_field(block,'Volume'))
             inputs.append({'id':name,'index':index,'name':self.pulse_field(block,'Description') or name,'volume':round(sum(map(int,volumes))/len(volumes)) if volumes else 0,'muted':self.pulse_field(block,'Mute')=='yes'})
+            blocks[name]=block
+        self.describe_pulse_routes(inputs,blocks,'input')
         return {'available':bool(inputs),'inputs':inputs,'selected':next((item for item in inputs if item['id']==default),None)}
+    @staticmethod
+    def wifi_band(frequency):
+        if 2400<=frequency<2500:return '2.4 GHz'
+        if 4900<=frequency<5925:return '5 GHz'
+        if 5925<=frequency<=7125:return '6 GHz'
+        return '频段未知'
     def wifi(self):
         manager=self.props(NM,NMP,NM);devices=self.call(NM,NMP,NM,'GetDevices')[0];networks=[];interfaces=[]
         for path in devices:
@@ -81,6 +130,7 @@ class SystemBackend(DesktopControls):
                     raise
                 ssid=bytes(properties.get('Ssid',[]))
                 if not ssid:continue
+                frequency=int(properties.get('Frequency',0));band=self.wifi_band(frequency)
                 flags=int(properties.get('RsnFlags',0))|int(properties.get('WpaFlags',0));secure=bool(properties.get('Flags',0)&1)
                 security='enterprise' if flags&0x200 else 'sae' if flags&0x400 and not flags&0x100 else 'psk' if flags&0x100 else 'unsupported' if secure else 'open'
                 profile=''
@@ -88,6 +138,8 @@ class SystemBackend(DesktopControls):
                     wireless_settings=settings['802-11-wireless'];section=settings.get('802-11-wireless-security',{});key=section.get('key-mgmt','')
                     if bytes(wireless_settings.get('ssid',[]))!=ssid:continue
                     if wireless_settings.get('mode','infrastructure')!='infrastructure':continue
+                    wanted_band=wireless_settings.get('band')
+                    if (wanted_band=='bg' and band!='2.4 GHz') or (wanted_band=='a' and band!='5 GHz'):continue
                     wanted_interface=settings.get('connection',{}).get('interface-name')
                     if wanted_interface and wanted_interface!=device.get('Interface'):continue
                     bssid=wireless_settings.get('bssid')
@@ -96,9 +148,11 @@ class SystemBackend(DesktopControls):
                         if configured!=str(properties.get('HwAddress','')).upper():continue
                     compatible=(security=='open' and not section) or (key=='wpa-psk' and bool(flags&0x100)) or (key=='sae' and bool(flags&0x400)) or (key in ('wpa-eap','wpa-eap-suite-b-192','ieee8021x') and security=='enterprise')
                     if compatible:profile=connection;break
-                networks.append({'id':ap,'device':path,'rawSsid':ssid.hex(),'ssid':ssid.decode('utf-8','backslashreplace'),'strength':int(properties.get('Strength',0)),'connected':ap==active and device.get('State')==100,'connecting':ap==active and 40<=device.get('State',0)<100,'profile':profile,'security':security})
+                networks.append({'id':ap,'device':path,'rawSsid':ssid.hex(),'ssid':ssid.decode('utf-8','backslashreplace'),'frequency':frequency,'band':band,'strength':int(properties.get('Strength',0)),'connected':ap==active and device.get('State')==100,'connecting':ap==active and 40<=device.get('State',0)<100,'profile':profile,'security':security})
         unique={}
-        for item in sorted(networks,key=lambda x:(x['connected'],x['strength']),reverse=True):unique.setdefault((item['device'],item['rawSsid'],item['security']),item)
+        # Keep the strongest AP per SSID/security/band, preserving the active AP.
+        # A dual-band network must expose both choices rather than hiding one.
+        for item in sorted(networks,key=lambda x:(x['connected'],x['strength']),reverse=True):unique.setdefault((item['device'],item['rawSsid'],item['security'],item['band']),item)
         return {'available':bool(interfaces),'enabled':bool(manager.get('WirelessEnabled')),'hardwareEnabled':bool(manager.get('WirelessHardwareEnabled')),'devices':interfaces,'networks':list(unique.values())[:32],'state':int(manager.get('State',0))}
     def power(self):
         service='org.freedesktop.UPower';path='/org/freedesktop/UPower';root=self.props(service,path,service)
@@ -106,9 +160,30 @@ class SystemBackend(DesktopControls):
         result={'available':True,'present':bool(props.get('IsPresent')),'onBattery':bool(root.get('OnBattery')),'percentage':round(float(props.get('Percentage',0))),'state':int(props.get('State',0)),'timeToEmpty':int(props.get('TimeToEmpty',0)),'timeToFull':int(props.get('TimeToFull',0)),'capacity':round(float(props.get('Capacity',0))),'profiles':[]}
         for name,object_path,interface in [('net.hadess.PowerProfiles','/net/hadess/PowerProfiles','net.hadess.PowerProfiles'),('org.freedesktop.UPower.PowerProfiles','/org/freedesktop/UPower/PowerProfiles','org.freedesktop.UPower.PowerProfiles')]:
             try:
-                data=self.props(name,object_path,interface);result.update(profileService=name,profilePath=object_path,profileInterface=interface,profiles=[p['Profile'] for p in data.get('Profiles',[])],activeProfile=data.get('ActiveProfile'));break
+                data=self.props(name,object_path,interface)
+                if not data.get('Profiles'):continue
+                result.update(profileBackend='power-profiles-daemon',profileService=name,profilePath=object_path,profileInterface=interface,profiles=[p['Profile'] for p in data.get('Profiles',[])],activeProfile=data.get('ActiveProfile'));break
             except GLib.Error:pass
+        if not result['profiles']:
+            try:result.update(self.ukui_power_profiles(result['onBattery']))
+            except (GLib.Error,RuntimeError,ValueError):pass
         return result
+    @staticmethod
+    def ukui_power_settings():
+        source=Gio.SettingsSchemaSource.get_default();schema=source.lookup('org.ukui.power-manager',True) if source else None
+        if not schema or not all(schema.has_key(key) for key in ('power-policy-ac','power-policy-battery')):return None
+        return Gio.Settings.new_full(schema,None,None)
+    def ukui_power_profiles(self,on_battery):
+        settings=self.ukui_power_settings()
+        if settings is None:return {}
+        if not self.session_call('org.freedesktop.DBus','/org/freedesktop/DBus','org.freedesktop.DBus','NameHasOwner',GLib.Variant('(s)',('org.ukui.powerManager',)))[0]:return {}
+        key='power-policy-battery' if on_battery else 'power-policy-ac'
+        # UKUI's native watcher maps 0=performance, 1=balance, 2=powersave.
+        profiles=['performance','balanced','power-saver'];value=settings.get_int(key)
+        writable=settings.is_writable(key)
+        return {'profileBackend':'ukui','profileKey':key,'profiles':profiles,
+                'activeProfile':profiles[value] if 0<=value<len(profiles) else None,'profileWritable':writable,
+                'profileNote':('使用麒麟电源计划 · '+('电池供电' if on_battery else '接通电源')) if writable else '电源计划由系统策略管理，当前不可修改。'}
     def snapshot(self):
         result={}
         for key,method in [('audio',self.audio),('wifi',self.wifi),('power',self.power),('bluetooth',self.bluetooth),('brightness',self.brightness),('notifications',self.notifications),('media',self.media),('session',self.session)]:
@@ -128,6 +203,9 @@ class SystemBackend(DesktopControls):
             volume=values.get('value')
             if type(volume) is not int or not 0<=volume<=100:raise ValueError('音量应在 0 到 100 之间')
             self.command(['/usr/bin/pactl','set-sink-volume','@DEFAULT_SINK@',str(volume)+'%'])
+            # Confirm just audio; Wi-Fi/power discovery must not delay the
+            # committed slider value or its short volume-preview sound.
+            return {'audio':self.audio()}
         elif operation=='mute':
             if type(values.get('value')) is not bool:raise ValueError('无效的静音状态')
             self.command(['/usr/bin/pactl','set-sink-mute','@DEFAULT_SINK@','1' if values['value'] else '0'])
@@ -205,7 +283,15 @@ class SystemBackend(DesktopControls):
         elif operation=='power-profile':
             current=self.power();profile=values.get('value')
             if profile not in current['profiles']:raise ValueError('此电源模式暂不可用')
-            self.set_property(current['profileService'],current['profilePath'],current['profileInterface'],'ActiveProfile',GLib.Variant('s',profile))
+            if current.get('profileBackend')=='ukui':
+                settings=self.ukui_power_settings();key=current.get('profileKey')
+                if settings is None or key not in ('power-policy-ac','power-policy-battery') or not settings.is_writable(key):raise ValueError('当前电源计划不可修改。')
+                value={'performance':0,'balanced':1,'power-saver':2}[profile]
+                if not settings.set_int(key,value):raise RuntimeError('系统未接受电源模式切换。')
+                Gio.Settings.sync()
+                if settings.get_int(key)!=value:raise RuntimeError('电源模式尚未更新，请重试。')
+            else:self.set_property(current['profileService'],current['profilePath'],current['profileInterface'],'ActiveProfile',GLib.Variant('s',profile))
+            return {'power':self.power()}
         else:self.desktop_action(operation,values)
         return self.snapshot()
 

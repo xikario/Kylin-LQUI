@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0,str(next(p for p in Path(__file__).resolve().parents if (p/'tools/file_transaction.py').is_file())/'tools'))
 from file_transaction import FileTransaction
 SOURCE=Path(__file__).resolve().parent
-FILES=['native_glass.py','glass_widgets.py','fusion_view.py','desktop_controls.py','control_center.py','system_backend.py','design.py','main.py','backend.py','appconfig.py','status.py','peony_adapter.py','down.svg','check.svg','icon.svg']
+FILES=['volume_feedback.py','audio_events.py','native_glass.py','glass_widgets.py','fusion_view.py','desktop_controls.py','control_center.py','system_backend.py','design.py','main.py','backend.py','appconfig.py','status.py','peony_adapter.py','down.svg','check.svg','icon.svg']
 
 def link(target,path):
     temporary=path.with_name(path.name+'.new')

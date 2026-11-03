@@ -1,0 +1,28 @@
+{
+  "targetSsid": "target-hotspot",
+  "frequencyMHz": 2462,
+  "signalPercent": 100,
+  "before": {
+    "networkManagerAccessPoints": 200,
+    "targetInKernelScan": true,
+    "targetInNetworkManager": false
+  },
+  "after": {
+    "networkManagerAccessPoints": 391,
+    "targetInNetworkManager": true,
+    "targetInControlCenterBackend": true,
+    "controlCenterNetworkCount": 30
+  },
+  "runtimeSetting": {
+    "bss_max_count": 1024,
+    "reply": "OK"
+  },
+  "persistentHook": "/etc/NetworkManager/dispatcher.d/80-kylin-lqui-wifi-scan-cache",
+  "hookOwner": "root:root",
+  "hookMode": "0755",
+  "hookMatchesSource": true,
+  "connectionUnchanged": true,
+  "targetConnectionAttempted": false,
+  "rebootTested": false,
+  "ssidNamesAnonymized": true
+}

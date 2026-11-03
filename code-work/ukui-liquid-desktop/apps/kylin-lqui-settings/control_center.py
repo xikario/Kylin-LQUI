@@ -4,6 +4,8 @@ import datetime,json,sys,time
 from pathlib import Path
 from PyQt5 import QtCore,QtGui,QtWidgets,QtDBus
 from system_backend import SystemBackend,calendar_data,service_error
+from audio_events import AudioEvents
+from volume_feedback import VolumeFeedback
 from fusion_view import FusionView,FUSION_STYLE
 from glass_widgets import GlassCard,GlassStatusLabel,ReadableTooltips,PageTransition,glyph
 
@@ -36,7 +38,12 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.ui_style=QtWidgets.QStyleFactory.create('Fusion');self.ui_style.setParent(self);self.setStyle(self.ui_style)
         self.material_revision=0
         self.resident=resident;self.controls_reading=False;self.controls_ready=False;self.controls_read_at=0.
-        self.microphone_reading=False
+        self.microphone_reading=False;self.microphone_refresh_pending=False
+        self.audio_reading=False;self.audio_refresh_pending=False
+        self.audio_events=AudioEvents(self);self.audio_events.changed.connect(self.audio_changed)
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self.audio_events.stop)
+        self.volume_feedback=VolumeFeedback(self)
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self.volume_feedback.stop)
         self.preloading=False;self.preload_ready=False
         self.preload_expiry=QtCore.QTimer(self);self.preload_expiry.setSingleShot(True);self.preload_expiry.timeout.connect(self.hide)
         self.material_loading=False;self.material_pending=None
@@ -122,6 +129,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.clearMask();self.repaint()
         self.popup_target=self.geometry();self.popup_frame(0.)
         self.animate_popup(True);self.poll.start()
+        if self.backend_factory is SystemBackend:self.audio_events.start()
     def event(self,event):
         if event.type()==QtCore.QEvent.WindowDeactivate:QtCore.QTimer.singleShot(100,self.dismiss_if_inactive)
         return super().event(event)
@@ -135,6 +143,8 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         if self.preloading:return
         if self.isVisible() and not self.isActiveWindow() and not self.dialog_open and not QtWidgets.QApplication.activePopupWidget() and not QtWidgets.QApplication.activeModalWidget():self.dismiss()
     def hideEvent(self,event):
+        self.volume_feedback.stop()
+        self.audio_events.stop();self.audio_refresh_pending=False;self.microphone_refresh_pending=False
         self.finish_navigation(apply=False)
         self.preloading=False;self.preload_ready=False;self.preload_expiry.stop()
         self.opening_pending=False;self.warmup_timer.stop();self.warmup_cards=[];self.auto_scan_pending=False
@@ -207,9 +217,13 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             if self.isVisible():return
             self.preloading=True;self.preload_ready=False;self.preload_expiry.start(3000)
         if self.isVisible() and not self.opening_pending and self.anchor==anchor and self.page!=page:
-            self.closing=False;self.navigate(page);self.raise_();self.activateWindow();self.poll.start();return
+            self.closing=False;self.navigate(page);self.raise_();self.activateWindow();self.poll.start()
+            if self.backend_factory is SystemBackend:self.audio_events.start()
+            return
         if self.isVisible() and self.page==page:
-            if self.closing:self.closing=False;self.animate_popup(True);self.raise_();self.activateWindow();self.poll.start()
+            if self.closing:
+                self.closing=False;self.animate_popup(True);self.raise_();self.activateWindow();self.poll.start()
+                if self.backend_factory is SystemBackend:self.audio_events.start()
             else:self.dismiss()
             return
         if self.isVisible():self.hide()
@@ -250,6 +264,8 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.popup_motion.setStartValue(self.popup_progress);self.popup_motion.setEndValue(end);self.popup_motion.start()
     def dismiss(self):
         if not self.isVisible() or self.closing:return
+        self.volume_feedback.stop()
+        self.audio_events.stop()
         self.finish_navigation()
         if self.opening_pending:self.hide();return
         self.closing=True;self.poll.stop();self.animate_popup(False)
@@ -272,7 +288,12 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             self.network_signature=None;self.network_buttons={};self.network_empty=self.label('正在查找网络…',True);self.network_list.addWidget(self.network_empty)
             advanced=QtWidgets.QPushButton('高级网络设置');advanced.setObjectName('advanced_network_settings');advanced.clicked.connect(lambda:self.launch('nm-connection-editor'));box.addWidget(advanced)
         elif page=='power':
-            box=self.card(layout);self.power_text=self.label('正在读取电源信息…');box.addWidget(self.power_text);self.profile=QtWidgets.QComboBox();self.profile.hide();box.addWidget(self.profile);self.profile.activated[int].connect(lambda i:self.action('power-profile',{'value':self.profile.itemData(i)}))
+            box=self.card(layout);self.power_text=self.label('正在读取电源信息…');box.addWidget(self.power_text)
+            box=self.card(layout);box.addWidget(self.label('电源模式'));self.profile_buttons={}
+            for ident,title in [('performance','性能 · 优先运行速度'),('balanced','均衡 · 兼顾性能和续航'),('power-saver','省电 · 延长电池使用时间')]:
+                button=QtWidgets.QPushButton(title);button.setObjectName('power_profile_'+ident);button.setProperty('powerProfile',True);button.setMinimumHeight(44)
+                button.clicked.connect(lambda checked=False,p=ident:self.choose_power_profile(p));box.addWidget(button);self.profile_buttons[ident]=(button,title)
+            self.profile_note=self.label('',True);self.profile_note.setWordWrap(True);box.addWidget(self.profile_note)
         elif page=='calendar':
             box=self.card(layout);self.calendar=LunarCalendar();box.addWidget(self.calendar);self.day_text=self.label('');box.addWidget(self.day_text);self.agenda=self.label('',True);box.addWidget(self.agenda)
             row=QtWidgets.QHBoxLayout();today=QtWidgets.QPushButton('今天');today.clicked.connect(lambda:self.calendar.setSelectedDate(QtCore.QDate.currentDate()));row.addWidget(today);system=QtWidgets.QPushButton('管理系统日程');system.clicked.connect(self.open_system_calendar);row.addWidget(system);box.addLayout(row)
@@ -332,26 +353,52 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         for domain,value in data.items():
             if revisions.get(domain,0)==self.domain_revisions.get(domain,0):self.data[domain]=value
     def refresh(self):
-        if self.page=='sound':self.refresh_microphone()
+        if self.page=='sound':self.refresh_audio();self.refresh_microphone()
         if self.reading:return
         self.reading=True;revisions=dict(self.domain_revisions)
         def done(result):
             self.reading=False
             if result['ok']:self.merge_snapshot(result['data'],revisions);self.update_pending_network();self.apply_snapshot();self.maybe_scan_wifi()
         self.job(lambda:self.backend_factory().snapshot(),done)
+    def audio_changed(self):
+        if not self.isVisible() or self.preloading or self.closing:return
+        # Ignore snapshots begun before this event, even when another service
+        # delays their completion. Re-read after any in-flight audio action.
+        for domain in ('audio','microphone'):self.domain_revisions[domain]=self.domain_revisions.get(domain,0)+1
+        self.refresh_audio()
+        if self.page=='sound':self.refresh_microphone()
+    def refresh_audio(self):
+        if self.audio_reading or self.is_busy('audio'):
+            self.audio_refresh_pending=True;return
+        self.audio_refresh_pending=False;self.audio_reading=True;revision=self.domain_revisions.get('audio',0)
+        def read():
+            backend=self.backend_factory()
+            return backend.audio() if hasattr(backend,'audio') else backend.snapshot().get('audio',{'available':False})
+        def done(result):
+            self.audio_reading=False
+            if result['ok'] and revision==self.domain_revisions.get('audio',0):
+                self.data['audio']=result['data'];self.domain_revisions['audio']=revision+1
+                if self.isVisible():self.apply_snapshot()
+            if self.audio_refresh_pending and self.isVisible() and not self.closing:self.refresh_audio()
+        self.job(read,done)
     def refresh_microphone(self):
-        if self.microphone_reading:return
-        self.microphone_reading=True;revision=self.domain_revisions.get('microphone',0)
+        if self.microphone_reading or self.is_busy('microphone'):
+            self.microphone_refresh_pending=True;return
+        self.microphone_refresh_pending=False;self.microphone_reading=True;revision=self.domain_revisions.get('microphone',0)
         def read_microphone():
             backend=self.backend_factory()
             return backend.microphone() if hasattr(backend,'microphone') else backend.snapshot().get('microphone',{'available':False,'inputs':[]})
         def done(result):
             self.microphone_reading=False
-            self.merge_snapshot({'microphone':result.get('data') if result['ok'] else {'available':False,'inputs':[]}}, {'microphone':revision})
+            if revision==self.domain_revisions.get('microphone',0):
+                self.data['microphone']=result.get('data') if result['ok'] else {'available':False,'inputs':[]}
+                self.domain_revisions['microphone']=revision+1
             if self.page=='sound':self.apply_snapshot()
+            if self.microphone_refresh_pending and self.isVisible() and self.page=='sound' and not self.closing:self.refresh_microphone()
         self.job(read_microphone,done)
     def action(self,operation,values):
         domain=self.action_domain(operation)
+        if domain=='audio':self.volume_feedback.stop()
         if self.is_busy(domain):
             if operation in ('volume','brightness','input-volume'):self.pending_actions[domain]=(operation,dict(values))
             return
@@ -368,6 +415,10 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             values.clear()
             pending=self.pending_actions.pop(domain,None)
             if pending:self.action(*pending)
+            elif result['ok'] and operation=='volume' and self.isVisible() and not self.closing and self.backend_factory is SystemBackend:
+                self.volume_feedback.request(result['data'].get('audio',{}).get('selected'))
+            if self.audio_refresh_pending and self.isVisible() and not self.closing:self.refresh_audio()
+            if self.microphone_refresh_pending and self.isVisible() and self.page=='sound' and not self.closing:self.refresh_microphone()
             self.maybe_scan_wifi()
         self.job(lambda:self.backend_factory().action(operation,values),done)
     def update_pending_network(self):
@@ -385,6 +436,9 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             self.mute.setText('取消静音' if selected.get('muted') else '静音')
         self.update_audio_devices('output',audio.get('outputs',[]),selected.get('id'),self.is_busy('audio'),'audio' not in self.data)
         microphone=self.data.get('microphone',{});current=microphone.get('selected') or {}
+        if self.page=='sound':
+            for label,text in ((self.audio_title,selected.get('routeLabel') or '扬声器与耳机'),(self.mic_title,current.get('routeLabel') or '麦克风')):
+                label.setText(label.fontMetrics().elidedText(text,QtCore.Qt.ElideRight,230));label.setToolTip(text)
         self.update_audio_devices('input',microphone.get('inputs',[]),current.get('id'),self.is_busy('microphone'),'microphone' not in self.data)
         if self.mic_volume is not None:
             self.mic_volume.setEnabled(bool(current));self.mic_mute.setEnabled(bool(current) and not self.is_busy('microphone'))
@@ -397,35 +451,47 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             current=next((n['ssid'] for n in wifi.get('networks',[]) if n['connected']), '网络服务未就绪' if not wifi.get('available') else '未连接' if wifi.get('enabled') else 'Wi-Fi 已关闭');self.summary.setText(current+'  ·  '+self.power_summary(power))
         if self.wifi_toggle:
             blocker=QtCore.QSignalBlocker(self.wifi_toggle);self.wifi_toggle.setChecked(wifi.get('enabled',False));del blocker;self.wifi_toggle.setEnabled(bool(wifi.get('available') and wifi.get('hardwareEnabled')) and not self.is_busy('wifi'))
-            networks=wifi.get('networks',[]) if wifi.get('enabled') else []
+            networks=sorted(wifi.get('networks',[]),key=lambda n:(not n['connected'],-n['strength'],n['ssid'].casefold(),n['id'])) if wifi.get('enabled') else []
             ids={n['id'] for n in networks}
             for ident in list(self.network_buttons):
                 if ident not in ids:
                     button=self.network_buttons.pop(ident);self.network_list.removeWidget(button);button.hide();button.deleteLater()
             self.network_empty.setText('未检测到无线网卡' if not wifi.get('available') else 'Wi-Fi 已关闭' if not wifi.get('enabled') else '正在查找网络…')
             self.network_empty.setVisible(not networks)
-            # Preserve existing row identity and order as signal strength changes.
-            for network in networks:
+            # Preserve widgets/focus, but update their positions on every scan.
+            # Otherwise a newly found strong hotspot stays appended at the end.
+            for rank,network in enumerate(networks,1):
                 ident=network['id'];button=self.network_buttons.get(ident)
                 if button is None:
                     button=QtWidgets.QPushButton();self.network_buttons[ident]=button;self.network_list.addWidget(button)
                     button.clicked.connect(lambda checked=False,b=button:self.connect_network(dict(b.network)))
                     button.show() # include dynamic rows in the transition snapshot
+                if self.network_list.indexOf(button)!=rank:self.network_list.insertWidget(rank,button)
                 button.network=dict(network)
-                button.setText(network['ssid'].replace('&','&&')+'  ·  '+('已连接' if network['connected'] else '连接中…' if network.get('connecting') or self.pending_network and self.pending_network[0]==ident else str(network['strength'])+'%'))
+                band=network.get('band') or SystemBackend.wifi_band(network.get('frequency',0))
+                button.setText(network['ssid'].replace('&','&&')+'  ·  '+band+'  ·  '+('已连接' if network['connected'] else '连接中…' if network.get('connecting') or self.pending_network and self.pending_network[0]==ident else str(network['strength'])+'%'))
                 if button.property('accent')!=network['connected']:
                     button.setProperty('accent',network['connected']);button.style().unpolish(button);button.style().polish(button)
-                button.setEnabled(not (network['connected'] or network.get('connecting') or self.is_busy('wifi') or self.pending_network));button.setToolTip(network['ssid'])
+                button.setEnabled(not (network['connected'] or network.get('connecting') or self.is_busy('wifi') or self.pending_network))
+                button.setToolTip(network['ssid']+'\n'+band+(' · '+str(network['frequency'])+' MHz' if network.get('frequency') else ''))
         if self.power_text:
             text=self.power_summary(power)
             seconds=power.get('timeToEmpty') if power.get('onBattery') else power.get('timeToFull')
             if seconds and seconds>0:text+='\n'+('预计可用 ' if power.get('onBattery') else '预计充满 ')+str(seconds//3600)+' 小时 '+str(seconds%3600//60)+' 分钟'
             if power.get('capacity'):text+='\n电池健康度 '+str(power['capacity'])+'%'
-            self.power_text.setText(text);profiles=power.get('profiles',[]);self.profile.setVisible(bool(profiles))
-            if profiles and not self.profile.view().isVisible():
-                blocker=QtCore.QSignalBlocker(self.profile);self.profile.clear()
-                for profile in profiles:self.profile.addItem({'balanced':'均衡','power-saver':'节能','performance':'性能'}.get(profile,profile),profile)
-                self.profile.setCurrentIndex(self.profile.findData(power.get('activeProfile')));del blocker
+            self.power_text.setText(text);profiles=power.get('profiles',[])
+            for ident,(button,title) in self.profile_buttons.items():
+                current=ident==power.get('activeProfile');button.setText(title+('  ✓ 当前' if current else ''))
+                button.setEnabled(ident in profiles and not current and power.get('profileWritable',True) and not self.is_busy('power'))
+                button.setToolTip('当前模式' if current else '切换到此模式' if ident in profiles else '当前系统不支持此模式')
+                if button.property('current')!=current:
+                    button.setProperty('current',current);button.style().unpolish(button);button.style().polish(button)
+            self.profile_note.setText(power.get('profileNote','') if profiles else '系统暂未提供可切换的电源模式。')
+            self.profile_note.setVisible(bool(self.profile_note.text()))
+    def choose_power_profile(self,profile):
+        power=self.data.get('power',{})
+        if profile in power.get('profiles',[]) and profile!=power.get('activeProfile') and not self.is_busy('power'):
+            self.action('power-profile',{'value':profile})
     @staticmethod
     def power_summary(power):
         if not power.get('available'):return '电源信息暂不可用'
@@ -463,7 +529,17 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.job(open_day,done)
     def launch(self,program):
         QtCore.QProcess.startDetached(program,[]);self.dismiss()
-    def state(self):return {'page':self.page,'visible':self.isVisible(),'closing':self.closing,'preparing':self.opening_pending,'navigationRunning':self.navigation_active,'resident':self.resident,'preloading':self.preloading,'controlsReady':self.controls_ready,'motionRunning':self.popup_motion.state()==QtCore.QAbstractAnimation.Running,'progress':self.popup_progress,'busy':self.changing,'reading':self.reading,'geometry':[self.x(),self.y(),self.width(),self.height()],'materialBackend':('snell-gpu' if self.native_glass.used_gpu else 'snell-cpu-fallback') if self.native_glass else 'blur-fallback','materialRenders':self.native_glass.render_count if self.native_glass else 0,'adaptiveSmoke':bool(getattr(self.native_glass,'adaptive_smoke',False))}
+    def volume_ui_state(self):
+        # Read-only geometry for verifying real mouse interaction through State.
+        if not self.volume:return None
+        slider=self.volume;option=QtWidgets.QStyleOptionSlider();slider.initStyleOption(option)
+        def center(value):
+            option.sliderPosition=value;option.sliderValue=value
+            point=slider.mapToGlobal(slider.style().subControlRect(QtWidgets.QStyle.CC_Slider,option,QtWidgets.QStyle.SC_SliderHandle,slider).center())
+            return [point.x(),point.y()]
+        return {'value':slider.value(),'handle':center(slider.value()),'minimumHandle':center(slider.minimum()),
+                'maximumHandle':center(slider.maximum()),'minimum':slider.minimum(),'maximum':slider.maximum(),'dpr':slider.devicePixelRatioF()}
+    def state(self):return {'page':self.page,'visible':self.isVisible(),'closing':self.closing,'preparing':self.opening_pending,'navigationRunning':self.navigation_active,'resident':self.resident,'preloading':self.preloading,'controlsReady':self.controls_ready,'motionRunning':self.popup_motion.state()==QtCore.QAbstractAnimation.Running,'progress':self.popup_progress,'busy':self.changing,'reading':self.reading,'geometry':[self.x(),self.y(),self.width(),self.height()],'materialBackend':('snell-gpu' if self.native_glass.used_gpu else 'snell-cpu-fallback') if self.native_glass else 'blur-fallback','materialRenders':self.native_glass.render_count if self.native_glass else 0,'adaptiveSmoke':bool(getattr(self.native_glass,'adaptive_smoke',False)),'audioEventsRunning':self.audio_events.process.state()==QtCore.QProcess.Running,'audioReading':self.audio_reading,'microphoneReading':self.microphone_reading,'volumeFeedback':self.volume_feedback.state(),'volumeUi':self.volume_ui_state()}
 
 class Adaptor(QtDBus.QDBusAbstractAdaptor):
     QtCore.Q_CLASSINFO('D-Bus Interface','org.kylin.Lqui.ControlCenter')

@@ -1,0 +1,71 @@
+{
+  "testsPassed": 82,
+  "deployment": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261103-153024-4950e74e",
+    "oldPid": 22447,
+    "newPid": 32328,
+    "audioSettingsPreserved": true
+  },
+  "installedUi": {
+    "wifiPage": {
+      "page": "wifi",
+      "visible": true,
+      "closing": false,
+      "preparing": false,
+      "navigationRunning": false,
+      "resident": true,
+      "preloading": false,
+      "controlsReady": true,
+      "motionRunning": false,
+      "progress": 1.0,
+      "busy": false,
+      "reading": false,
+      "geometry": [
+        1094,
+        485,
+        389,
+        660
+      ],
+      "materialBackend": "snell-gpu",
+      "materialRenders": 13,
+      "adaptiveSmoke": true,
+      "audioEventsRunning": true,
+      "audioReading": false,
+      "microphoneReading": false,
+      "volumeFeedback": {
+        "requests": 0,
+        "starts": 0,
+        "completions": 0,
+        "pending": false,
+        "running": false,
+        "lastExit": null,
+        "lastError": ""
+      },
+      "volumeUi": null
+    },
+    "verified": true
+  },
+  "examples": [
+    {
+      "ssid": "target-hotspot",
+      "band": "2.4 GHz",
+      "frequency": 2462,
+      "connected": true
+    },
+    {
+      "ssid": "nearby-dual-band-network",
+      "band": "2.4 GHz",
+      "frequency": 2472,
+      "connected": false
+    },
+    {
+      "ssid": "nearby-dual-band-network",
+      "band": "5 GHz",
+      "frequency": 5180,
+      "connected": false
+    }
+  ],
+  "installedFilesMatch": true,
+  "connectionUnchanged": true,
+  "ssidNamesAnonymized": true
+}

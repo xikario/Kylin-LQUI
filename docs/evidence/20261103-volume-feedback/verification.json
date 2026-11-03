@@ -1,0 +1,52 @@
+{
+  "testsPassed": 75,
+  "virtualPlayback": [
+    {
+      "flatVolumes": "no",
+      "volume": 25,
+      "seenMin": 25,
+      "seenMax": 25,
+      "rms": 96.4,
+      "played": true
+    },
+    {
+      "flatVolumes": "no",
+      "volume": 60,
+      "seenMin": 60,
+      "seenMax": 60,
+      "rms": 461.0,
+      "played": true
+    },
+    {
+      "flatVolumes": "yes",
+      "volume": 25,
+      "seenMin": 25,
+      "seenMax": 25,
+      "rms": 93.39,
+      "played": true
+    },
+    {
+      "flatVolumes": "yes",
+      "volume": 60,
+      "seenMin": 60,
+      "seenMax": 60,
+      "rms": 446.91,
+      "played": true
+    }
+  ],
+  "deployment": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261103-102840-827e3191",
+    "oldPid": 38927,
+    "newPid": 48857,
+    "audioSettingsPreserved": true
+  },
+  "livePlayback": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261103-102840-827e3191",
+    "installedHashesMatch": true,
+    "previewCompleted": true,
+    "volumeBefore": 38,
+    "volumeDuringMin": 38,
+    "volumeDuringMax": 38,
+    "audioSettingsPreserved": true
+  }
+}

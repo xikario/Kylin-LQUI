@@ -1,0 +1,59 @@
+{
+  "testsPassed": 70,
+  "integration": {
+    "outputInsertMs": 171,
+    "inputInsertMs": 176,
+    "inputRemoveMs": 180,
+    "outputRemoveMs": 176,
+    "listenerRecoveryMs": 1633,
+    "listenerRecovered": true,
+    "closingReversalRestartsListener": true,
+    "verified": true,
+    "pollingDisabled": true,
+    "sameSoundPage": true,
+    "materialPreserved": true,
+    "hiddenListenerStopped": true,
+    "hiddenReads": 0,
+    "hardwareModulesLoaded": false
+  },
+  "deployment": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261103-100345-df2639a1",
+    "oldPid": 29733,
+    "newPid": 38927,
+    "audioSettingsPreserved": true
+  },
+  "installed": {
+    "pages": [
+      {
+        "page": "sound",
+        "visible": true,
+        "closing": false,
+        "preparing": false,
+        "navigationRunning": false,
+        "resident": true,
+        "preloading": false,
+        "controlsReady": true,
+        "motionRunning": false,
+        "progress": 1.0,
+        "busy": false,
+        "reading": false,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialBackend": "snell-gpu",
+        "materialRenders": 12,
+        "adaptiveSmoke": true,
+        "audioEventsRunning": true,
+        "audioReading": false,
+        "microphoneReading": false
+      }
+    ],
+    "verified": true,
+    "listenerStoppedAfterDismiss": true
+  },
+  "installedFilesMatch": true,
+  "hardwareJackPhysicallyTested": false
+}

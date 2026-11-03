@@ -1,0 +1,130 @@
+{
+  "verifiedAt": "2026-11-03T15:58:09.654947+08:00",
+  "sourceThread": "01a199cc-90a7-77c2-87ae-6d03587b2f87",
+  "baseCommit": "bffa9e19cc4c3e4652c18a81f332e9ff53ddbdf0",
+  "sourceFilesPreserved": 11,
+  "freshTests": {
+    "controlCenterPassed": 82,
+    "audioHotplug": {
+      "outputInsertMs": 156,
+      "inputInsertMs": 149,
+      "inputRemoveMs": 141,
+      "outputRemoveMs": 162,
+      "listenerRecoveryMs": 1612,
+      "listenerRecovered": true,
+      "closingReversalRestartsListener": true,
+      "verified": true,
+      "pollingDisabled": true,
+      "sameSoundPage": true,
+      "materialPreserved": true,
+      "hiddenListenerStopped": true,
+      "hiddenReads": 0,
+      "hardwareModulesLoaded": false
+    },
+    "volumeGestureUi": {
+      "verified": true,
+      "gestures": [
+        {
+          "page": "home",
+          "gesture": "click",
+          "before": 38,
+          "after": 48,
+          "completedMs": 856
+        },
+        {
+          "page": "home",
+          "gesture": "drag",
+          "before": 48,
+          "after": 36,
+          "completedMs": 857
+        },
+        {
+          "page": "sound",
+          "gesture": "click",
+          "before": 36,
+          "after": 46,
+          "completedMs": 886
+        },
+        {
+          "page": "sound",
+          "gesture": "drag",
+          "before": 46,
+          "after": 34,
+          "completedMs": 895
+        }
+      ],
+      "feedback": {
+        "requests": 4,
+        "starts": 4,
+        "completions": 4,
+        "pending": false,
+        "running": false,
+        "lastExit": 0,
+        "lastError": ""
+      },
+      "hardwareModulesLoaded": false
+    },
+    "virtualPlayback": [
+      {
+        "flatVolumes": "no",
+        "volume": 25,
+        "seenMin": 25,
+        "seenMax": 25,
+        "rms": 109.87,
+        "played": true
+      },
+      {
+        "flatVolumes": "no",
+        "volume": 60,
+        "seenMin": 60,
+        "seenMax": 60,
+        "rms": 485.91,
+        "played": true
+      },
+      {
+        "flatVolumes": "yes",
+        "volume": 25,
+        "seenMin": 25,
+        "seenMax": 25,
+        "rms": 111.08,
+        "played": true
+      },
+      {
+        "flatVolumes": "yes",
+        "volume": 60,
+        "seenMin": 60,
+        "seenMax": 60,
+        "rms": 481.56,
+        "played": true
+      }
+    ],
+    "workspacePythonSyntax": "passed",
+    "dispatcherShellSyntax": "passed",
+    "dispatcherSkippedInvalidInterfaceAndDownEvent": true,
+    "anonymizedFixtureCasesPassed": 2
+  },
+  "installedPayload": {
+    "release": "release-20261103-153024-4950e74e",
+    "modulesMatched": 17,
+    "redeployedDuringIntegration": false,
+    "restartedUserProcesses": false
+  },
+  "publicData": {
+    "wifiNamesAnonymized": true,
+    "privateScreenshotsOrCredentialsIncluded": false
+  },
+  "administrativeHook": {
+    "path": "code-work/ukui-liquid-desktop/integration/80-kylin-lqui-wifi-scan-cache",
+    "sourceMode": "0755",
+    "installedByThisIntegration": false,
+    "runtimeAndDeploymentEvidence": "../20261103-wifi-scan-cache/verification.json",
+    "rebootVerified": false
+  },
+  "reusedVerification": {
+    "userAudibilityConfirmed": "../20261103-volume-feedback-recheck/verification.json",
+    "physicalPowerPlanRestore": "../20261103-wifi-power/verification.json",
+    "mappedBandLabels": "../20261103-wifi-bands/verification.json"
+  },
+  "scope": "Tests use private Xvfb, D-Bus, virtual PulseAudio devices and monitor streams. No physical microphone, live route/volume/power changes or Wi-Fi reconnects performed for integration.",
+  "testFixtureSsidAnonymized": "code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/tests/test_control_center.py"
+}

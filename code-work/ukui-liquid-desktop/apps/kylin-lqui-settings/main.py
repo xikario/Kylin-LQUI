@@ -164,7 +164,9 @@ class SettingsWindow(QtWidgets.QMainWindow):
         if kind in (QtCore.QEvent.MouseButtonPress,QtCore.QEvent.KeyPress,QtCore.QEvent.Wheel) and isinstance(watched,QtWidgets.QWidget) and (watched is self or self.isAncestorOf(watched)):self._interaction_serial+=1
         if kind==QtCore.QEvent.ApplicationFontChange and watched is QtWidgets.QApplication.instance() and not self._font_update_queued:
             self._font_update_queued=True;QtCore.QTimer.singleShot(0,self.sync_application_font)
-        if kind==QtCore.QEvent.Resize and hasattr(self,'scroll') and watched is self.scroll.viewport():self.reflow()
+        if kind==QtCore.QEvent.Resize and hasattr(self,'scroll'):
+            if watched is self.scroll.viewport():self.reflow()
+            elif watched is self.navigation.viewport():self.navigation.scheduleDelayedItemsLayout()
         if kind==QtCore.QEvent.FocusIn:
             for entry in self.fields.values():
                 if entry['control'] is watched and entry['field'].get('_stable') and not entry['field'].get('secret'):self._last_focused_key=entry['field']['_key']

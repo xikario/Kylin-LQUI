@@ -71,7 +71,7 @@ class NavigationDelegate(QtWidgets.QStyledItemDelegate):
     def sizeHint(self,option,index):
         width=option.widget.viewport().width() if isinstance(option.widget,QtWidgets.QAbstractItemView) else 180
         font=QtGui.QFont(option.font);font.setBold(True);metrics=QtGui.QFontMetrics(font)
-        available=max(40,width-4-10-31-(17 if index.data(QtCore.Qt.UserRole+2) else 8))
+        available=max(40,width-4-10-31-(17 if index.data(QtCore.Qt.UserRole+2) else 8)-1)
         bounds=metrics.boundingRect(QtCore.QRect(0,0,available,10000),QtCore.Qt.TextWordWrap,navigation_text(index.data()))
         return QtCore.QSize(140,max(32 if index.data(QtCore.Qt.UserRole+1) else 36,metrics.height()+14,bounds.height()+12))
     def paint(self,painter,option,index):

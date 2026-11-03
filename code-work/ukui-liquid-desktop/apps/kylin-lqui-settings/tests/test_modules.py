@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """Run freshly built modules on a disposable display, bus, HOME and config."""
-import json, os, shlex, subprocess, sys, tempfile, time
+import faulthandler, json, os, shlex, signal, subprocess, sys, tempfile, time
 from pathlib import Path
 if '--isolated' not in sys.argv:
     raise SystemExit(subprocess.call(['xvfb-run','-a','-s','-screen 0 1920x1080x24','dbus-run-session','--',sys.executable,str(Path(__file__).resolve()),'--isolated']))
@@ -12,6 +12,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from PyQt5 import QtCore,QtWidgets,QtDBus,QtTest
 from backend import Backend
 from main import SettingsWindow
+from ui_components import DisclosureRow,PluginRow
 
 with tempfile.TemporaryDirectory(prefix='lqui-module-fixture-') as folder:
     home=Path(folder)
@@ -39,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='lqui-module-fixture-') as folder:
         return result[0]
     try:
         for module,(argv,service) in modules.items():
-            process=subprocess.Popen(argv,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);processes.append(process)
+            process=subprocess.Popen(argv,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True);processes.append(process)
             process_by_module[module]=process
             deadline=time.monotonic()+12
             bus=QtDBus.QDBusConnection.sessionBus().interface()
@@ -66,6 +67,9 @@ with tempfile.TemporaryDirectory(prefix='lqui-module-fixture-') as folder:
                     QtTest.QTest.qWait(500);result=call(module,'Page',[page['id']])
                 assert result.get('ok'),(module,page,result)
                 fields=result.get('fields',[])
+                if os.environ.get('LQUI_SETTINGS_FIXTURE_DIR'):
+                    target=Path(os.environ['LQUI_SETTINGS_FIXTURE_DIR']);target.mkdir(parents=True,exist_ok=True)
+                    (target/(module+'-'+page['id'].replace(':','_')+'.json')).write_text(json.dumps(result,ensure_ascii=False,indent=2))
                 assert fields,(module,page,'empty page')
                 report[module][page['id']]={'fields':len(fields),'kinds':sorted(set(f['kind'] for f in fields)),'unnamed':[f.get('name','') for f in fields if f.get('label')=='选项']}
                 for field in fields:
@@ -107,21 +111,29 @@ with tempfile.TemporaryDirectory(prefix='lqui-module-fixture-') as folder:
                             assert not rejected.get('ok'),(module,page_id,'accepted an out-of-range value')
         # Test real async transport and a real form in the separate settings UI.
         window=SettingsWindow();rendered=0
+        faulthandler.dump_traceback_later(45)
         def ready():
             deadline=time.monotonic()+8
             while window.busy and time.monotonic()<deadline:QtTest.QTest.qWait(25)
             assert not window.busy,window.view_state()
             assert window.fields,window.view_state()
         def check_geometry():
-            for width in (1040,720):
-                window.resize(width,740 if width==1040 else 480);QtTest.QTest.qWait(60)
-                assert window.scroll.widget().width()<=window.scroll.viewport().width(),(window.current,width,'page exceeds viewport',window.scroll.widget().width(),window.scroll.viewport().width())
-                for entry in window.fields.values():
-                    widget=entry['control']
-                    right=widget.mapTo(window.scroll.widget(),QtCore.QPoint(widget.width(),0)).x()
-                    assert right<=window.scroll.widget().width()+2,(window.current,entry['field'].get('label'),right,window.scroll.widget().width())
+            # Collapsed/conditional children have no layout geometry in Qt.
+            # Verify every displayed control in both real accordion states.
+            disclosures=window.scroll.findChildren(DisclosureRow)+window.scroll.findChildren(PluginRow)
+            for expanded in (False,True):
+                for row in disclosures:row.set_expanded(expanded)
+                for width in (1040,720):
+                    window.resize(width,740 if width==1040 else 480);QtTest.QTest.qWait(60)
+                    assert window.scroll.widget().width()<=window.scroll.viewport().width(),(window.current,width,'page exceeds viewport',window.scroll.widget().width(),window.scroll.viewport().width())
+                    for entry in window.fields.values():
+                        widget=entry['control']
+                        if not widget.isVisible():continue
+                        right=widget.mapTo(window.scroll.widget(),QtCore.QPoint(widget.width(),0)).x()
+                        assert right<=window.scroll.widget().width()+2,(window.current,entry['field'].get('label'),right,window.scroll.widget().width())
         for module,pages in report.items():
             for page_id in pages:
+                print('Rendering',module+':'+page_id,flush=True)
                 window.open_page(module+':'+page_id);ready();check_geometry();rendered+=1
                 tab=next((entry['field'] for entry in window.fields.values() if entry['field']['kind']=='tabs'),None)
                 if tab:
@@ -130,7 +142,12 @@ with tempfile.TemporaryDirectory(prefix='lqui-module-fixture-') as folder:
                 report[module][page_id]['rendered']=True
         # Peony's three pages use the same form renderer, without WebEngine.
         for page_id in ('general','terminal','plugins'):
+            print('Rendering','peony:'+page_id,flush=True)
             window.open_page('peony:'+page_id);ready();check_geometry();rendered+=1
+            if os.environ.get('LQUI_SETTINGS_FIXTURE_DIR'):
+                target=Path(os.environ['LQUI_SETTINGS_FIXTURE_DIR']);target.mkdir(parents=True,exist_ok=True)
+                (target/('peony-'+page_id+'.json')).write_text(json.dumps({'ok':True,'module':'peony','page':page_id,'fields':window.page_cache['peony:'+page_id]},ensure_ascii=False,indent=2))
+        faulthandler.cancel_dump_traceback_later()
         window.open_page('ai:general');ready();window.resize(1040,740);QtTest.QTest.qWait(100)
         window.grab().save('/tmp/lqui-settings-ai-real.png');window.close()
         report['audit']={'scalarRoundTrips':checked_controls,'renderedViews':rendered,'widths':[1040,720]}
@@ -140,3 +157,8 @@ with tempfile.TemporaryDirectory(prefix='lqui-module-fixture-') as folder:
         for process in processes:
             try:process.wait(timeout=5)
             except subprocess.TimeoutExpired:process.kill();process.wait()
+
+            # SIGTERM exits the host without Qt destructor cleanup. Stop its
+            # dedicated test process group as well, including gsettings monitors.
+            try:os.killpg(process.pid,signal.SIGTERM)
+            except ProcessLookupError:pass

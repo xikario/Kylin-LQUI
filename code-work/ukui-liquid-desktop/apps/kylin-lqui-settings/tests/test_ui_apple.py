@@ -167,4 +167,17 @@ class CompactUi(unittest.TestCase):
     def test_tooltip_teardown_handles_deleted_top_level(self):
         self.window.help.bubble.deleteLater();QtTest.QTest.qWait(10);self.window.help.cancel()
 
+    def test_navigation_recomputes_wrapped_row_height_after_resize(self):
+        from design import navigation_text
+        for width in (1040,720,1040,720):
+            self.window.resize(width,480);QtTest.QTest.qWait(30)
+            viewport=self.window.navigation.viewport()
+            for index in range(self.window.navigation.count()):
+                item=self.window.navigation.item(index)
+                if item.isHidden():continue
+                font=QtGui.QFont(self.window.navigation.font());font.setBold(True);metrics=QtGui.QFontMetrics(font)
+                available=max(40,self.window.navigation.visualItemRect(item).width()-4-10-31-(17 if item.data(QtCore.Qt.UserRole+2) else 8)-1)
+                bounds=metrics.boundingRect(QtCore.QRect(0,0,available,10000),QtCore.Qt.TextWordWrap,navigation_text(item.text()))
+                self.assertGreaterEqual(self.window.navigation.visualItemRect(item).height(),bounds.height()+8,item.text())
+
 if __name__=='__main__':unittest.main()

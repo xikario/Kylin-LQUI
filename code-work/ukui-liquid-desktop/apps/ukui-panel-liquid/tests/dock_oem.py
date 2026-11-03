@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Dock adaptation against the real OEM taskbar in private X11/D-Bus/config."""
-import argparse, ast, configparser, ctypes, json, os, pathlib, re, shutil, signal, socket, subprocess, tempfile, time
+import argparse, ast, configparser, ctypes, json, os, pathlib, re, shutil, signal, socket, subprocess, sys, tempfile, time
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BUILD=pathlib.Path(os.environ.get('LQUI_PANEL_TEST_BUILD',str(ROOT/'build')))
@@ -12,6 +12,7 @@ parser.add_argument('--cohesive',action='store_true')
 parser.add_argument('--system-items',action='store_true')
 parser.add_argument('--system-items-only',action='store_true')
 parser.add_argument('--indicators-only',action='store_true')
+parser.add_argument('--settings-only',action='store_true',help='Only settings protocol/client checks on the isolated native host')
 parser.add_argument('--settings-center',type=pathlib.Path)
 parser.add_argument('--launcher',type=pathlib.Path)
 args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
@@ -52,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
     for name in ('config/ukui','cache','data','log'):(temp/name).mkdir(parents=True,exist_ok=True)
     for name in ('panel.conf','panel-commission.ini','liquid-panel.ini'):
         src=home/'.config/ukui'/name
-        if src.exists():shutil.copy2(src,temp/'config/ukui'/name)
+        if src.exists() and not args.settings_only:shutil.copy2(src,temp/'config/ukui'/name)
     config=configparser.ConfigParser();config.read(temp/'config/ukui/liquid-panel.ini')
     if not config.has_section('dock'):config.add_section('dock')
     config['dock']['adaptive']='true';config['dock']['clickFeedback']='true'
@@ -63,13 +64,14 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
     endpoint=temp/'probe.sock'
     env=dict(os.environ,XDG_CONFIG_HOME=str(home/'.config'),XDG_CACHE_HOME=str(home/'.cache'),XDG_DATA_HOME=str(temp/'data'),
              GSETTINGS_BACKEND='memory',LQUI_SETTINGS_LEGACY='1',QT_PLUGIN_PATH=str(BUILD/'test-plugins')+':'+str(BUILD/'plugins'),
-             UKUI_PANEL_LAYOUT_PROBE_SOCKET=str(endpoint),UKUI_LIQUID_GLASS_NO_GL='1',PATH=str(safeBin)+':'+os.environ['PATH'],DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(temp/'no-system-bus'))
+             UKUI_PANEL_LAYOUT_PROBE_SOCKET=str(endpoint),UKUI_LIQUID_GLASS_NO_GL='1',PATH=str(safeBin)+':'+os.environ['PATH'],DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(temp/'no-system-bus'),PULSE_SERVER='unix:'+str(temp/'no-pulse'))
     if args.system_items:
         control_launcher=temp/'open-control';control_log=temp/'control-open.jsonl'
         control_launcher.write_text('#!/usr/bin/python3\nimport sys,json\nwith open('+repr(str(control_log))+',"a") as f:f.write(json.dumps(sys.argv[1:])+"\\n")\n');control_launcher.chmod(0o755)
         env['LQUI_CONTROL_CENTER_LAUNCHER']=str(control_launcher)
     fixture=subprocess.Popen(['/usr/bin/python3',str(ROOT/'tests/oem_appdb_fixture.py')],env=dict(os.environ,LAYOUT_APP_DATA=str(temp/'data')),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-    wm=subprocess.Popen(['/usr/bin/ukui-kwin_x11','--no-kactivities'],stdout=open(args.output/'kwin.log','w'),stderr=subprocess.STDOUT)
+    wm_env=dict(os.environ,XDG_CONFIG_HOME=str(temp/'config'),XDG_CACHE_HOME=str(temp/'cache'),XDG_DATA_HOME=str(temp/'data'),GSETTINGS_BACKEND='memory')
+    wm=subprocess.Popen(['/usr/bin/ukui-kwin_x11','--no-kactivities'],env=wm_env,stdout=open(args.output/'kwin.log','w'),stderr=subprocess.STDOUT)
     command=['bwrap','--die-with-parent','--ro-bind','/','/','--dev-bind','/dev','/dev','--proc','/proc','--bind','/tmp','/tmp',
              '--bind',str(temp/'config'),str(home/'.config'),'--bind',str(temp/'cache'),str(home/'.cache'),'--bind',str(temp/'log'),str(home/'.log'),
              '/usr/bin/ukui-panel','-style','layoutprobe']
@@ -87,6 +89,44 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             if endpoint.exists():break
             assert process.poll() is None,'panel exited';time.sleep(.1)
         time.sleep(2)
+        if args.settings_only:
+            from gi.repository import Gio,GLib
+            bus=Gio.bus_get_sync(Gio.BusType.SESSION,None)
+            service='org.ukui.AiStationPanel';path='/org/kylin/Lqui/Settings';interface='org.kylin.Lqui.SettingsModule'
+            def settings_call(method,*args):
+                reply=bus.call_sync(service,path,interface,method,GLib.Variant('('+('s'*len(args))+')',args) if args else None,None,Gio.DBusCallFlags.NO_AUTO_START,4000,None).unpack()[0]
+                return json.loads(reply)
+            catalog=settings_call('Catalog');check(catalog.get('ok'),'native Panel settings catalog is available')
+            checked=0;pages=[]
+            for page in catalog['pages']:
+                data=settings_call('Page',page['id']);check(data.get('ok') and data.get('fields'),'native Panel exports '+page['id'])
+                pages.append(page['id'])
+                for original in data['fields']:
+                    current=settings_call('Page',page['id']);field=next((f for f in current['fields'] if f['id']==original['id']),None)
+                    if not field or not field.get('enabled',True) or field.get('readOnly') or field.get('secret') or field['kind'] not in ('boolean','number','text','choice'):continue
+                    if field['kind']=='choice' and (field.get('value',-1)<0 or field.get('optionsEnabled') and not field['optionsEnabled'][field['value']]):continue
+                    result=settings_call('Set',page['id'],field['id'],json.dumps({'value':field['value']}));check(result.get('ok'),'native scalar no-op uses its current runtime ID');checked+=1
+            source=ROOT.parent/'kylin-lqui-settings';sys.path.insert(0,str(source))
+            os.environ.update(XDG_CONFIG_HOME=str(temp/'config'),XDG_CACHE_HOME=str(temp/'cache'),XDG_DATA_HOME=str(temp/'data'),GSETTINGS_BACKEND='memory',DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(temp/'no-system-bus'))
+            from PyQt5 import QtCore,QtWidgets,QtTest
+            QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling);app=QtWidgets.QApplication([])
+            from main import SettingsWindow
+            window=SettingsWindow();window.poll.stop();views=0
+            try:
+                for page in pages:
+                    window.open_page('panel:'+page);end=time.monotonic()+8
+                    while window.busy and time.monotonic()<end:QtTest.QTest.qWait(20)
+                    check(not window.busy and bool(window.fields),'new compact client renders native Panel '+page)
+                    for width,height in ((1040,740),(720,480)):
+                        window.resize(width,height);QtTest.QTest.qWait(60);canvas=window.scroll.widget();check(canvas.width()<=window.scroll.viewport().width(),'Panel form fits viewport')
+                        for entry in window.fields.values():
+                            control=entry['control']
+                            if control.isVisible():check(control.mapTo(canvas,QtCore.QPoint(control.width(),0)).x()<=canvas.width()+2,'Panel control stays inside content')
+                        views+=1
+            finally:window.close();window.deleteLater();QtTest.QTest.qWait(30)
+            (args.output/'settings-protocol.json').write_text(json.dumps({'verified':True,'pages':pages,'scalarNoOpRoundTrips':checked,'renderedViews':views,'widths':[1040,720],'privateDisplayAndBus':True,'configurationBindMounted':True},indent=2)+'\n')
+            call('shutdown',wait=0);check(process.wait(timeout=8)==0,'settings-only native host exits cleanly')
+            raise SystemExit(0)
         if args.system_items:
             system_items=subprocess.Popen(['/usr/bin/python3',str(ROOT/'tests/system_items_fixture.py')],env=env);time.sleep(2)
         if args.cohesive:

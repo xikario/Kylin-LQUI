@@ -39,6 +39,7 @@ Dock 默认保持居中宽度，拥挤时缩小应用图标；同应用多窗口
 
 ## 状态与维护
 
+- [2026-11-03 Rime 表情缺字与用户字体修复](docs/RIME_FONT_FIX_20261103.md)
 - [2026-11-02 跨聊天整合、当前行为与验证范围](docs/INTEGRATION_20261102.md)
 - [控制中心自适应烟色玻璃](docs/CONTROL_CENTER_ADAPTIVE_GLASS_20261102.md)
 - [声音整框面板与麦克风控制](docs/CONTROL_CENTER_SOUND_PANEL_20261102.md)

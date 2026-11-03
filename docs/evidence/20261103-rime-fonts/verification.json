@@ -1,0 +1,66 @@
+{
+  "verifiedAt": "2026-11-03T08:58:00.335638+08:00",
+  "sourceThread": "01a19c69-2947-7e61-ab9a-b5d413065eea",
+  "fontSource": {
+    "family": "Noto Color Emoji",
+    "revision": "1ffdd21391dd1f25c081fa93a9dea0c7c029442b",
+    "url": "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/2D/fonts/NotoColorEmoji.ttf",
+    "sha256": "15671215ab769fdc7162a045d56fd7d7e477c51b04e6b3c761d914d8fdd6cc44",
+    "bytes": 10730124,
+    "license": "OFL-1.1",
+    "licenseUrl": "https://raw.githubusercontent.com/googlefonts/noto-emoji/1ffdd21391dd1f25c081fa93a9dea0c7c029442b/LICENSE",
+    "licenseSha256": "500bb1ccf43df7bbb522112f9133a52b16e1c35e809632f5d8609b179152de5b",
+    "requiredCodepoints": [
+      "1FAE0",
+      "1FAE5"
+    ]
+  },
+  "currentDictionaryAudit": {
+    "font": "Microsoft YaHei",
+    "dictionariesChecked": 2,
+    "dictionaryCandidatesChecked": 9481,
+    "uniqueCandidatesChecked": 9481,
+    "missingCodepointSequences": [],
+    "ok": true
+  },
+  "isolatedOfflineInstall": {
+    "offlineInstall": {
+      "fontSha256": "15671215ab769fdc7162a045d56fd7d7e477c51b04e6b3c761d914d8fdd6cc44",
+      "changedFiles": 5,
+      "cjkFallbackFamily": "SimSun-ExtG",
+      "restartRequired": true,
+      "note": "仅安装用户字体及回退规则；未重启候选窗、Fcitx 或 Rime。"
+    },
+    "repeatInstall": {
+      "fontSha256": "15671215ab769fdc7162a045d56fd7d7e477c51b04e6b3c761d914d8fdd6cc44",
+      "changedFiles": 0,
+      "cjkFallbackFamily": "SimSun-ExtG",
+      "restartRequired": false,
+      "note": "仅安装用户字体及回退规则；未重启候选窗、Fcitx 或 Rime。"
+    },
+    "sandboxQtSmoke": {
+      "font": "Microsoft YaHei",
+      "dictionariesChecked": 0,
+      "dictionaryCandidatesChecked": 0,
+      "uniqueCandidatesChecked": 5,
+      "missingCodepointSequences": [],
+      "ok": true
+    },
+    "payloadHelperStandalone": true
+  },
+  "installerTests": {
+    "passed": 5,
+    "networkUsed": false,
+    "ctest": "candidate-font-support passed"
+  },
+  "integration": {
+    "candidateRenderingCodeChanged": false,
+    "userDictionariesCommitted": false,
+    "fontBinaryCommitted": false,
+    "proprietaryFontFilesCommitted": false,
+    "reinstalledOnUserDesktop": false,
+    "restartedUserProcesses": false
+  },
+  "scope": "Current Qt 5 font selection and two local Rime OpenCC candidate dictionaries; not a guarantee of all Unicode coverage.",
+  "toolSha256": "2821ae5e208f792d9987e47ad215eb10edd6e4b0b9edb891494dbd8f95c9aa2b"
+}

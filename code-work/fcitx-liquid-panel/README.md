@@ -273,3 +273,18 @@ cmake --build build -j2
 大写 A 放大 1.82 倍并调整箭头位置。以系统主题 24 像素无线图标的约 22 像素
 有效宽度为参考，四种状态最大有效边约 21–22 像素，透明画布和托盘槽尺寸不变。
 放大前资源及可执行文件：`backups/20261010-tray-enlarge-before/`。
+
+
+### 表情或生僻字显示方框（2026-11-03）
+
+新版表情可能未被系统旧字体覆盖，Qt 5 的同名字体注册也可能继续选中旧文件。新增只读检查和显式用户级修复工具：
+
+```sh
+/usr/bin/python3 font_support.py check
+/usr/bin/python3 font_support.py install
+# 离线：在 install 后加 --emoji-font /path/to/NotoColorEmoji.ttf
+```
+
+工具按固定上游提交和 SHA-256 验证字体，只使用已安装的扩展汉字字体作为回退，保留普通中文主字体和 Rime 配置。已有自定义规则不覆盖；普通 install-user.py 不自动联网安装字体。新发布目录会携带 font_support.py、来源清单、许可证和独立事务帮助模块。
+
+本机两份词库 9,481 个不同候选的整串 Qt 排版检查通过。详见 [来源、使用方法和验证边界](../../docs/RIME_FONT_FIX_20261103.md)。

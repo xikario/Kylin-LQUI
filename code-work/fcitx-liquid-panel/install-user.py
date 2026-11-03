@@ -24,8 +24,11 @@ def install(home):
         stage=Path(tempfile.mkdtemp(prefix='.prepare-',dir=str(base)))
         try:
             (stage/'build').mkdir();shutil.copy2(root/'build/fcitx-liquid-panel',stage/'build/fcitx-liquid-panel')
-            for name in ('manage.py','liquid-panel.conf.example'):shutil.copy2(root/name,stage/name)
+            for name in ('manage.py','font_support.py','liquid-panel.conf.example'):shutil.copy2(root/name,stage/name)
             shutil.copytree(root/'assets/tray',stage/'assets/tray')
+            shutil.copytree(root/'assets/fonts',stage/'assets/fonts')
+            tools=next(p/'tools' for p in root.parents if (p/'tools/file_transaction.py').is_file())
+            shutil.copy2(tools/'file_transaction.py',stage/'file_transaction.py')
             deps=subprocess.check_output(['ldd',str(stage/'build/fcitx-liquid-panel')],text=True)
             if 'not found' in deps:raise RuntimeError('Missing runtime dependency')
             manifest={'previous':previous,'release':str(release),'source':str(root),'files':{str(p.relative_to(stage)):hashlib.sha256(p.read_bytes()).hexdigest() for p in stage.rglob('*') if p.is_file()}}

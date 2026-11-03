@@ -24,7 +24,7 @@ QLineEdit,QComboBox,QPlainTextEdit,QListWidget{background:#f5f6f9;color:#262b34;
 QLineEdit:focus,QComboBox:focus,QPlainTextEdit:focus{border-color:#7bb2fa;}
 QComboBox{min-height:21px;padding-right:25px;}
 QComboBox::drop-down{border:0;width:24px;}
-QComboBox QAbstractItemView{background:#fff;color:#262b34;selection-background-color:#e0ecff;border:1px solid #dce0e6;padding:5px;}
+QComboBox QAbstractItemView{background:#fff;color:#262b34;selection-background-color:#e0ecff;border:0;padding:5px;}
 QPushButton{background:#f2f4f8;color:#416086;border:1px solid #dce3ed;border-radius:10px;padding:7px 12px;}
 QPushButton:hover{background:#e7effb;border-color:#b4ccec;}
 QPushButton:pressed,QPushButton:checked{background:#c6dcf8;border-color:#7eaddf;padding:8px 11px 6px 13px;}
@@ -169,9 +169,12 @@ class FlowLayout(QtWidgets.QLayout):
         size=QtCore.QSize()
         for item in self.items:
             if not item.widget().isHidden():size=size.expandedTo(item.minimumSize())
-        return size
+        left,top,right,bottom=self.getContentsMargins()
+        return size+QtCore.QSize(left+right,top+bottom)
     def setGeometry(self,rect):super().setGeometry(rect);self.arrange(rect,True)
     def arrange(self,rect,place):
+        left,top,right,bottom=self.getContentsMargins();outer_y=rect.y()
+        rect=rect.adjusted(left,top,-right,-bottom)
         x=rect.x();y=rect.y();height=0
         for item in self.items:
             if item.widget().isHidden():continue
@@ -183,7 +186,7 @@ class FlowLayout(QtWidgets.QLayout):
             if next_x>rect.right()+1 and x>rect.x():x=rect.x();y+=height+self.spacing();height=0
             if place:item.setGeometry(QtCore.QRect(QtCore.QPoint(x,y),size))
             x+=size.width()+self.spacing();height=max(height,size.height())
-        return y+height-rect.y()
+        return y+height-outer_y+bottom
 
 
 class WindowHeader(DragHeader):

@@ -424,7 +424,10 @@ class SettingsWindow(QtWidgets.QMainWindow):
         self.page_group_cache[self.current]=[g.get('title','') for g in normalized['groups']]
         signature=structural_signature(normalized)
         focused=QtWidgets.QApplication.focusWidget()
-        editing=focused and self.scroll.isAncestorOf(focused) and (isinstance(focused,(QtWidgets.QLineEdit,QtWidgets.QPlainTextEdit)) or isinstance(focused,QtWidgets.QSlider) and focused.isSliderDown() or isinstance(focused,QtWidgets.QComboBox) and focused.view().isVisible())
+        # Native combo popups move focus to their QAbstractItemView, which is
+        # a separate window. Inspect the owned combo's popup, not focus type.
+        popup_open=any(isinstance(entry['control'],QtWidgets.QComboBox) and entry['control'].view().isVisible() for entry in self.fields.values())
+        editing=popup_open or focused and self.scroll.isAncestorOf(focused) and (isinstance(focused,(QtWidgets.QLineEdit,QtWidgets.QPlainTextEdit)) or isinstance(focused,QtWidgets.QSlider) and focused.isSliderDown())
         self._page_data={**result,'fields':normalized['fields']}
         if not result.get('dirty'):self._ambiguous_native_edit=False
         if signature!=self.signature:
@@ -714,7 +717,11 @@ class SettingsWindow(QtWidgets.QMainWindow):
                 if editor:editor.setModified(False)
                 if isinstance(control,QtWidgets.QPlainTextEdit):control.document().setModified(False)
             if 'fields' in result:self.receive_page(result)
-            else:QtCore.QTimer.singleShot(100,lambda:self.refresh(force=True))
+            else:
+                def refresh_after_action():
+                    if sip.isdeleted(self):return
+                    if generation==self.generation and revision==self.revision and self.isVisible():self.refresh(force=True)
+                QtCore.QTimer.singleShot(100,refresh_after_action)
         args=[page,fid] if activate else [page,fid,json.dumps({'value':value},ensure_ascii=False)]
         self.backend.call(module,'Activate' if activate else 'Set',args,done)
 

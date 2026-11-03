@@ -106,6 +106,7 @@ public:
                     "QWidget[liquidCompactSettings=true] QPushButton:hover{background:#F0F3F8;}"
                     "QWidget[liquidCompactSettings=true] QPushButton:pressed{background:#E5EBF3;}"
                     "QWidget[liquidCompactSettings=true] QLineEdit,QWidget[liquidCompactSettings=true] QComboBox,QWidget[liquidCompactSettings=true] QAbstractItemView{border:1px solid #D7D9DF;border-radius:6px;background:#FFFFFF;padding:4px 8px;selection-background-color:#DCEBFF;selection-color:#095DB5;}"
+                    "QWidget[liquidCompactSettings=true] QComboBox QAbstractItemView{border:0;}"
                     "QWidget[liquidCompactSettings=true] QLineEdit:focus,QWidget[liquidCompactSettings=true] QComboBox:focus{border:2px solid #007AFF;padding:3px 7px;}"
                     "QWidget[liquidCompactSettings=true] QToolTip{border:1px solid #D7D9DF;border-radius:6px;background:#FFFFFF;color:#1D1D1F;padding:8px;}").arg(pixels));
             }

@@ -5,7 +5,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from PyQt5 import QtCore,QtGui,QtWidgets,QtTest
 import sip
 from main import SettingsWindow
-from ui_components import DisclosureRow
+from ui_components import DisclosureRow,ActionRow,ActionButton
 from apple_fixture import Fixture
 
 app=QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
@@ -42,6 +42,23 @@ class Review(unittest.TestCase):
         data=copy.deepcopy(self.fixture.pages['ai:general']);data['fields'][0]['items']=[{'text':'新项目'}]
         self.window.receive_page(data);self.assertEqual(control.item(0).text(),'旧项目')
         self.window.search.setFocus();self.window.receive_page(data);self.assertEqual(control.item(0).text(),'新项目');self.assertEqual(self.writes(),[])
+    def test_open_combo_survives_structural_refresh_with_focus_in_popup(self):
+        for editable in (False,True):
+            with self.subTest(editable=editable):
+                self.fields([{'id':'choice','name':'choice','kind':'choice','label':'主题','value':0,'options':['甲','乙','丙'],'editable':editable}])
+                control=self.window.fields['choice']['control'];control.showPopup();QtTest.QTest.qWait(20)
+                control.view().setFocus();self.assertTrue(control.view().isVisible())
+                self.assertIsNot(app.focusWidget(),control)
+                data=copy.deepcopy(self.fixture.pages['ai:general']);data['fields'].append({'id':'new','name':'new','kind':'boolean','label':'新选项','value':False})
+                before=len(self.writes());self.window.receive_page(data);QtTest.QTest.qWait(20)
+                self.assertIs(self.window.fields['choice']['control'],control)
+                self.assertTrue(control.view().isVisible());self.assertNotIn('new',self.window.fields)
+                self.assertEqual(len(self.writes()),before)
+                QtTest.QTest.keyClick(control.view(),QtCore.Qt.Key_Down);QtTest.QTest.keyClick(control.view(),QtCore.Qt.Key_Return);self.wait()
+                self.assertEqual(len(self.writes()),before+1)
+                self.assertEqual(self.writes()[-1][2][1],'choice')
+                self.window.search.setFocus();self.window.receive_page(data)
+                self.assertIn('new',self.window.fields)
     def test_stale_action_reply_still_releases_its_button(self):
         pending=[];original=self.fixture.call
         def call(module,method,args,callback):
@@ -123,5 +140,37 @@ class Review(unittest.TestCase):
         self.fixture.call=call;self.window.fields['runtime-refreshMaterialButton']['control'].click()
         self.open('fences:activity');self.open('fences:appearance');current=self.window.fields['runtime-refreshMaterialButton']['control'];self.assertFalse(current.isEnabled())
         pending.pop()({'ok':True});self.assertTrue(current.isEnabled());self.assertFalse(self.window.busy)
+
+    def test_queued_action_followup_stops_after_window_destroyed(self):
+        original=self.fixture.call
+        def call(module,method,args,callback):
+            if method=='Activate':callback({'ok':True,'queued':True})
+            else:original(module,method,args,callback)
+        self.fixture.call=call;self.window.fields['runtime-refreshMaterialButton']['control'].click()
+        self.window.close();self.window.deleteLater();QtTest.QTest.qWait(20)
+        self.assertTrue(sip.isdeleted(self.window));before=len(self.fixture.calls)
+        QtTest.QTest.qWait(150);self.assertEqual(len(self.fixture.calls),before)
+
+    def test_queued_action_followup_does_not_refresh_a_different_page(self):
+        original=self.fixture.call
+        def call(module,method,args,callback):
+            if method=='Activate':callback({'ok':True,'queued':True})
+            else:original(module,method,args,callback)
+        self.fixture.call=call;self.window.fields['runtime-refreshMaterialButton']['control'].click()
+        self.open('fences:activity');before=len(self.fixture.calls)
+        QtTest.QTest.qWait(150);self.assertEqual(len(self.fixture.calls),before)
+
+    def test_action_row_keeps_padding_after_buttons_wrap(self):
+        row=ActionRow();buttons=[ActionButton('安装或更新示例扩展 '+str(i)) for i in range(3)]
+        for button in buttons:row.add_action(button)
+        try:
+            row.resize(260,180);row.show();QtTest.QTest.qWait(20)
+            height=row.flow.heightForWidth(260);row.resize(260,height);row.flow.activate()
+            for button in buttons:
+                self.assertGreaterEqual(button.x(),12);self.assertGreaterEqual(button.y(),8)
+                self.assertLessEqual(button.x()+button.width(),row.width()-12)
+                self.assertLessEqual(button.y()+button.height(),height-8)
+            self.assertGreater(len({button.y() for button in buttons}),1)
+        finally:row.close();row.deleteLater();QtTest.QTest.qWait(10)
 
 if __name__=='__main__':unittest.main()

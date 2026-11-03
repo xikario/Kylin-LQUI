@@ -48,7 +48,7 @@ QLineEdit,QComboBox{min-height:%(control)spx;}
 QLineEdit#search{background:#FFFFFF;min-height:22px;padding:3px 8px;border-radius:6px;}
 QLineEdit:focus,QComboBox:focus,QPlainTextEdit:focus,QListWidget:focus{border:2px solid %(accent)s;padding:3px 7px;}
 QComboBox{padding-right:24px;}QComboBox::drop-down{border:0;width:22px;}
-QComboBox QAbstractItemView{background:%(surface)s;selection-background-color:%(selected)s;color:%(text)s;}
+QComboBox QAbstractItemView{background:%(surface)s;selection-background-color:%(selected)s;color:%(text)s;border:0;}
 QPushButton,QToolButton{background:%(surface)s;color:%(text)s;border:1px solid %(border)s;border-radius:6px;min-height:%(button)spx;padding:4px 10px;}
 QPushButton:hover,QToolButton:hover{background:%(hover)s;}
 QPushButton:pressed,QToolButton:pressed{background:%(pressed)s;}

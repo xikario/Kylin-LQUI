@@ -272,6 +272,38 @@ class ControlUi(unittest.TestCase):
         self.window.preload_expiry.start(20);QtTest.QTest.qWait(250)
         self.assertFalse(self.window.isVisible());self.assertFalse(self.window.preloading)
         self.assertIsNone(self.window.native_glass);self.assertFalse(self.window.poll.isActive())
+    def test_switching_tray_entries_keeps_the_shared_popup_open(self):
+        self.window.dialog_open=True;self.window.hide()
+        anchor=(1500,1030,175,48)
+        for entry in ('notifications','wifi','sound','power','bluetooth','notifications'):
+            self.window.open_at(entry,*anchor);QtTest.QTest.qWait(400)
+            self.assertTrue(self.window.isVisible(),entry)
+            self.assertFalse(self.window.closing,entry)
+            self.assertEqual(self.window.popup_progress,1.,entry)
+            self.assertEqual(self.window.page,'home')
+        self.window.open_at('notifications',*anchor);QtTest.QTest.qWait(300)
+        self.assertFalse(self.window.isVisible(),'the same tray entry still toggles closed')
+    def test_switching_entry_during_preparation_does_not_cancel_opening(self):
+        self.window.dialog_open=True;self.window.hide();pending=[];job=self.window.job
+        def defer(work,done,pool=None):
+            if pool is self.window.material_pool:pending.append((work,done))
+            else:job(work,done,pool=pool)
+        self.window.job=defer;anchor=(1500,1030,175,48)
+        self.window.open_at('notifications',*anchor);QtTest.QTest.qWait(50)
+        self.assertTrue(self.window.opening_pending);self.assertEqual(len(pending),1)
+        self.window.open_at('wifi',*anchor)
+        self.assertTrue(self.window.isVisible());self.assertTrue(self.window.opening_pending)
+        work,done=pending.pop();done({'ok':True,'data':work()});QtTest.QTest.qWait(500)
+        self.assertTrue(self.window.isVisible());self.assertEqual(self.window.popup_progress,1.)
+    def test_preload_click_preserves_the_tray_entry_for_later_switches(self):
+        self.window.dialog_open=True;self.window.hide();anchor=(1500,1030,175,48)
+        self.window.open_at('wifi',*anchor,preload=True);QtTest.QTest.qWait(400)
+        self.window.open_at('wifi',*anchor);QtTest.QTest.qWait(400)
+        self.assertTrue(self.window.isVisible());material=self.window.native_glass
+        self.window.open_at('sound',*anchor);QtTest.QTest.qWait(300)
+        self.assertTrue(self.window.isVisible());self.assertIs(self.window.native_glass,material)
+        self.window.open_at('sound',*anchor);QtTest.QTest.qWait(300)
+        self.assertFalse(self.window.isVisible())
     def test_slider_readout_does_not_change_geometry_for_three_digits(self):
         self.window.poll.stop();rects=None
         for volume,brightness in ((9,9),(33,80),(100,100)):
@@ -287,7 +319,7 @@ class ControlUi(unittest.TestCase):
     def test_all_home_controls_fit_and_use_same_popup(self):
         self.assertEqual(self.window.page,'home')
         self.assertEqual(self.window.scroll.verticalScrollBar().maximum(),0)
-        for page in ('wifi','sound','power','notifications'):
+        for page in ('wifi','sound','power','notifications','bluetooth'):
             self.window.hide();self.window.open_at(page,1500,1030,25,33);QtTest.QTest.qWait(30);self.assertEqual(self.window.page,'home')
         self.assertTrue(self.window.media_buttons['PlayPause'].isEnabled());self.assertTrue(self.window.brightness.isEnabled());self.assertTrue(self.window.dnd.isEnabled())
     def test_long_notification_pages_do_not_clip_footer(self):

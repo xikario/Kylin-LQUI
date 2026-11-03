@@ -25,5 +25,6 @@ private:
     QHash<QWidget*,Bounds> bounds;
     QPointer<QWidget> home,capsule;
     QTimer pending;
+    quint64 activationRevision=0;
     bool applying=false;
 };

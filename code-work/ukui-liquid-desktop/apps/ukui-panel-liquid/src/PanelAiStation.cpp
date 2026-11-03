@@ -516,9 +516,23 @@ QString PanelAiStation::State() const {
     for(auto *w:QApplication::allWidgets())if(w->objectName()=="aiStationOrb") {
         const QPoint p=w->mapToGlobal(QPoint());orbs.append(QJsonObject{{"x",p.x()},{"y",p.y()},{"width",w->width()},{"height",w->height()},{"visible",w->isVisible()}});
     }
+    QJsonArray systemEntries;
+    // Read-only identities and coordinates: tray membership can change while
+    // testing, so automation must not guess fixed screen pixels.
+    const QList<QPair<QString,QString>> trayIds={{"ukui-sidebar","notifications"},{"kylin-nm","wifi"},{"ukui-volume-control-applet-qt","sound"},{"ukui-power-manager-tray","power"},{"ukui-bluetooth","bluetooth"}};
+    for(auto *w:QApplication::allWidgets()) {
+        if(!w->inherits("StatusNotifierButton")&&!w->inherits("StatusNotifierStorageArrow"))continue;
+        QString entry;
+        for(const auto &id:trayIds)if(w->accessibleName().endsWith("_"+id.first)){entry=id.second;break;}
+        if(w->objectName()=="StatusNotifier_arrowBtn")entry="overflow";
+        if(entry.isEmpty())continue;
+        const QPoint p=w->mapToGlobal(QPoint());
+        systemEntries.append(QJsonObject{{"entry",entry},{"visible",w->isVisible()},{"enabled",w->isEnabled()},
+            {"x",p.x()},{"y",p.y()},{"width",w->width()},{"height",w->height()},{"dpr",w->devicePixelRatioF()}});
+    }
     QJsonArray edge;
     for(auto w:corners)if(w)edge.append(QJsonObject{{"x",w->x()},{"y",w->y()},{"width",w->width()},{"height",w->height()},{"visible",w->isVisible()}});
-    return QString::fromUtf8(QJsonDocument(QJsonObject{{"clusters",array},{"orbs",orbs},{"desktopCorners",edge}}).toJson(QJsonDocument::Compact));
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"clusters",array},{"orbs",orbs},{"desktopCorners",edge},{"systemEntries",systemEntries}}).toJson(QJsonDocument::Compact));
 }
 
 bool PanelAiStation::OpenCalendar(){

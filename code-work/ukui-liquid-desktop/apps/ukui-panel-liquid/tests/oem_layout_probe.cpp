@@ -189,11 +189,11 @@ class LayoutProbe : public QObject {
         } else if(action=="select") {
             auto *combo=qobject_cast<QComboBox*>(find(request.value("name").toString()));ok=combo;
             if(combo)combo->setCurrentIndex(request.value("index").toInt());
-        } else if(action=="click") {
+        } else if(action=="click"||action=="doubleClick") {
             auto *w=find(request.value("name").toString());ok=w;
             if(w) {
                 const QPoint local=w->rect().center(),global=w->mapToGlobal(local);
-                QMouseEvent press(QEvent::MouseButtonPress,local,global,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+                QMouseEvent press(action=="doubleClick"?QEvent::MouseButtonDblClick:QEvent::MouseButtonPress,local,global,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
                 QMouseEvent release(QEvent::MouseButtonRelease,local,global,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
                 const int repeat=qMax(1,request.value("repeat").toInt(1));
                 for(int i=0;i<repeat;++i) {

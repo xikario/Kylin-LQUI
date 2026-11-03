@@ -15,6 +15,7 @@ class Item(dbus.service.Object):
  @dbus.service.method('org.kde.StatusNotifierItem',in_signature='ii',out_signature='')
  def ContextMenu(self,x,y):pass
 items=[Item('Network','kylin-nm','network-wireless-signal-good-symbolic'),Item('Sound','ukui-volume-control-applet-qt','audio-volume-high-symbolic'),Item('Power','ukui-power-manager-tray','battery-level-100-charging-symbolic'),Item('Notice','ukui-sidebar','ukui-tool-box-null-symbolic')]
+items.append(Item('Bluetooth','ukui-bluetooth','bluetooth-symbolic'))
 items += [Item('Hidden'+str(i),'hidden-fixture-'+str(i),'applications-utilities') for i in range(9)]
 watcher_name=dbus.service.BusName('org.kde.StatusNotifierWatcher',bus)
 class Watcher(dbus.service.Object):

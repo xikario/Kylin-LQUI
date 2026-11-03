@@ -10,10 +10,12 @@ parser.add_argument('--inspect',action='store_true')
 parser.add_argument('--calendar-native',action='store_true')
 parser.add_argument('--cohesive',action='store_true')
 parser.add_argument('--system-items',action='store_true')
+parser.add_argument('--system-items-only',action='store_true')
 parser.add_argument('--indicators-only',action='store_true')
 parser.add_argument('--settings-center',type=pathlib.Path)
 parser.add_argument('--launcher',type=pathlib.Path)
 args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
+if args.system_items_only:args.system_items=True
 assert os.environ.get('DOCK_ISOLATED')=='1','Run on a private Xvfb and D-Bus session'
 owned=subprocess.check_output(['gdbus','call','--session','--dest','org.freedesktop.DBus','--object-path','/org/freedesktop/DBus','--method','org.freedesktop.DBus.NameHasOwner','org.ukui.AiStationPanel'],text=True)
 assert 'false' in owned,'Refusing the running user panel bus; use a fresh dbus-run-session'
@@ -124,16 +126,30 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             check(rapid['dock']['materialFallbacks']==before_rapid['dock']['materialFallbacks'],'rapid native blank-area clicks never replace finished glass with a placeholder')
             check(rapid['dock']['materialBuilds']<=before_rapid['dock']['materialBuilds']+1,'transient OEM press geometry is coalesced before material preparation')
             check(fixed(rapid)==snapshot,'rapid blank clicks preserve the fixed Dock geometry')
-            core=[w for w in nodes(initial['panel']) if w.get('accessibleName') in ['ukui-panel_sni_QToolButton_'+name for name in ('kylin-nm','ukui-volume-control-applet-qt','ukui-power-manager-tray')]]
-            check(len(core)==3 and all(w['w']==25 for w in core),'all three system controls are compact and present')
+            core=[w for w in nodes(initial['panel']) if w.get('accessibleName') in ['ukui-panel_sni_QToolButton_'+name for name in ('kylin-nm','ukui-volume-control-applet-qt','ukui-power-manager-tray','ukui-sidebar','ukui-bluetooth')]]
+            check(len(core)==5 and all(w['w']==25 for w in core if w['visible']),'all five system controls exist and visible entries remain compact')
             compact_width=named(initial,'StatusNotifier')['w']
             check(named(initial,'liquidSystemCapsule')['w']==compact_width,'capsule encloses the entire tray group')
             samples=[call(wait=250) for _ in range(4)];(args.output/'control-samples.json').write_text(json.dumps(samples,ensure_ascii=False))
             check(samples[-1]['controlSyncs']-samples[0]['controlSyncs']<=4,'idle control group has no relayout or repaint loop')
-            for target,page in [('ukui-panel_sni_QToolButton_kylin-nm','wifi'),('ukui-panel_sni_QToolButton_ukui-volume-control-applet-qt','sound'),('ukui-panel_sni_QToolButton_ukui-power-manager-tray','power'),('ukui-panel_sni_QToolButton_ukui-sidebar','notifications')]:
-                call('click',name=target,wait=350)
+            for target,page in [('ukui-panel_sni_QToolButton_kylin-nm','wifi'),('ukui-panel_sni_QToolButton_ukui-volume-control-applet-qt','sound'),('ukui-panel_sni_QToolButton_ukui-power-manager-tray','power'),('ukui-panel_sni_QToolButton_ukui-sidebar','notifications'),('ukui-panel_sni_QToolButton_ukui-bluetooth','bluetooth')]:
+                in_overflow=not next(w for w in nodes(initial['panel']) if w.get('accessibleName')==target)['visible']
+                if in_overflow:call('click',name='StatusNotifier_arrowBtn',wait=400)
+                clicked=call('click',name=target,wait=350)
                 records=[json.loads(line) for line in control_log.read_text().splitlines()]
                 check(records[-1][1]==page,'native '+page+' entry opens the correct control page')
+                if in_overflow:check(not any(w['name']=='liquidTrayOverflow' and w['visible'] for w in clicked['windows']),'overflow closes before the control center samples its glass')
+            if not next(w for w in core if w['accessibleName'].endswith('_ukui-bluetooth'))['visible']:
+                call('click',name='StatusNotifier_arrowBtn',wait=300)
+                before_count=len(control_log.read_text().splitlines())
+                call('click',name='ukui-panel_sni_QToolButton_ukui-bluetooth',wait=0)
+                call('click',name='ukui-panel_sni_QToolButton_ukui-volume-control-applet-qt',wait=350)
+                records=[json.loads(line) for line in control_log.read_text().splitlines()][before_count:]
+                check([r[1] for r in records]==['sound'],'a newer tray click cancels deferred overflow activation')
+            before_double=len(control_log.read_text().splitlines())
+            call('doubleClick',name='ukui-panel_sni_QToolButton_ukui-volume-control-applet-qt',wait=350)
+            records=[json.loads(line) for line in control_log.read_text().splitlines()]
+            check(len(records)==before_double+1 and records[-1][1]=='sound','double-click press also routes exactly once through the shared control center')
             native=call('click',name='kylin-calendar-plugin_CalendarButtonText_calendar_button',wait=350)
             calendar=next(w for w in native['windows'] if w['class']=='LunarCalendarWidget')
             background=named(native,'BackgroundWidget')
@@ -166,6 +182,7 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             check(named(restored,'StatusNotifier')['w']==compact_width,'re-enabling compact controls recovers the same width')
             check(fixed(restored)==snapshot,'system controls preserve date ring and both orb positions')
             initial=restored
+            if args.system_items_only:raise SystemExit(0)
         if args.calendar_native:
             call('systemControls',value=False,wait=300);native=call('click',name='kylin-calendar-plugin_CalendarButtonText_calendar_button',wait=500)
             (args.output/'calendar-native.json').write_text(json.dumps(native,ensure_ascii=False,indent=2))

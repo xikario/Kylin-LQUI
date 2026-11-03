@@ -44,7 +44,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.audio_events.stop)
         self.volume_feedback=VolumeFeedback(self)
         QtWidgets.QApplication.instance().aboutToQuit.connect(self.volume_feedback.stop)
-        self.preloading=False;self.preload_ready=False
+        self.preloading=False;self.preload_ready=False;self.entry=None
         self.preload_expiry=QtCore.QTimer(self);self.preload_expiry.setSingleShot(True);self.preload_expiry.timeout.connect(self.hide)
         self.material_loading=False;self.material_pending=None
         self.opening_pending=False;self.warmup_cards=[];self.snapshot_pending=False;self.auto_scan_pending=False
@@ -143,6 +143,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         if self.preloading:return
         if self.isVisible() and not self.isActiveWindow() and not self.dialog_open and not QtWidgets.QApplication.activePopupWidget() and not QtWidgets.QApplication.activeModalWidget():self.dismiss()
     def hideEvent(self,event):
+        self.entry=None
         self.volume_feedback.stop()
         self.audio_events.stop();self.audio_refresh_pending=False;self.microphone_refresh_pending=False
         self.finish_navigation(apply=False)
@@ -202,11 +203,13 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             finally:worker.signals.deleteLater()
         worker.signals.finished.connect(finished);(pool or QtCore.QThreadPool.globalInstance()).start(worker)
     def open_at(self,page,x,y,width,height,preload=False):
+        # Tray entries share home and a capsule anchor, but are separate toggles.
+        entry=page
         page='calendar' if page=='calendar' else 'home'
         anchor=QtCore.QRect(x,y,width,height)
         if self.preloading and not preload:
             if self.page==page and self.anchor==anchor and self.preload_expiry.isActive():
-                self.preloading=False;self.preload_expiry.stop()
+                self.preloading=False;self.preload_expiry.stop();self.entry=entry
                 if not self.controls_ready or time.monotonic()-self.controls_read_at>.75:
                     self.controls_ready=False;self.refresh_controls()
                 self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating,False);self.raise_();self.activateWindow()
@@ -217,17 +220,21 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             if self.isVisible():return
             self.preloading=True;self.preload_ready=False;self.preload_expiry.start(3000)
         if self.isVisible() and not self.opening_pending and self.anchor==anchor and self.page!=page:
-            self.closing=False;self.navigate(page);self.raise_();self.activateWindow();self.poll.start()
+            self.entry=entry;self.closing=False;self.navigate(page);self.raise_();self.activateWindow();self.poll.start()
             if self.backend_factory is SystemBackend:self.audio_events.start()
             return
         if self.isVisible() and self.page==page:
+            switched=self.entry!=entry;self.entry=entry
             if self.closing:
                 self.closing=False;self.animate_popup(True);self.raise_();self.activateWindow();self.poll.start()
                 if self.backend_factory is SystemBackend:self.audio_events.start()
+            elif switched:
+                self.raise_();self.activateWindow()
+                if not self.opening_pending:self.poll.start()
             else:self.dismiss()
             return
         if self.isVisible():self.hide()
-        self.anchor=anchor;self.idle.stop()
+        self.entry=entry;self.anchor=anchor;self.idle.stop()
         if self.page!=page:self.show_page(page)
         self.controls_ready=False;self.refresh_controls()
         self.set_position();self.release_material();self.opening_pending=True;self.capture_backdrop();self.popup_target=self.geometry();self.popup_progress=0.
@@ -539,7 +546,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             return [point.x(),point.y()]
         return {'value':slider.value(),'handle':center(slider.value()),'minimumHandle':center(slider.minimum()),
                 'maximumHandle':center(slider.maximum()),'minimum':slider.minimum(),'maximum':slider.maximum(),'dpr':slider.devicePixelRatioF()}
-    def state(self):return {'page':self.page,'visible':self.isVisible(),'closing':self.closing,'preparing':self.opening_pending,'navigationRunning':self.navigation_active,'resident':self.resident,'preloading':self.preloading,'controlsReady':self.controls_ready,'motionRunning':self.popup_motion.state()==QtCore.QAbstractAnimation.Running,'progress':self.popup_progress,'busy':self.changing,'reading':self.reading,'geometry':[self.x(),self.y(),self.width(),self.height()],'materialBackend':('snell-gpu' if self.native_glass.used_gpu else 'snell-cpu-fallback') if self.native_glass else 'blur-fallback','materialRenders':self.native_glass.render_count if self.native_glass else 0,'adaptiveSmoke':bool(getattr(self.native_glass,'adaptive_smoke',False)),'audioEventsRunning':self.audio_events.process.state()==QtCore.QProcess.Running,'audioReading':self.audio_reading,'microphoneReading':self.microphone_reading,'volumeFeedback':self.volume_feedback.state(),'volumeUi':self.volume_ui_state()}
+    def state(self):return {'page':self.page,'entry':self.entry,'visible':self.isVisible(),'closing':self.closing,'preparing':self.opening_pending,'navigationRunning':self.navigation_active,'resident':self.resident,'preloading':self.preloading,'controlsReady':self.controls_ready,'motionRunning':self.popup_motion.state()==QtCore.QAbstractAnimation.Running,'progress':self.popup_progress,'busy':self.changing,'reading':self.reading,'geometry':[self.x(),self.y(),self.width(),self.height()],'materialBackend':('snell-gpu' if self.native_glass.used_gpu else 'snell-cpu-fallback') if self.native_glass else 'blur-fallback','materialRenders':self.native_glass.render_count if self.native_glass else 0,'adaptiveSmoke':bool(getattr(self.native_glass,'adaptive_smoke',False)),'audioEventsRunning':self.audio_events.process.state()==QtCore.QProcess.Running,'audioReading':self.audio_reading,'microphoneReading':self.microphone_reading,'volumeFeedback':self.volume_feedback.state(),'volumeUi':self.volume_ui_state()}
 
 class Adaptor(QtDBus.QDBusAbstractAdaptor):
     QtCore.Q_CLASSINFO('D-Bus Interface','org.kylin.Lqui.ControlCenter')

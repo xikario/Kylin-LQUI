@@ -36,6 +36,7 @@ QString role(QWidget *widget){
     if(identity.endsWith("_kylin-nm"))return "wifi";
     if(identity.endsWith("_ukui-volume-control-applet-qt"))return "sound";
     if(identity.endsWith("_ukui-power-manager-tray"))return "power";
+    if(identity.endsWith("_ukui-bluetooth"))return "bluetooth";
     return {};
 }
 class Capsule:public QWidget {
@@ -49,6 +50,7 @@ PanelSystemControls::PanelSystemControls(QObject *parent):QObject(parent){setObj
 PanelSystemControls::~PanelSystemControls(){if(qApp)qApp->removeEventFilter(this);restore();}
 void PanelSystemControls::schedule(){if(!applying&&!pending.isActive())pending.start(0);}
 void PanelSystemControls::restore(){
+    ++activationRevision;
     applying=true;if(capsule)delete capsule;
     for(const auto &saved:originals)if(saved.widget){saved.widget->setMinimumSize(saved.minimum);saved.widget->setMaximumSize(saved.maximum);saved.widget->setIconSize(saved.icon);saved.widget->setProperty("liquidSystemPage",QVariant());}
     for(const auto &saved:hosts)if(saved.widget&&saved.widget->layout())restoreGrid(saved.widget->layout(),saved.minimum,saved.maximum);
@@ -115,18 +117,34 @@ bool PanelSystemControls::eventFilter(QObject *object,QEvent *event){
     if(applying)return false;
     if(object==qApp&&event->type()==QEvent::DynamicPropertyChange&&static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName()=="liquidSystemControlsEnabled"){schedule();return false;}
     auto *widget=qobject_cast<QWidget*>(object);if(!widget)return false;
-    const QString page=widget->property("liquidSystemPage").toString();
+    QString page=widget->property("liquidSystemPage").toString();
+    // Overflow items keep their OEM geometry and are not in the main-window
+    // sync set. Route their primary action too, without compacting that popup.
+    if(page.isEmpty()&&widget->inherits("StatusNotifierButton"))page=role(widget);
     if(!page.isEmpty()&&LquiControl::enabled()){
         auto *button=qobject_cast<QAbstractButton*>(widget);
-        if(event->type()==QEvent::Enter||event->type()==QEvent::FocusIn){
+        const bool overflow=home&&widget->window()!=home->window();
+        if(!overflow&&(event->type()==QEvent::Enter||event->type()==QEvent::FocusIn)){
             QWidget *anchor=home?home.data():widget;
             LquiControl::prepare(page,QRect(anchor->mapToGlobal(QPoint()),anchor->size()));
         }
-        const auto activate=[&]{QWidget *anchor=home?home.data():widget;return LquiControl::open(page,QRect(anchor->mapToGlobal(QPoint()),anchor->size()));};
-        if(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseButtonRelease){
+        const auto activate=[&]{
+            const auto revision=++activationRevision;
+            QWidget *anchor=home?home.data():widget;const QRect area(anchor->mapToGlobal(QPoint()),anchor->size());
+            if(overflow){
+                // Do not capture tray icons into the control center's glass.
+                // Let the compositor remove the overflow before sampling.
+                widget->window()->hide();
+                QTimer::singleShot(140,this,[this,revision,page,area]{if(revision==activationRevision)LquiControl::open(page,area);});return true;
+            }
+            return LquiControl::open(page,area);
+        };
+        if(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseButtonDblClick||event->type()==QEvent::MouseButtonRelease){
             auto *mouse=static_cast<QMouseEvent*>(event);
             if(mouse->button()==Qt::LeftButton){
-                if(event->type()==QEvent::MouseButtonPress)button->setDown(true);
+                // Qt delivers the second fast press as MouseButtonDblClick.
+                // Consume it like a normal press so it cannot leak to OEM UI.
+                if(event->type()!=QEvent::MouseButtonRelease)button->setDown(true);
                 else {const bool click=button->isDown()&&button->rect().contains(mouse->pos());button->setDown(false);if(click)activate();}
                 event->accept();return true;
             }

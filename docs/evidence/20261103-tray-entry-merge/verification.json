@@ -1,0 +1,287 @@
+{
+  "base": "432cb3cdd86db2d87c058b327f05ec1330a2eae9",
+  "controlTestsPassed": 85,
+  "nativeSurfaceTestsPassed": 7,
+  "panelTargetedTestsPassed": 5,
+  "oemSystemItemsPassed": true,
+  "doubleClickRegressionReproducedBeforeFix": true,
+  "audioHotplug": {
+    "outputInsertMs": 148,
+    "inputInsertMs": 137,
+    "inputRemoveMs": 168,
+    "outputRemoveMs": 148,
+    "listenerRecoveryMs": 1628,
+    "listenerRecovered": true,
+    "closingReversalRestartsListener": true,
+    "verified": true,
+    "pollingDisabled": true,
+    "sameSoundPage": true,
+    "materialPreserved": true,
+    "hiddenListenerStopped": true,
+    "hiddenReads": 0,
+    "hardwareModulesLoaded": false
+  },
+  "liveAcceptance": {
+    "alternating": [
+      {
+        "entry": "notifications",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "wifi",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "sound",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "power",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "wifi",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "notifications",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "power",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "sound",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "notifications",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "wifi",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      },
+      {
+        "entry": "sound",
+        "visible": true,
+        "page": "home",
+        "progress": 1.0,
+        "geometry": [
+          1094,
+          485,
+          389,
+          660
+        ],
+        "materialRenders": 10,
+        "audioEventsRunning": true
+      }
+    ],
+    "sameEntryCloses": [
+      "sound",
+      "wifi"
+    ],
+    "initialEntries": [
+      {
+        "dpr": 1.5,
+        "enabled": true,
+        "entry": "wifi",
+        "height": 33,
+        "visible": true,
+        "width": 25,
+        "x": 1150,
+        "y": 1159
+      },
+      {
+        "dpr": 1.5,
+        "enabled": true,
+        "entry": "overflow",
+        "height": 30,
+        "visible": true,
+        "width": 25,
+        "x": 1100,
+        "y": 1159
+      },
+      {
+        "dpr": 1.5,
+        "enabled": true,
+        "entry": "power",
+        "height": 33,
+        "visible": true,
+        "width": 25,
+        "x": 1200,
+        "y": 1159
+      },
+      {
+        "dpr": 1.5,
+        "enabled": true,
+        "entry": "sound",
+        "height": 33,
+        "visible": true,
+        "width": 25,
+        "x": 1175,
+        "y": 1159
+      },
+      {
+        "dpr": 1.5,
+        "enabled": true,
+        "entry": "bluetooth",
+        "height": 33,
+        "visible": false,
+        "width": 33,
+        "x": 303,
+        "y": 311
+      },
+      {
+        "dpr": 1.5,
+        "enabled": true,
+        "entry": "notifications",
+        "height": 33,
+        "visible": true,
+        "width": 25,
+        "x": 1225,
+        "y": 1159
+      }
+    ],
+    "rapid": {
+      "entries": [
+        "notifications",
+        "wifi",
+        "sound",
+        "power",
+        "wifi",
+        "notifications",
+        "sound"
+      ],
+      "finalEntry": "sound",
+      "visible": true
+    },
+    "bluetoothAfterLongHover": {
+      "overflow": true,
+      "entry": "bluetooth",
+      "visible": true
+    },
+    "verified": true
+  },
+  "preservedModules": {
+    "system_backend.py": true,
+    "fusion_view.py": true,
+    "glass_widgets.py": true,
+    "native_glass.py": true,
+    "native_glass_bridge.cpp": true,
+    "volume_feedback.py": true,
+    "audio_events.py": true
+  },
+  "deployment": {
+    "release": "/home/zhouzhang/.local/lib/kylin-lqui-settings/release-20261103-170218-b264409b",
+    "panelPid": 15440,
+    "controlCenterPid": 7362,
+    "pluginSha256": "8c44c93f633f2c0cceb7aa02573f809c190618fc1da72c7a84e3fe96dcc106a3",
+    "sourceAndRuntimeMatch": true,
+    "oldPid": 13245,
+    "newPid": 15440,
+    "aiPidUnchanged": true,
+    "panelConfigUnchanged": true
+  }
+}

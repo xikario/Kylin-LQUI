@@ -275,13 +275,18 @@ class ControlUi(unittest.TestCase):
     def test_switching_tray_entries_keeps_the_shared_popup_open(self):
         self.window.dialog_open=True;self.window.hide()
         anchor=(1500,1030,175,48)
+        def settle_motion():
+            deadline=QtCore.QElapsedTimer();deadline.start()
+            while (self.window.opening_pending or self.window.popup_motion.state()==QtCore.QAbstractAnimation.Running) and deadline.elapsed()<3000:QtTest.QTest.qWait(20)
+            self.assertFalse(self.window.opening_pending)
+            self.assertNotEqual(self.window.popup_motion.state(),QtCore.QAbstractAnimation.Running)
         for entry in ('notifications','wifi','sound','power','bluetooth','notifications'):
-            self.window.open_at(entry,*anchor);QtTest.QTest.qWait(400)
+            self.window.open_at(entry,*anchor);settle_motion()
             self.assertTrue(self.window.isVisible(),entry)
             self.assertFalse(self.window.closing,entry)
             self.assertEqual(self.window.popup_progress,1.,entry)
             self.assertEqual(self.window.page,'home')
-        self.window.open_at('notifications',*anchor);QtTest.QTest.qWait(300)
+        self.window.open_at('notifications',*anchor);settle_motion()
         self.assertFalse(self.window.isVisible(),'the same tray entry still toggles closed')
     def test_switching_entry_during_preparation_does_not_cancel_opening(self):
         self.window.dialog_open=True;self.window.hide();pending=[];job=self.window.job

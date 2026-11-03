@@ -64,9 +64,14 @@ class SettingSlider(QtWidgets.QSlider):
         super().__init__(QtCore.Qt.Horizontal);self.pointer=False;self.setMinimumHeight(32)
         self.actionTriggered.connect(lambda action:self.committed.emit() if not self.pointer and not self.isSliderDown() else None)
         self.sliderReleased.connect(lambda:self.committed.emit() if not self.pointer else None)
-    def mousePressEvent(self,event):self.pointer=True;super().mousePressEvent(event)
+    def mousePressEvent(self,event):
+        if event.button()==QtCore.Qt.LeftButton and self.isEnabled():self.pointer=True
+        super().mousePressEvent(event)
     def mouseReleaseEvent(self,event):
-        super().mouseReleaseEvent(event);self.pointer=False;self.committed.emit()
+        commit=self.pointer and event.button()==QtCore.Qt.LeftButton and self.isEnabled()
+        super().mouseReleaseEvent(event)
+        if event.button()==QtCore.Qt.LeftButton:self.pointer=False
+        if commit:self.committed.emit()
     def cancel_pointer(self):
         blocker=QtCore.QSignalBlocker(self);self.setSliderDown(False);self.pointer=False;del blocker
     def hideEvent(self,event):self.cancel_pointer();super().hideEvent(event)

@@ -2,6 +2,7 @@
 from collections import Counter
 from copy import deepcopy
 import json
+import math
 
 ROLES = {'control', 'label', 'help', 'detail', 'warning', 'status', 'heading', 'preview', 'action'}
 COMPONENTS = {'auto', 'file-picker', 'preview', 'plugin-row'}
@@ -80,7 +81,8 @@ def _field_ui(field, names, groups, index, errors):
     if condition is not None:
         if (isinstance(condition, dict) and isinstance(condition.get('name'), str)
                 and names[condition['name']] == 1 and 'equals' in condition
-                and type(condition['equals']) in (bool, int, str, float, type(None))):
+                and type(condition['equals']) in (bool, int, str, float, type(None))
+                and (type(condition['equals']) is not float or math.isfinite(condition['equals']))):
             result['visibleWhen'] = {'name': condition['name'], 'equals': condition['equals']}
         else:
             errors.append({'code': 'invalid-visible-condition', 'index': index})
@@ -122,7 +124,12 @@ def build_groups(page):
     attachments = {}
     for field in page['fields']:
         owner = field['_ui'].get('for')
-        if owner and owner in by_name and not by_name[owner].get('secret'):
+        if owner:
+            target=by_name.get(owner);target_ui=target['_ui'] if target else {}
+            ordinary=target and target['kind'] in {'boolean','number','text','multiline','choice','tabs','list','toggle'} and not target.get('secret') and not target_ui.get('entity') and not str(target.get('name','')).startswith('liquidMaterialPreset_')
+            shared=target_ui.get('row') and any(other is not target and other['_ui'].get('row')==target_ui['row'] and other['_ui'].get('group')==target_ui.get('group') and not other['_ui'].get('for') for other in page['fields'])
+            if not ordinary or shared or field['kind'] not in {'note','heading'} or field['_role'] not in {'label','help','detail'}:
+                field['_ui'].pop('for',None);field['_ui']['collapsible']=False;page['diagnostics'].append({'code':'unsupported-description-owner','index':field['_index']});continue
             attachments.setdefault(owner, []).append(field)
             field['_absorbed'] = 'associated-description'
     legacy_group = None
@@ -172,6 +179,24 @@ def build_groups(page):
     return groups
 
 
+def presentation_rows(row):
+    """Unknown row combinations fall back to one visible field per row."""
+    fields=row['fields'];kinds=[f['kind'] for f in fields]
+    if row.get('entity'):
+        plugin=kinds.count('heading')==1 and kinds.count('boolean')<=1 and all(f['kind'] in {'heading','boolean'} or f['kind']=='note' and (f['_role']=='detail' or str(f.get('name','')).startswith(('state:','unknown:'))) for f in fields)
+        if plugin:return [row]
+    else:
+        if len(fields)==1 or all(kind in {'note','heading'} for kind in kinds):return [row]
+        if row['actions'] and all(kind in {'action','toggle'} for kind in kinds):return [row]
+        if kinds.count('preview')==1 and all(f['kind'] in {'preview','note','action'} or f['kind']=='text' and f['_ui'].get('component')=='file-picker' for f in fields):return [row]
+    result=[]
+    for field in fields:
+        result.append({**row,'key':(row['key'],field['_key']),'fields':[field],'entity':'',
+                       'actions':field['kind']=='action' or field['kind']=='toggle' and str(field.get('name','')).startswith('liquidMaterialPreset_'),
+                       'attachments':[note for note in row['attachments'] if note['_ui'].get('for')==field.get('name')]})
+    return result
+
+
 def field_visible(field, values):
     condition = field['_ui'].get('visibleWhen')
     if not condition:
@@ -187,6 +212,7 @@ def searchable_text(field):
     if not field.get('secret'):
         kind=field.get('kind');value=field.get('value')
         if kind=='preview':text.extend([field.get('previewStatus',''),field.get('_ui',{}).get('alt','')])
+        elif kind=='choice' and field.get('editable') and 'text' in field:text.append(field['text'])
         elif kind in ('choice','tabs') and type(value) is int and 0<=value<len(field.get('options',[])):text.append(field['options'][value])
         elif kind=='list':text.extend(item.get('text','') for item in field.get('items',[]))
         elif type(value) is bool:text.append('开启' if value else '关闭')

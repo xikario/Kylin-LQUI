@@ -74,6 +74,16 @@ class Schema(unittest.TestCase):
         rows = normalize_page(data)['groups'][0]['rows']
         self.assertEqual([[f['id'] for f in row['fields']] for row in rows], [['1', '3'], ['2']])
 
+    def test_unsupported_owners_cannot_absorb_fields(self):
+        for source_kind,owner_kind in [('note','action'),('text','text'),('note','note')]:
+            with self.subTest(source_kind=source_kind,owner_kind=owner_kind):
+                data=self.page([field('1',kind=owner_kind,ui={'group':'a'}),field('2',kind=source_kind,ui={'group':'a','role':'help','for':'field1','collapsible':True})])
+                page=normalize_page(data);self.assertNotIn('_absorbed',page['fields'][1]);self.assertNotIn('for',page['fields'][1]['_ui']);self.assertFalse(page['fields'][1]['_ui']['collapsible']);self.assertEqual(len(page['groups'][0]['rows']),2)
+    def test_nonfinite_visibility_condition_falls_back_locally(self):
+        for value in (float('nan'),float('inf'),float('-inf')):
+            data=self.page([field('1'),field('2',ui={'group':'a','visibleWhen':{'name':'field1','equals':value}})])
+            page=normalize_page(data);self.assertNotIn('visibleWhen',page['fields'][1]['_ui']);self.assertTrue(field_visible(page['fields'][1],{'field1':False}))
+
 
 if __name__ == '__main__':
     unittest.main()

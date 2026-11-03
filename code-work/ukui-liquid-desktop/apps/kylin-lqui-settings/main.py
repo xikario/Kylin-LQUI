@@ -10,11 +10,11 @@ from backend import Backend, MODULES, ROOT
 from design import STYLE, COLORS, DESCRIPTIONS, NavigationDelegate, Switch, MaterialPreview, DesktopPreview, DragHeader, ImagePreview, WindowHeader, icon, navigation_text, FlowLayout
 
 from ui_tokens import COLORS as UI_COLORS, application_scale, build_settings_style, sidebar_width
-from ui_schema import normalize_page, structural_signature, searchable_text, field_visible
+from ui_schema import normalize_page, structural_signature, searchable_text, field_visible, presentation_rows
 from ui_components import SettingsGroup, SettingRow, ActionRow, DisclosureRow, PluginRow, WallpaperPreview, WallpaperFileRow, PathView, StatusLabel, SettingSlider, ActionButton, HelpBubble, label
 import sip
 
-_OBSERVED_EVENTS=frozenset((QtCore.QEvent.MouseButtonPress,QtCore.QEvent.KeyPress,QtCore.QEvent.Wheel,QtCore.QEvent.ApplicationFontChange,QtCore.QEvent.Resize,QtCore.QEvent.FocusIn))
+_OBSERVED_EVENTS=frozenset((QtCore.QEvent.MouseButtonPress,QtCore.QEvent.KeyPress,QtCore.QEvent.Wheel,QtCore.QEvent.InputMethod,QtCore.QEvent.ApplicationFontChange,QtCore.QEvent.Resize,QtCore.QEvent.FocusIn))
 
 class HelpFilter(QtCore.QObject):
     """Delay helpful descriptions by one second; no native UKUI tooltip arrow."""
@@ -62,7 +62,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         self.page_cache={};self.page_group_cache={};self.catalog={};self.collapsed=set(MODULES)
         self.view_states={};self._render_serial=0;self._rebuilding=False;self._pending_actions=set()
         self._restoring_generation=None;self._updating_visibility=False;self._font_update_queued=False;self._interaction_serial=0;self._ambiguous_native_edit=False
-        self._normalized=None;self._page_data={};self._rendered_rows=[];self.groups=[];self._blocked_signature=''
+        self._normalized=None;self._page_data={};self._rendered_rows=[];self.groups=[];self._blocked_signature='';self._deferred_fields=set()
         self._explicit_font_scale=font_scale;self.ui_scale=application_scale(QtWidgets.QApplication.font(),font_scale)
         self._last_app_point=QtWidgets.QApplication.font().pointSizeF();self._last_focused_key=None
         self.setWindowTitle('Kylin-LQUI 设置')
@@ -113,6 +113,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         if event.type()==QtCore.QEvent.WindowStateChange and hasattr(self,'scroll'):self.reflow()
 
     def sync_application_font(self):
+        if sip.isdeleted(self):return
         self._font_update_queued=False
         point=QtWidgets.QApplication.font().pointSizeF()
         if point==self._last_app_point:return
@@ -161,7 +162,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
     def eventFilter(self,watched,event):
         kind=event.type()
         if kind not in _OBSERVED_EVENTS:return False
-        if kind in (QtCore.QEvent.MouseButtonPress,QtCore.QEvent.KeyPress,QtCore.QEvent.Wheel) and isinstance(watched,QtWidgets.QWidget) and (watched is self or self.isAncestorOf(watched)):self._interaction_serial+=1
+        if kind in (QtCore.QEvent.MouseButtonPress,QtCore.QEvent.KeyPress,QtCore.QEvent.Wheel,QtCore.QEvent.InputMethod) and isinstance(watched,QtWidgets.QWidget) and (watched is self or self.isAncestorOf(watched)):self._interaction_serial+=1
         if kind==QtCore.QEvent.ApplicationFontChange and watched is QtWidgets.QApplication.instance() and not self._font_update_queued:
             self._font_update_queued=True;QtCore.QTimer.singleShot(0,self.sync_application_font)
         if kind==QtCore.QEvent.Resize and hasattr(self,'scroll'):
@@ -169,7 +170,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             elif watched is self.navigation.viewport():self.navigation.scheduleDelayedItemsLayout()
         if kind==QtCore.QEvent.FocusIn:
             for entry in self.fields.values():
-                if entry['control'] is watched and entry['field'].get('_stable') and not entry['field'].get('secret'):self._last_focused_key=entry['field']['_key']
+                if (entry['control'] is watched or self.line_editor(entry['control']) is watched) and entry['field'].get('_stable') and not entry['field'].get('secret'):self._last_focused_key=entry['field']['_key']
         if kind==QtCore.QEvent.KeyPress and watched is self.navigation and event.key() in (QtCore.Qt.Key_Return,QtCore.Qt.Key_Enter,QtCore.Qt.Key_Space):
             item=self.navigation.currentItem()
             if item and item.data(QtCore.Qt.UserRole+2):self.toggle_group(item);return True
@@ -187,6 +188,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             self.backend.call(module,'Catalog',[],lambda result,m=module:self.receive_catalog(m,result))
 
     def receive_catalog(self,module,result):
+        if sip.isdeleted(self):return
         if not result.get('ok'):return
         pages=result.get('pages',[])
         if not pages:return
@@ -216,7 +218,6 @@ class SettingsWindow(QtWidgets.QMainWindow):
         if key==module+':general' and self.catalog.get(module) and not any(p['id']=='general' for p in self.catalog[module]):key=module+':'+self.catalog[module][0]['id']
         if key!=self.current and self._unstable_draft() and not self.confirm_discard():return
         self.collapsed.discard(module)
-        self.search.clear()
         selected=None
         for i in range(self.navigation.count()):
             item=self.navigation.item(i)
@@ -225,7 +226,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             blocker=QtCore.QSignalBlocker(self.navigation);self.navigation.setCurrentItem(selected);del blocker
         title=navigation_text(selected.text()) if selected else MODULES.get(module,(key,))[0]
         self.activate_page(key,title)
-        self.filter_search('')
+        self.filter_search(self.search.text())
         if self.isMinimized():self.showNormal()
         else:self.show()
         self.raise_();self.activateWindow()
@@ -241,7 +242,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             if isinstance(control,QtWidgets.QPlainTextEdit) and control.document().isModified() and entry['field'].get('_stable') and not entry['field'].get('secret'):self.drafts[(self.current,entry['field']['name'])]=control.toPlainText()
         self.current=key;self.generation+=1;self.request_serial+=1;self.signature='';self.fields={};self.busy=False
         self.groups=[];self._rendered_rows=[];self._normalized=None;self._page_data={};self._last_focused_key=None
-        self._ambiguous_native_edit=False
+        self._ambiguous_native_edit=False;self._deferred_fields.clear();self._blocked_signature=''
         self.poll.setInterval(6000 if key=='overview' else 15000 if key.startswith('peony:') else 2500)
         titles={'fences:appearance':'液态外观','fences:wallpaper':'壁纸','fences:activity':'活动统计','peony:general':'文件管理','peony:plugins':'Peony 扩展'}
         self.title.setText(titles.get(key,title));self.message.setText('');self.save_mode.setText('');self.open_space.setVisible(key.startswith('space:'))
@@ -254,6 +255,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         generation=self.generation
         if self.scroll.widget():self.scroll.widget().setEnabled(False)
         def loading():
+            if sip.isdeleted(self):return
             if generation==self.generation and self.busy and not self.fields:self.set_content(QtWidgets.QLabel('正在读取…'))
         self.refresh(force=True)
         QtCore.QTimer.singleShot(80,loading)
@@ -274,6 +276,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         self.request_serial+=1;request=self.request_serial
         generation=self.generation;revision=self.revision;key=self.current;self.busy=True
         def receive(result):
+            if sip.isdeleted(self):return
             if generation!=self.generation or revision!=self.revision or request!=self.request_serial:return
             self.busy=False
             if key=='overview':self.render_overview(result)
@@ -284,6 +287,12 @@ class SettingsWindow(QtWidgets.QMainWindow):
         elif ':' in key:
             module,page=key.split(':',1);self.backend.call(module,'Page',[page],receive)
         else:self.busy=False
+
+    @staticmethod
+    def line_editor(control):
+        if isinstance(control,QtWidgets.QLineEdit):return control
+        if isinstance(control,QtWidgets.QComboBox) and control.isEditable():return control.lineEdit()
+        return None
 
     @staticmethod
     def modified(control):
@@ -300,7 +309,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
         self._ambiguous_native_edit=False
         for entry in self.fields.values():
             control=entry['control']
-            if isinstance(control,QtWidgets.QLineEdit):control.setModified(False)
+            editor=self.line_editor(control)
+            if editor:editor.setModified(False)
             elif isinstance(control,QtWidgets.QPlainTextEdit):control.document().setModified(False)
         if ':' in self.current and not self.current.startswith('ai:'):
             module,page=self.current.split(':',1);self.backend.call(module,'Discard',[page],lambda result:None)
@@ -314,10 +324,10 @@ class SettingsWindow(QtWidgets.QMainWindow):
                 if control is QtWidgets.QApplication.focusWidget() or control.isAncestorOf(QtWidgets.QApplication.focusWidget()):state['focus']=None
                 continue
             if not f.get('_stable'):continue
-            data={'kind':f['kind']}
-            if isinstance(control,QtWidgets.QLineEdit):
-                data.update(modified=control.isModified(),cursor=control.cursorPosition(),selection=control.selectionStart(),selectionLength=len(control.selectedText().encode('utf-16-le'))//2)
-                if control.isModified():data['text']=control.text()
+            data={'kind':f['kind']};editor=self.line_editor(control)
+            if editor:
+                data.update(modified=editor.isModified(),cursor=editor.cursorPosition(),selection=editor.selectionStart(),selectionLength=len(editor.selectedText().encode('utf-16-le'))//2)
+                if editor.isModified():data['text']=editor.text()
             elif isinstance(control,QtWidgets.QPlainTextEdit):
                 cursor=control.textCursor();data.update(modified=control.document().isModified(),cursor=cursor.position(),anchor=cursor.anchor())
                 if control.document().isModified():data['text']=control.toPlainText()
@@ -338,22 +348,24 @@ class SettingsWindow(QtWidgets.QMainWindow):
         return state
 
     def restore_view_state(self,state):
-        self._restoring_generation=self.generation
+        self._restoring_generation=self.generation;restored_text={}
         for entry in self.fields.values():
             f=entry['field'];control=entry['control'];saved=state.get('fields',{}).get(f.get('_key'))
             if not saved or f.get('secret') or saved.get('kind')!=f['kind']:continue
-            blocker=QtCore.QSignalBlocker(control)
-            if isinstance(control,QtWidgets.QLineEdit):
+            blocker=QtCore.QSignalBlocker(control);editor=self.line_editor(control)
+            if editor:
                 if saved.get('modified'):
-                    if control.text()!=saved['text']:control.setText(saved['text'])
-                    control.setModified(True)
-                control.setCursorPosition(min(saved.get('cursor',0),len(control.text().encode('utf-16-le'))//2))
-                if saved.get('selection',-1)>=0:control.setSelection(saved['selection'],saved.get('selectionLength',0))
+                    if editor.text()!=saved['text']:editor.setText(saved['text'])
+                    editor.setModified(True)
+                editor.setCursorPosition(min(saved.get('cursor',0),len(editor.text().encode('utf-16-le'))//2))
+                if saved.get('selection',-1)>=0:editor.setSelection(saved['selection'],saved.get('selectionLength',0))
+                restored_text[f['_key']]=editor.text()
             elif isinstance(control,QtWidgets.QPlainTextEdit):
                 if saved.get('modified'):
                     if control.toPlainText()!=saved['text']:control.setPlainText(saved['text'])
                     control.document().setModified(True)
                 cursor=control.textCursor();size=len(control.toPlainText().encode('utf-16-le'))//2;cursor.setPosition(min(saved.get('anchor',0),size));cursor.setPosition(min(saved.get('cursor',0),size),QtGui.QTextCursor.KeepAnchor);control.setTextCursor(cursor)
+                restored_text[f['_key']]=control.toPlainText()
             elif isinstance(control,QtWidgets.QListWidget):
                 for i in range(control.count()):
                     item=control.item(i);item.setSelected(item.text() in saved.get('selected',[]))
@@ -365,9 +377,11 @@ class SettingsWindow(QtWidgets.QMainWindow):
             for f in record['spec']['fields']:
                 disclosure=self.fields[f['id']].get('disclosure');key='field:'+str(f['_key'])
                 if disclosure and key in state.get('expanded',{}):disclosure.set_expanded(state['expanded'][key])
+        self.filter_search(self.search.text())
         generation=self.generation;revision=self.revision;interaction=self._interaction_serial
         self._restoring_generation=None
         def finish():
+            if sip.isdeleted(self):return
             if generation!=self.generation or revision!=self.revision or interaction!=self._interaction_serial:return
             self._restoring_generation=generation
             bar=self.scroll.verticalScrollBar();bar.setValue(state.get('scroll',0))
@@ -378,6 +392,16 @@ class SettingsWindow(QtWidgets.QMainWindow):
                         now=entry['row'].mapTo(self.scroll.viewport(),QtCore.QPoint()).y();bar.setValue(bar.value()+now-y);break
             for entry in self.fields.values():
                 if entry['field'].get('_key')==state.get('focus') and entry['control'].isVisible() and entry['control'].isEnabled():entry['control'].setFocus();break
+            # QComboBox's final layout/focus pass may clear its line selection.
+            # Restore cursor geometry only if the user has not edited since.
+            for entry in self.fields.values():
+                f=entry['field'];control=entry['control'];saved=state.get('fields',{}).get(f.get('_key'));editor=self.line_editor(control)
+                if not saved or f.get('secret') or f.get('_key') not in restored_text:continue
+                if editor is not None and editor.text()==restored_text[f['_key']]:
+                    editor.setCursorPosition(min(saved.get('cursor',0),len(editor.text().encode('utf-16-le'))//2))
+                    if saved.get('selection',-1)>=0:editor.setSelection(saved['selection'],saved.get('selectionLength',0))
+                elif isinstance(control,QtWidgets.QPlainTextEdit) and control.toPlainText()==restored_text[f['_key']]:
+                    cursor=control.textCursor();size=len(control.toPlainText().encode('utf-16-le'))//2;cursor.setPosition(min(saved.get('anchor',0),size));cursor.setPosition(min(saved.get('cursor',0),size),QtGui.QTextCursor.KeepAnchor);control.setTextCursor(cursor)
             self._restoring_generation=None
         QtCore.QTimer.singleShot(0,finish)
 
@@ -392,7 +416,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
                 layout.addStretch();self.set_content(box)
             return
         fields=result.get('fields',[])
-        if not fields:self.message.setText('此页面暂未提供设置，请刷新或检查模块状态。');return
+        if not fields and self.fields and any(self.modified(e['control']) for e in self.fields.values()):
+            self.message.setText('此页面暂未提供设置，当前文字草稿已保留；完成编辑后再刷新。');return
         module,page=self.current.split(':',1)
         normalized=normalize_page(result,module,page,self._render_serial)
         self.page_cache[self.current]=normalized['fields']
@@ -409,16 +434,23 @@ class SettingsWindow(QtWidgets.QMainWindow):
                     self._blocked_signature=signature;self.message.setText('页面内容已变化，当前草稿已保留；完成编辑后再刷新。');return
             self._blocked_signature=''
             state=self.capture_view_state() if self.fields else self.view_states.get(self.current,{})
+            self.view_states[self.current]=state
             self.signature=signature;self.render_fields(fields,result);self.restore_view_state(state)
         else:
             changed=normalized['fields']!=self._normalized['fields']
             self._normalized=normalized
-            if changed:
-                for field in normalized['fields']:self.update_field(field)
-                self.refresh_semantic_rows()
+            updated=False;previous=self._rebuilding;self._rebuilding=True
+            try:
+                # Disabling an editor can synchronously emit editingFinished.
+                # A server update must never submit the user's local draft.
+                for field in normalized['fields']:
+                    if changed or field['id'] in self._deferred_fields:updated=self.update_field(field) or updated
+            finally:self._rebuilding=previous
+            if changed or updated:self.refresh_semantic_rows()
         self.update_save_mode(result)
         self.message.setText('此页有未应用修改，请点击对应的“应用”或“保存”。' if result.get('dirty') else '')
         if any(isinstance(e['control'],QtWidgets.QPlainTextEdit) and e['control'].document().isModified() for e in self.fields.values()):self.message.setText('文字修改尚未更新，请点“更新”。')
+        if not fields:self.message.setText('此页面暂未提供设置，请刷新或检查模块状态。')
         if result.get('modalActive'):self.message.setText('请先完成当前的确认或文件选择窗口。');self.save_mode.setText('等待确认')
 
     def update_save_mode(self,result):
@@ -461,6 +493,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             for index,allowed in enumerate(field.get('optionsEnabled',[])):
                 if control.model().item(index):control.model().item(index).setEnabled(allowed)
             control.setEditable(bool(field.get('editable')));control.setCurrentIndex(int(field.get('value',0)))
+            if control.isEditable() and 'text' in field:control.setEditText(str(field['text']))
             control.activated[int].connect(lambda value,f=fid,k=key,c=control:self.mutate(f,value,page_key=k,source=c))
             if control.isEditable():control.lineEdit().editingFinished.connect(lambda f=fid,c=control,k=key:self.mutate(f,c.currentText(),page_key=k,source=c) if c.lineEdit().isModified() else None)
         elif kind=='text':
@@ -485,14 +518,14 @@ class SettingsWindow(QtWidgets.QMainWindow):
             control.itemChanged.connect(lambda item,f=fid,c=control,k=key:self.mutate(f,{'row':c.row(item),'checked':item.checkState()==QtCore.Qt.Checked},page_key=k,source=c))
         else:control=label('此设置类型暂不支持。')
         if container is None:container=control
-        control.setObjectName(field.get('name') or 'field_'+str(fid));control.setEnabled(field.get('enabled',True));control.setAccessibleName(name);control.setAccessibleDescription(field.get('help',''))
+        control.setObjectName(field.get('name') or 'field_'+str(fid));control.setEnabled(field.get('enabled',True) and (key,fid) not in self._pending_actions);control.setAccessibleName(name);control.setAccessibleDescription(field.get('help',''))
         self.help.install(control,field.get('help') or name)
         if isinstance(control,PathView):self.help.install(control.path,control.full_path)
         entry.update(control=control,container=container,row=container)
         return entry
 
     def render_fields(self,fields,page_data=None):
-        self._rebuilding=True;self._render_serial+=1
+        self._rebuilding=True;self._render_serial+=1;self._deferred_fields.clear()
         module,page=self.current.split(':',1) if ':' in self.current else ('','')
         raw=page_data if page_data is not None else {'fields':fields}
         self._normalized=normalize_page(raw,module,page,self._render_serial)
@@ -507,7 +540,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             for field in spec.get('sourceHeadings',[]):
                 entry=self.fields[field['id']];entry['container'].deleteLater();entry.update(control=group.title,container=group.title,row=group)
                 entry['header']=group.title if spec['key'].startswith('@legacy:') else None
-            for row in spec['rows']:
+            for row in (item for source_row in spec['rows'] for item in presentation_rows(source_row)):
                 entries=[self.fields[f['id']] for f in row['fields']];controls=[e['container'] for e in entries]
                 if row.get('entity'):
                     title=next((str(e['field'].get('value','')) for e in entries if e['field']['kind']=='heading'),'扩展')
@@ -601,27 +634,27 @@ class SettingsWindow(QtWidgets.QMainWindow):
 
     def send_selection(self,fid,control,page_key=None):
         row=control.currentRow()
-        if row>=0:self.mutate(fid,{'row':row,'selectedRows':[control.row(item) for item in control.selectedItems()]},page_key=page_key)
+        if row>=0:self.mutate(fid,{'row':row,'selectedRows':[control.row(item) for item in control.selectedItems()]},page_key=page_key,source=control)
 
     def update_field(self,field):
         entry=self.fields.get(field['id'])
-        if not entry:return
+        if not entry:return False
         control=entry['control'];entry['field']=field
         if field.get('_absorbed'):
             if field['_absorbed']=='group-title' and entry.get('header') is not None:entry['header'].setText(str(field.get('value','')))
-            return
+            self._deferred_fields.discard(field['id']);return True
         control.setEnabled(field.get('enabled',True) and (self.current,field['id']) not in self._pending_actions)
-        focus=QtWidgets.QApplication.focusWidget()
-        if isinstance(control,(QtWidgets.QLineEdit,QtWidgets.QPlainTextEdit)) and focus and (focus==control or control.isAncestorOf(focus)):return
-        if self.modified(control):return
-        if isinstance(control,QtWidgets.QSlider) and control.isSliderDown():return
-        if isinstance(control,QtWidgets.QComboBox) and control.view().isVisible():return
-        if isinstance(control,QtWidgets.QListWidget) and focus==control:return
+        focus=QtWidgets.QApplication.focusWidget();editor=self.line_editor(control)
+        text_focus=(editor is not None or isinstance(control,QtWidgets.QPlainTextEdit)) and focus is not None and (focus is control or control.isAncestorOf(focus))
+        if text_focus or self.modified(control) or isinstance(control,QtWidgets.QSlider) and control.isSliderDown() or isinstance(control,QtWidgets.QComboBox) and control.view().isVisible() or isinstance(control,QtWidgets.QListWidget) and focus is control:
+            self._deferred_fields.add(field['id']);return False
         blocker=QtCore.QSignalBlocker(control);value=field.get('value');kind=field['kind']
         if kind in ('boolean','toggle'):control.setChecked(bool(value))
         elif kind=='number':
             control.setValue(round((float(value)-entry['low'])/entry['step']));entry['readout'].setText(self.number_text(value,field))
-        elif kind in ('choice','tabs'):control.setCurrentIndex(int(value))
+        elif kind in ('choice','tabs'):
+            control.setCurrentIndex(int(value))
+            if control.isEditable() and 'text' in field:control.setEditText(str(field['text']))
         elif kind in ('note','text','heading'):
             if isinstance(control,PathView):control.set_value(value or '')
             else:control.setText(str(value or ''))
@@ -630,6 +663,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         elif kind=='list':self.populate_list(control,field)
         elif kind=='preview':control.set_data(value or '',field.get('previewStatus',''))
         del blocker
+        self._deferred_fields.discard(field['id']);return True
 
     def mutate(self,fid,value=None,activate=False,page_key=None,source=None):
         if self._rebuilding or self._updating_visibility or self._restoring_generation==self.generation:return
@@ -642,16 +676,23 @@ class SettingsWindow(QtWidgets.QMainWindow):
         if not activate and entry and not entry['field'].get('_stable') and value!=entry['field'].get('value'):self._ambiguous_native_edit=True
         draft_key=(key,entry['field']['name']) if entry and entry['field'].get('_stable') and not entry['field'].get('secret') and isinstance(entry['control'],QtWidgets.QPlainTextEdit) else None
         visible=key==self.current
-        if visible:self.revision+=1;self.request_serial+=1;self.busy=True
+        if visible:
+            self.revision+=1;self.request_serial+=1;self.busy=True
+            if entry:self._deferred_fields.add(fid)
         if visible:self.message.setText('正在处理…');self.save_mode.setText('正在处理')
         revision=self.revision
         if activate:
             self._pending_actions.add((key,fid))
             if entry:entry['control'].setEnabled(False)
         submitted_control=entry['control'] if entry else None
-        submitted_text=submitted_control.toPlainText() if isinstance(submitted_control,QtWidgets.QPlainTextEdit) else submitted_control.text() if isinstance(submitted_control,QtWidgets.QLineEdit) else None
+        submitted_text=submitted_control.toPlainText() if isinstance(submitted_control,QtWidgets.QPlainTextEdit) else self.line_editor(submitted_control).text() if self.line_editor(submitted_control) is not None else None
         def done(result):
-            if activate:self._pending_actions.discard((key,fid))
+            if sip.isdeleted(self):return
+            if activate:
+                self._pending_actions.discard((key,fid))
+                current=self.fields.get(fid)
+                if key==self.current and current and current['field']['kind'] in ('action','toggle'):
+                    current['control'].setEnabled(current['field'].get('enabled',True));self._deferred_fields.add(fid)
             if not visible or generation!=self.generation or revision!=self.revision:return
             self.busy=False
             current_entry=self.fields.get(fid)
@@ -659,7 +700,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             current_control=current_entry['control'] if current_entry else None
             if submitted_text is not None:
                 if current_control is not submitted_control:return
-                current_text=current_control.toPlainText() if isinstance(current_control,QtWidgets.QPlainTextEdit) else current_control.text()
+                current_text=current_control.toPlainText() if isinstance(current_control,QtWidgets.QPlainTextEdit) else self.line_editor(current_control).text()
                 if current_text!=submitted_text:return
             if result.get('ok') and draft_key and self.drafts.get(draft_key,submitted_text)==submitted_text:self.drafts.pop(draft_key,None)
             if not result.get('ok'):
@@ -669,7 +710,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
             if entry:
                 control=entry['control']
                 control.setEnabled(entry['field'].get('enabled',True))
-                if isinstance(control,QtWidgets.QLineEdit):control.setModified(False)
+                editor=self.line_editor(control)
+                if editor:editor.setModified(False)
                 if isinstance(control,QtWidgets.QPlainTextEdit):control.document().setModified(False)
             if 'fields' in result:self.receive_page(result)
             else:QtCore.QTimer.singleShot(100,lambda:self.refresh(force=True))

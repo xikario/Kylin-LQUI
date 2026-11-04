@@ -149,8 +149,8 @@ int main(int argc, char **argv) {
                 managedRecord = marker(root + "/managed.json");
                 if (managedRecord.isEmpty()) return;
                 require(managedRecord.value("cwd").toString() == directory, "managed Codex cwd passed literally");
-                const QJsonArray expectedArgs{"--model", "gpt-6-luna", "--config", "model_reasoning_effort=\"xhigh\""};
-                require(managedRecord.value("argv").toArray() == expectedArgs, "managed Codex model and effort are exact argv values");
+                const QJsonArray expectedArgs{"--profile", "peony-cli"};
+                require(managedRecord.value("argv").toArray() == expectedArgs, "managed Codex uses its independent profile without model overrides");
                 require(managedRecord.value("loginEnv").toString() == "from login profile", "managed Codex retains login shell environment");
                 require(managedRecord.value("pids").toArray().size() == 3, "managed fake Codex child processes recorded");
                 auto *tabs = a->findChild<QTabWidget *>();

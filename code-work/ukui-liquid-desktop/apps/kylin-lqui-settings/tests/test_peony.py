@@ -23,7 +23,11 @@ class TestPeony(unittest.TestCase):
             with self.assertRaises(ValueError):adapter.activate('plugins','menu-order')
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.before=os.environ.get('XDG_CONFIG_HOME');os.environ['XDG_CONFIG_HOME']=self.temp.name
+        self.profile=Path(self.temp.name)/'codex-home'/'peony-cli.config.toml'
+        self.profile_patch=patch.object(adapter.cli_settings.codex_profile,'profile_path',return_value=self.profile)
+        self.profile_patch.start()
     def tearDown(self):
+        self.profile_patch.stop()
         if self.before is None:os.environ.pop('XDG_CONFIG_HOME',None)
         else:os.environ['XDG_CONFIG_HOME']=self.before
         self.temp.cleanup()

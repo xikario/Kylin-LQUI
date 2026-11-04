@@ -122,13 +122,23 @@ def main():
                            PEONY_MANAGED_ARGV_MARKER=str(case / "managed.json"))
         command = [str(harness), str(ROOT / "plugins/peony-cli-panel/build/libpeony-cli-panel.so"),
                    str(case), "managed-argv"]
+        # The parent may define CODEX_HOME. Mask its filesystem target instead
+        # of changing that variable or allowing a fixture to write real defaults.
+        profile_home = home / ".codex"
+        profile_home.mkdir()
+        codex_home = os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))
+        command = ["bwrap", "--bind", "/", "/", "--dev-bind", "/dev", "/dev", "--bind", str(profile_home), codex_home, "--"] + command
         result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
         print("managed-argv: " + result.stderr[-1800:])
         records = [json.loads((case / "managed.json").read_text())] if (case / "managed.json").exists() else []
         try:
             assert result.returncode == 0, "managed Codex argv harness failed"
             assert records, "Managed fake Codex did not start"
-            assert records[0]["argv"] == managed_settings["modelArgs"], "Model arguments changed across the login shell"
+            profile = home / ".codex/peony-cli.config.toml"
+            assert 'model = "gpt-6-luna"' in profile.read_text(), "Legacy model seed was not migrated"
+            assert 'model_reasoning_effort = "xhigh"' in profile.read_text(), "Legacy effort seed was not migrated"
+            assert profile.stat().st_mode & 0o777 == 0o600, "Model profile must be private"
+            assert records[0]["argv"] == ["--profile", "peony-cli"], "Profile arguments changed across the login shell"
             assert records[0]["cwd"].endswith("目录 空格 ' $HOME ; test"), "Managed working directory changed"
             assert records[0]["loginEnv"] == "from login profile", "Login shell profile was not loaded"
             deadline = time.monotonic() + 8

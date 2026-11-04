@@ -37,6 +37,7 @@
 #include <QToolButton>
 #include <memory>
 #include "terminal-appearance.h"
+#include "codex-profile.h"
 #include <dlfcn.h>
 #include <unistd.h>
 #include <sys/socket.h>
@@ -47,7 +48,7 @@ static QString runtimeDir() {
     return QFileInfo(QString::fromLocal8Bit(info.dli_fname)).absolutePath();
 }
 
-static QStringList managedModelArguments(const QJsonObject &config, bool *valid) {
+static QStringList managedLaunchArguments(const QJsonObject &config, bool *valid) {
     *valid = true;
     const QString command = config.value("command").toString("codex");
     const QString managedCommand = config.value("managedCommand").toString();
@@ -79,7 +80,7 @@ static QStringList managedModelArguments(const QJsonObject &config, bool *valid)
             }
         }
     }
-    return expected;
+    return {"--profile", "peony-cli"};
 }
 
 static QByteArray hexArgument(const QString &value) {
@@ -94,13 +95,14 @@ public:
         const QString managedCommand = config.value("managedCommand").toString();
         const QString codexExecutable = config.value("codexExecutable").toString();
         bool modelArgumentsValid = false;
-        const QStringList modelArguments = managedModelArguments(config, &modelArgumentsValid);
+        const QStringList modelArguments = managedLaunchArguments(config, &modelArgumentsValid);
         const bool directCodex = !managedCommand.isEmpty() && command == managedCommand
             && QFileInfo(codexExecutable).isAbsolute() && modelArgumentsValid && !modelArguments.isEmpty();
         QString launchKey = command;
         if (directCodex) {
             launchKey += QChar(0x1f);
-            launchKey += modelArguments.join(QChar(0x1f));
+            launchKey += modelArguments.join(QChar(0x1f)) + QChar(0x1f)
+                + config.value("model").toString() + QChar(0x1f) + config.value("reasoningEffort").toString();
         }
         setProperty("cliCommand", launchKey);
         if (!modelArgumentsValid) setProperty("cliModelPreferencesIgnored", true);
@@ -115,6 +117,14 @@ public:
         status->setWordWrap(true);
         status->setMargin(6);
         layout->addWidget(status);
+        if (directCodex) {
+            QString error;
+            if (!ensurePeonyCodexProfile(config, &error)) {
+                status->setText(error);
+                setProperty("cliFinished", true);
+                return;
+            }
+        }
         terminal = new QTermWidget(0, this);
         terminal->setObjectName("peonyCliTerminal");
         terminal->setHistorySize(qBound(100, config.value("historyLines").toInt(2000), 10000));
@@ -126,6 +136,15 @@ public:
         terminal->setKeyboardCursorShape(QTermWidget::KeyboardCursorShape::IBeamCursor);
         terminal->setBlinkingCursor(false);
         applyAppearance();
+        connect(terminal, &QTermWidget::receivedData, this, [this](const QString &chunk) {
+            const QPalette current = palette();
+            const auto replies = oscColorQueries.consume(
+                chunk.toLatin1(),
+                current.color(QPalette::Active, QPalette::Text),
+                current.color(QPalette::Active, QPalette::Base));
+            for (const auto &reply : replies)
+                terminal->sendText(QString::fromLatin1(reply.constData(), reply.size()));
+        });
         if (QDir("/usr/share/qtermwidget5/kb-layouts").exists()) terminal->setKeyBindings("default");
         else terminal->setKeyBindings(runtimeDir() + "/data/kb-layouts/default");
         layout->addWidget(terminal, 1);
@@ -336,6 +355,7 @@ private:
     bool fontApplied = false;
     QFont appliedFont;
     QJsonObject settings;
+    PeonyCliAppearance::OscColorQueryResponder oscColorQueries;
     std::unique_ptr<QTemporaryFile> scheme;
 };
 
@@ -506,14 +526,15 @@ public:
             auto *page = tabs->widget(i);
             QString launchKey = config.value("command").toString("codex");
             bool modelArgumentsValid = false;
-            const QStringList modelArguments = managedModelArguments(config, &modelArgumentsValid);
+            const QStringList modelArguments = managedLaunchArguments(config, &modelArgumentsValid);
             const QString managedCommand = config.value("managedCommand").toString();
             const bool directCodex = !managedCommand.isEmpty() && launchKey == managedCommand
                 && QFileInfo(config.value("codexExecutable").toString()).isAbsolute()
                 && modelArgumentsValid && !modelArguments.isEmpty();
             if (directCodex) {
                 launchKey += QChar(0x1f);
-                launchKey += modelArguments.join(QChar(0x1f));
+                launchKey += modelArguments.join(QChar(0x1f)) + QChar(0x1f)
+                + config.value("model").toString() + QChar(0x1f) + config.value("reasoningEffort").toString();
             }
             if (page->property("cliDirectory").toString() == cwd && page->property("cliCommand").toString() == launchKey
                 && !page->property("cliFinished").toBool()) {
@@ -607,5 +628,20 @@ extern "C" void peony_cli_open(QMainWindow *window, const QString &cwd, const QJ
             if (dock->tabs->count()) dock->setVisible(!dock->isVisible());
         });
     }
-    dock->open(cwd, config);
+    QJsonObject effective(config);
+    // A fresh installation may not have opened the settings page yet.
+    if (effective.value("managedCommand").toString().isEmpty()) {
+        const QString executable = QStandardPaths::findExecutable("codex",
+            QStringList{QDir::homePath() + "/.local/bin"} + qEnvironmentVariable("PATH").split(':'));
+        const QString command = effective.value("command").toString("codex");
+        QString quotedExecutable = executable;
+        quotedExecutable.replace("'", "'\"'\"'");
+        quotedExecutable = "'" + quotedExecutable + "'";
+        if (!executable.isEmpty() && (command == "codex" || command == executable || command == quotedExecutable)) {
+            effective.insert("command", command);
+            effective.insert("managedCommand", command);
+            effective.insert("codexExecutable", executable);
+        }
+    }
+    dock->open(cwd, effective);
 }

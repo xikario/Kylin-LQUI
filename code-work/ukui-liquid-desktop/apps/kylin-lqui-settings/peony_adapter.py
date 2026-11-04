@@ -57,7 +57,7 @@ def page(name):
             options=['跟随 Codex 设置']+MODEL_VALUES[1:],editable=True,text=model or '跟随 Codex 设置'),'model',0))
         fields.append(annotate(field('cli:reasoningEffort','推理强度','choice',EFFORT_VALUES.index(effort),
             options=['跟随 Codex 设置','不推理','最低','低','中','高','很高（xhigh）','最大（max）','超高（ultra）']),'model',1))
-        fields.append(annotate(field('model-note','','note','选择后会记住，供后续新建的文件夹 CLI 会话使用，不修改 Codex 全局配置。仅适用于默认 Codex 启动命令；自定义启动命令保持原样。CLI 内 /model 的临时调整不会自动回写此处。模型和强度是否可用由当前账号与 CLI 校验。'),'model',2,'help'))
+        fields.append(annotate(field('model-note','','note','文件夹 CLI 的模型和推理强度会单独记住，不影响 Codex 桌面端。在 CLI 输入 /model，选好后按 Enter 保存；按 s 仅用于本次会话。选择“跟随 Codex 设置”则使用公共默认值。自定义启动命令不受此设置影响，可用模型由当前账号和 CLI 决定。'),'model',2,'help'))
     elif name=='plugins':
         group('intro','',0);group('plugins','已发现的扩展',10);group('maintenance','扩展维护',20)
         fields.append(annotate(field('open-manager','打开 Peony 插件管理器','action'),'intro',0,'action'))

@@ -11,7 +11,7 @@ import time
 import uuid
 import unittest
 from unittest.mock import patch
-from app import cli_settings
+from app import cli_settings, codex_profile
 
 
 def _concurrent_preference_update(changes, start):
@@ -24,8 +24,12 @@ class CliSettingsTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {"XDG_CONFIG_HOME": self.directory.name})
         self.env.start()
+        self.profile = Path(self.directory.name) / "codex-home" / "peony-cli.config.toml"
+        self.profile_override = patch.object(codex_profile, "profile_path", return_value=self.profile)
+        self.profile_override.start()
 
     def tearDown(self):
+        self.profile_override.stop()
         self.env.stop()
         self.directory.cleanup()
 
@@ -40,6 +44,7 @@ class CliSettingsTests(unittest.TestCase):
         self.assertEqual(value["reasoningEffort"], "")
         self.assertEqual(value["modelArgs"], [])
         self.assertFalse(cli_settings.config_path().exists())
+        self.assertFalse(self.profile.exists())
 
     def test_roundtrip_and_forced_lifecycle(self):
         value = cli_settings.defaults()
@@ -57,9 +62,10 @@ class CliSettingsTests(unittest.TestCase):
     def test_model_preferences_are_peony_only_and_validated(self):
         value = cli_settings.defaults()
         value.update(model="gpt-6-luna", reasoningEffort="xhigh")
-        isolated_codex_home = Path(self.directory.name) / "codex-home"
+        isolated_codex_home = Path(self.directory.name) / "other-codex-home"
         with patch.dict(os.environ, {"CODEX_HOME": str(isolated_codex_home)}):
             saved = cli_settings.save(value)
+        self.assertTrue(self.profile.exists())
         self.assertFalse(isolated_codex_home.exists())
         self.assertEqual(saved["modelArgs"], ["--model", "gpt-6-luna", "--config", 'model_reasoning_effort="xhigh"'])
         self.assertTrue(saved["modelArgsApplicable"])
@@ -92,10 +98,71 @@ class CliSettingsTests(unittest.TestCase):
         self.assertEqual(after_old_save["model"], "gpt-6-luna")
         self.assertEqual(after_old_save["reasoningEffort"], "xhigh")
 
+        # Codex's profile-backed /model picker is the effective source of truth.
+        self.profile.write_text('model = "gpt-6.1-terra" # chosen in /model\n', encoding="utf-8")
+        self.assertEqual(cli_settings.read()["model"], "gpt-6.1-terra")
+        after_old_save = cli_settings.save(old_page)
+        self.assertEqual(after_old_save["model"], "gpt-6.1-terra")
+        self.assertIn('model = "gpt-6.1-terra" # chosen in /model', self.profile.read_text(encoding="utf-8"))
+
         old_page.update(model="", reasoningEffort="")
         cleared = cli_settings.save(old_page)
         self.assertEqual(cleared["model"], "")
         self.assertEqual(cleared["reasoningEffort"], "")
+        self.assertNotRegex(self.profile.read_text(encoding="utf-8"), r"(?m)^\s*(?:model|model_reasoning_effort)\s*=")
+
+    def test_profile_creation_migrates_unmodified_legacy_preference(self):
+        old = cli_settings.defaults()
+        old.update(model="gpt-6-luna", reasoningEffort="xhigh")
+        cli_settings._write_unlocked(cli_settings.config_path(), cli_settings.validate(old))
+
+        saved = cli_settings.update({"model": "gpt-6.1-sol"})
+
+        self.assertEqual(saved["model"], "gpt-6.1-sol")
+        self.assertEqual(saved["reasoningEffort"], "xhigh")
+        self.assertEqual(codex_profile.read_preferences(),
+                         {"model": "gpt-6.1-sol", "reasoningEffort": "xhigh"})
+
+    def test_profile_update_preserves_toml_and_only_edits_root_keys(self):
+        original = ('# owned by Codex\n'
+                    'model = "gpt-6.1-sol" # picker choice\n'
+                    'approval_policy = "on-request"\n'
+                    '\n[tui]\n'
+                    'model = "table-value"\n'
+                    '\n[tui.model_availability_nux]\n'
+                    'seen = true\n'
+                    '\n[[extensions]]\n'
+                    'name = "untouched"\n')
+        self.profile.parent.mkdir(parents=True)
+        self.profile.write_text(original, encoding="utf-8")
+
+        cli_settings.update({"reasoningEffort": "xhigh"})
+        updated = self.profile.read_text(encoding="utf-8")
+        self.assertIn('model = "gpt-6.1-sol" # picker choice\n', updated)
+        self.assertIn('approval_policy = "on-request"\n', updated)
+        self.assertIn('model_reasoning_effort = "xhigh"\n', updated)
+        self.assertIn('[tui]\nmodel = "table-value"\n', updated)
+        self.assertIn('[tui.model_availability_nux]\nseen = true\n', updated)
+        self.assertIn('[[extensions]]\nname = "untouched"\n', updated)
+        self.assertEqual(cli_settings.read()["model"], "gpt-6.1-sol")
+
+        cli_settings.update({"model": "gpt-6.1-terra"})
+        self.assertIn('model = "gpt-6.1-terra" # picker choice\n', self.profile.read_text(encoding="utf-8"))
+
+    def test_unsafe_profile_is_never_overwritten(self):
+        self.profile.parent.mkdir(parents=True)
+        for content in (
+                'model = "gpt-6-luna"\nmodel = "gpt-6.1-sol"\n',
+                '"model" = "gpt-6-luna"\n',
+                '"\\u006dodel" = "gpt-6-luna"\n',
+                'model.provider = "custom"\n',
+                'other = [\n  "value",\n]\n'):
+            with self.subTest(content=content):
+                self.profile.write_text(content, encoding="utf-8")
+                before = self.profile.read_bytes()
+                with self.assertRaises(ValueError):
+                    cli_settings.update({"reasoningEffort": "xhigh"})
+                self.assertEqual(self.profile.read_bytes(), before)
 
     def test_concurrent_model_and_effort_updates_serialize(self):
         cli_settings.save(cli_settings.defaults())

@@ -4,16 +4,16 @@ import os
 import fcntl
 from contextlib import contextmanager
 from pathlib import Path
-import re
 import shlex
 import shutil
 import tempfile
+from app import codex_profile
 
 BASE = Path(__file__).resolve().parent.parent
 FILE_NAME = "libpeony-cli-panel.so"
 BUILD = BASE / "plugins" / "peony-cli-panel" / "build"
-REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
-MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$")
+REASONING_EFFORTS = codex_profile.REASONING_EFFORTS
+MODEL_ID = codex_profile.MODEL_ID
 
 
 def config_path():
@@ -112,7 +112,21 @@ def _read_unlocked(path):
 
 def read():
     # Atomic replacement means a lock-free read sees either complete version.
-    return _read_unlocked(config_path())
+    result = _read_unlocked(config_path())
+    profile = codex_profile.profile_path()
+    if profile.exists():
+        # A present profile is authoritative.  Missing profile keys mean
+        # "follow Codex's base configuration", even if old Peony JSON has a
+        # stale preference from before profile support.
+        preferences = codex_profile.read_preferences()
+    else:
+        # Before the native launcher creates the dedicated profile, expose
+        # old Peony preferences as migration seeds without creating files.
+        preferences = {"model": result["model"], "reasoningEffort": result["reasoningEffort"]}
+    result.update(preferences)
+    result["modelArgs"] = _model_args(result["model"], result["reasoningEffort"])
+    result["modelArgsApplicable"] = result["command"] == result["managedCommand"]
+    return result
 
 
 def _write_unlocked(path, result):
@@ -131,18 +145,41 @@ def _write_unlocked(path, result):
     return result
 
 
-def save(raw):
+def _save_locked(raw, profile_changes=None):
+    path = config_path()
+    explicit_keys = set(raw) if isinstance(raw, dict) else set()
+    candidate = dict(raw) if isinstance(raw, dict) else raw
+    if isinstance(candidate, dict) and path.exists():
+        # Older Peony pages submit their known fields only. Keep the new model
+        # preferences unless the caller explicitly sends an empty value.
+        previous = _read_unlocked(path)
+        for key in ("model", "reasoningEffort"):
+            if key not in candidate:
+                candidate[key] = previous[key]
+    result = validate(candidate)
+    if profile_changes is None:
+        profile_changes = {key: result[key] for key in ("model", "reasoningEffort")
+                           if key in explicit_keys}
+    if profile_changes:
+        previous = _read_unlocked(path) if path.exists() else defaults()
+        codex_profile.update_preferences(
+            profile_changes,
+            seed={"model": previous["model"], "reasoningEffort": previous["reasoningEffort"]},
+        )
+    _write_unlocked(path, result)
+    # Return the effective profile values (which can differ from legacy
+    # modelArgs when Codex's own /model picker has saved a new choice).
+    return read()
+
+
+def _save(raw, profile_changes=None):
     path = config_path()
     with _config_lock(path):
-        candidate = dict(raw) if isinstance(raw, dict) else raw
-        if isinstance(candidate, dict) and path.exists():
-            # Older Peony pages submit their known fields only. Keep the new model
-            # preferences unless the caller explicitly sends an empty value.
-            previous = _read_unlocked(path)
-            for key in ("model", "reasoningEffort"):
-                if key not in candidate:
-                    candidate[key] = previous[key]
-        return _write_unlocked(path, validate(candidate))
+        return _save_locked(raw, profile_changes)
+
+
+def save(raw):
+    return _save(raw)
 
 
 def update(changes):
@@ -152,7 +189,8 @@ def update(changes):
     with _config_lock(path):
         current = _read_unlocked(path)
         current.update(changes)
-        return _write_unlocked(path, validate(current))
+        profile_changes = {key: current[key] for key in ("model", "reasoningEffort") if key in changes}
+        return _save_locked(current, profile_changes)
 
 
 def status():

@@ -215,11 +215,13 @@ Peony 普通配置使用当前用户的 GSettings/JSON。安装原生扩展需�
 | 任务栏外观/日常交互 | 参数即时预览，连续滑动合并保存，避免每个移动事件都写配置 |
 | AI 小站 | 外观与日常参数即时保存；后台、命令、工作目录、权限等变更需要“应用”；忙碌回复时阻止危险切换 |
 | 输入法 | 参数变化更新示例预览，支持彩色/白/浅灰/深灰/黑五种背景；真正保存和 Rime 变更在“应用”后进行 |
-| Peony 默认模型 | 在终端配置页保存，供后续新会话使用；自定义命令保持原样；终端内 `/model` 临时切换不自动回写 |
+| Peony 默认模型 | 默认 Codex 命令使用独立的 `peony-cli` profile；设置页与 CLI 内 `/model` 选好后按 Enter 保存同一份偏好，后续新会话沿用；按 s 仅本次会话，自定义命令保持原样 |
 | 恢复默认 | 只恢复按钮文字与说明列明的字段；不同页面的作用范围不同，不等于清空所有个人数据 |
 | 草稿/异步回执 | 编辑中内容、弹层与旧页面回包需要状态保护；不确定的未保存内容离页前会要求处理 |
 
 输入法预览使用候选窗布局与绘制代码生成示例，不是抓取正在输入的私人文字。“模块未运行”时先点击页面提供的启动入口，再刷新；不能仅更新设置客户端、保留旧模块，就认为新字段已经生效。
+
+Peony CLI 的独立模型保存在 `~/.codex/peony-cli.config.toml`，遵循已有 `CODEX_HOME`；不修改公共 `config.toml` 或账号认证。首次使用迁移旧 JSON 模型偏好，之后以独立 profile 为准。上述 `/model` 默认保存行为已用 Codex CLI 0.166.0 验证，临时会话选择不持久化；细节见 [Peony CLI 说明](../peony-manager/plugins/peony-cli-panel/README.md)。
 
 ## 9. 配置与数据位置
 
@@ -234,7 +236,7 @@ Peony 普通配置使用当前用户的 GSettings/JSON。安装原生扩展需�
 | AI 小站配置 | `~/.config/liquid-cli/settings.json` |
 | AI 小站聊天、草稿与附件 | `~/.local/share/liquid-cli/`，按后台保留会话 |
 | 候选窗 / Rime 自定义配置 | `~/.config/fcitx/liquid-panel.conf` / `~/.config/fcitx/rime/` |
-| Peony CLI 配置 | `~/.config/peony-manager/cli-profiles.json`；其余 Peony 选项使用 GSettings |
+| Peony CLI 配置 | `~/.config/peony-manager/cli-profiles.json`；独立模型偏好为 `~/.codex/peony-cli.config.toml`（遵循已有 `CODEX_HOME`）；其余 Peony 选项使用 GSettings |
 | Peony 分类菜单排序 | `~/.config/peony-manager/menu-order-contexts.json` |
 | AI 空间配置 / 挂载库注册 | `~/.config/xikario/ai-space.ini` / `~/.config/ai-space/libraries.json` |
 | AI 空间默认知识库 | `~/.local/share/ai-space/knowledge/`；新建库可选择其他存储盘 |

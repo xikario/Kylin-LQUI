@@ -8,6 +8,8 @@
 
 首次使用请先阅读 **[应用框架与使用指南](docs/FRAMEWORK_GUIDE.md)**：包括模块关系、完整仓库目录、构建与安装顺序、配置/数据位置、更新恢复及验证边界。Peony 原生插件提供独立构建脚本，所需开发依赖与系统安装条件也已列明。
 
+最新组件小版本：[Peony 菜单排序与标签合并 v1.1.0](docs/updates/peony-window-tools-v1.1.0.md) · [下载发行版](https://github.com/xikario/Kylin-LQUI/releases/tag/peony-window-tools-v1.1.0) · [更新记录](CHANGELOG.md)。
+
 ## 模块与源码
 
 | 模块 | 目录 |

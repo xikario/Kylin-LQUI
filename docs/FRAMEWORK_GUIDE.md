@@ -19,7 +19,7 @@ Kylin-LQUI 在 UKUI 系统能力上提供统一的桌面视觉和交互。用户
 | AI 小站 | 文字/图片对话、草稿、线程恢复、停止、审批；支持 Codex 和 ACP 后台适配 | UI 与 CLI 模型进程分开；依赖用户自行安装并配置的 CLI |
 | RIME 液态候选前端 | 候选排版、拼音、字体、玻璃外观和示例预览 | 连接 Fcitx 4 Kimpanel；Fcitx/Rime 仍承担输入与词库 |
 | AI 空间 | 本地文件清单、正文提取、OCR、全文检索和 AIKB 知识库 | 独立应用与索引任务；不依赖启动 Fences |
-| Peony 文件扩展 | 菜单与显示设置、扩展管理、复制路径、按需嵌入 CLI 终端 | 插件运行在 Peony 中；完整旧管理器按需使用 WebEngine |
+| Peony 文件扩展 | 菜单与显示设置、扩展管理、复制路径、按需嵌入 CLI 终端、分类菜单排序和多窗口标签合并 | 插件运行在 Peony 中；完整旧管理器按需使用 WebEngine |
 
 系统监视做本地采样，不调用模型诊断服务。AI 小站用于对话，AI 空间用于本地资料与知识库检索，二者的数据与进程独立。
 
@@ -195,6 +195,8 @@ Peony 普通配置使用当前用户的 GSettings/JSON。安装原生扩展需�
 
 只有源码、没有上述系统载荷与助手时，“启用/安装扩展”不能完成部署。更新磁盘插件也不会替换现有 Peony 进程中已经加载的旧代码；应在文件任务和 CLI 会话结束后正常重开相关宿主。设置中心不自动批量关闭文件管理器窗口。
 
+“菜单排序与标签合并”另提供独立的 `peony-window-tools` DEB，不使用上述 CLI 安装助手。在实际右键菜单中选择“自定义菜单顺序…”调整当前类型；“合并所有标签到此窗口”在验证标签打开成功后再关闭安全来源窗口，并保留存在嵌入终端会话的来源窗口。安装、兼容范围和边界见 [v1.1.0 更新说明](updates/peony-window-tools-v1.1.0.md)。
+
 ### 升级与回退的区别
 
 设置中心、AI 小站和候选前端采用版本目录；任务栏有受管文件备份与恢复工具。Fences 的通用 `install-user.sh` 仍会直接安装文件、重写其自启动项，不提供同等级别的历史二进制事务。保留已有启动覆盖时，应先审阅安装计划并备份，不能假定所有安装器行为一致。
@@ -233,6 +235,7 @@ Peony 普通配置使用当前用户的 GSettings/JSON。安装原生扩展需�
 | AI 小站聊天、草稿与附件 | `~/.local/share/liquid-cli/`，按后台保留会话 |
 | 候选窗 / Rime 自定义配置 | `~/.config/fcitx/liquid-panel.conf` / `~/.config/fcitx/rime/` |
 | Peony CLI 配置 | `~/.config/peony-manager/cli-profiles.json`；其余 Peony 选项使用 GSettings |
+| Peony 分类菜单排序 | `~/.config/peony-manager/menu-order-contexts.json` |
 | AI 空间配置 / 挂载库注册 | `~/.config/xikario/ai-space.ini` / `~/.config/ai-space/libraries.json` |
 | AI 空间默认知识库 | `~/.local/share/ai-space/knowledge/`；新建库可选择其他存储盘 |
 | 用户程序 / 版本化安装 | `~/.local/bin/` / `~/.local/lib/` |

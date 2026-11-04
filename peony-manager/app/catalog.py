@@ -6,6 +6,13 @@
 # 插件映射表: {file_name: {metadata}}
 # 优先匹配完整的 file_name
 PLUGIN_CATALOG = {
+    "libpeony-window-tools.so": {
+        "name": "菜单排序与标签合并", "package": "peony-window-tools", "category": "context-menu",
+        "type": "右键菜单扩展", "risk_level": "low", "risk_text": "菜单排序与窗口整理",
+        "source": "用户自定义", "description": "拖动调整右键菜单功能顺序；将其他文件管理器窗口的标签合并到当前窗口。",
+        "conditions": "文件管理器空白处、文件或文件夹右键。多个窗口时可以合并标签。",
+        "dependencies": ["Qt5", "Peony::MenuPluginInterface"],
+    },
     "libpeony-cli-panel.so": {
         "name": "右侧 CLI 终端", "package": "peony-cli-panel", "category": "context-menu",
         "type": "原生终端面板", "risk_level": "medium", "risk_text": "运行你配置的本机命令",

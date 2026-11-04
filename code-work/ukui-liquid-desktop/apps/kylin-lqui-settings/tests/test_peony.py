@@ -16,6 +16,11 @@ class TestPeony(unittest.TestCase):
             self.assertEqual(args[0],[sys.executable,str(adapter.BASE/'app/main.py')])
             self.assertEqual(kwargs['env']['LQUI_SETTINGS_LEGACY'],'1')
             self.assertTrue(kwargs['start_new_session'])
+    def test_global_menu_order_controls_removed(self):
+        with patch.object(adapter.scanner,'scan_plugins',return_value=[]):
+            page=adapter.page('plugins')
+            self.assertFalse(any(f['id'] in ('menu-order','merge-note') for f in page['fields']))
+            with self.assertRaises(ValueError):adapter.activate('plugins','menu-order')
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.before=os.environ.get('XDG_CONFIG_HOME');os.environ['XDG_CONFIG_HOME']=self.temp.name
     def tearDown(self):

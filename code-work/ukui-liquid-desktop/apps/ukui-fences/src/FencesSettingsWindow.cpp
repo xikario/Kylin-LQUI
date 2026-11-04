@@ -51,6 +51,7 @@
 #include <QStackedWidget>
 #include <QTextBrowser>
 #include <QVBoxLayout>
+#include <memory>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #undef None
@@ -442,17 +443,19 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
     } else if(id=="icons") {
         attachForm(card(layout,"图标底座"),m_canvas->createIconSettingsPage(page));
         auto *fontCard=card(layout,"桌面字体");
-        auto *fontForm=m_canvas->createFontSettingsPage(page);attachForm(fontCard,fontForm);
+        auto fontForm=std::make_shared<QPointer<QWidget>>(m_canvas->createFontSettingsPage(page));attachForm(fontCard,fontForm->data());
         auto *resetFont=button(fontCard,"恢复桌面字体默认值",[this,page,fontCard,fontForm]{
             m_canvas->m_fontFamily.clear();m_canvas->m_fontSize=11;m_canvas->m_fontBold=false;
             m_canvas->m_fontItalic=false;m_canvas->m_fontColor=Qt::white;
             m_canvas->applyFontToAll();m_canvas->saveLayout();
-            const int index=fontCard->indexOf(fontForm);
-            QTimer::singleShot(0,this,[this,page,fontCard,fontForm,index]{
-                if(!m_canvas||!fontCard||!fontForm)return;
-                fontCard->removeWidget(fontForm);fontForm->hide();fontForm->deleteLater();
+            const int index=fontCard->indexOf(fontForm->data());
+            QTimer::singleShot(0,page,[this,page,fontCard,fontForm,index]{
+                if(!m_canvas||fontForm->isNull())return;
+                auto *previous=fontForm->data();
+                fontCard->removeWidget(previous);previous->hide();previous->deleteLater();
                 auto *replacement=m_canvas->createFontSettingsPage(page);attachForm(fontCard,replacement);
                 fontCard->removeWidget(replacement);fontCard->insertWidget(qMax(1,index),replacement);
+                *fontForm=replacement;
             });
         },"desktopFontResetDefaults");
         resetFont->setToolTip("系统默认字体、11 px、常规字重、白色文字；应用到没有单独字体覆盖的桌面和分区图标，不移动图标或分区。");
@@ -465,15 +468,17 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
         connect(magnet,&QCheckBox::toggled,m_canvas,&DesktopCanvas::setWallpaperMagnetEnabled);
         hint(c,"壁纸磁性画线沿明暗边界调整分区轮廓；组件之间的矩形边缘磁吸在布局编辑时自动工作。");
         auto *gridCard=card(layout,"桌面网格");
-        auto *gridForm=m_canvas->createGridSettingsPage(page);attachForm(gridCard,gridForm);
+        auto gridForm=std::make_shared<QPointer<QWidget>>(m_canvas->createGridSettingsPage(page));attachForm(gridCard,gridForm->data());
         auto *resetGrid=button(gridCard,"恢复桌面网格与图标尺寸默认值",[this,page,gridCard,gridForm]{
             m_canvas->applyIconScale(1.0);m_canvas->applyDesktopGrid(18,11,1.0);
-            const int index=gridCard->indexOf(gridForm);
-            QTimer::singleShot(0,this,[this,page,gridCard,gridForm,index]{
-                if(!m_canvas||!gridCard||!gridForm)return;
-                gridCard->removeWidget(gridForm);gridForm->hide();gridForm->deleteLater();
+            const int index=gridCard->indexOf(gridForm->data());
+            QTimer::singleShot(0,page,[this,page,gridCard,gridForm,index]{
+                if(!m_canvas||gridForm->isNull())return;
+                auto *previous=gridForm->data();
+                gridCard->removeWidget(previous);previous->hide();previous->deleteLater();
                 auto *replacement=m_canvas->createGridSettingsPage(page);attachForm(gridCard,replacement);
                 gridCard->removeWidget(replacement);gridCard->insertWidget(qMax(1,index),replacement);
+                *gridForm=replacement;
             });
         },"desktopGridResetDefaults");
         resetGrid->setToolTip("恢复推荐网格 18×11 和 100% 图标尺寸。保留所有分区、文件、位置和排列方式。");

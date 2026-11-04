@@ -267,6 +267,14 @@ static int runSettingsCenterTest(const QString &root) {
               &&!desktopFontForm->findChildren<QCheckBox *>().first()->isChecked()
               &&!desktopFontForm->findChildren<QCheckBox *>().last()->isChecked(),
           "desktop font form is refreshed to normal non-italic defaults after reset");
+    QPointer<QWidget> oldFontForm=desktopFontForm;
+    QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+    if(fontReset){fontReset->click();settle(80);}
+    QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+    check(oldFontForm.isNull(),"repeated font reset replaces the latest form after deferred deletion");
+    int fontFormCount=0;
+    for(auto *form:iconsPage->findChildren<QWidget *>())if(form->windowTitle()=="桌面字体设置")++fontFormCount;
+    check(fontFormCount==1,"repeated font reset retains exactly one live font form");
     for(int i=0;i<4;++i){
         const QPoint local(120,120),global=canvas.mapToGlobal(local);
         QWheelEvent scaleWheel(QPointF(local),QPointF(global),QPoint(),QPoint(0,120),Qt::NoButton,Qt::ControlModifier,Qt::NoScrollPhase,false);
@@ -281,6 +289,12 @@ static int runSettingsCenterTest(const QString &root) {
     auto *gridReset=window->findChild<QPushButton *>("desktopGridResetDefaults");
     check(gridReset,"layout page exposes a grid-only default action");
     if(gridReset)gridReset->click();settle(80);
+    QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+    if(gridReset){gridReset->click();gridReset->click();settle(80);}
+    QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+    int gridFormCount=0;
+    for(auto *form:layoutPage->findChildren<QWidget *>())if(form->windowTitle()=="桌面图标网格")++gridFormCount;
+    check(gridFormCount==1,"repeated and rapid grid resets retain exactly one live grid form");
     const QString layoutPath=QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)+"/kyfences/layout.json";
     QFile savedLayout(layoutPath);savedLayout.open(QIODevice::ReadOnly);const auto layoutData=QJsonDocument::fromJson(savedLayout.readAll()).object();
     check(layoutData.value("iconScale").toDouble()==1.0&&layoutData.value("desktopIconScale").toDouble()==1.0

@@ -23,6 +23,7 @@ private:
     void addMenu(QMenu *);
     void settingsDialog(QWidget *);
     void applyMaterialPreset(const QString &);
+    void resetAppearanceAndLayoutDefaults(QWidget *);
     void apply(bool materialChanged = true);
     void flushPreview();
     void saveConfiguration();

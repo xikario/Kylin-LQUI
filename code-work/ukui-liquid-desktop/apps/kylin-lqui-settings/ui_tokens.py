@@ -64,7 +64,7 @@ QToolButton[windowControl="true"]:focus{border:2px solid %(accent)s;padding:0;}
 QSlider::groove:horizontal{height:4px;background:%(divider)s;border-radius:2px;}
 QSlider::sub-page:horizontal{background:%(accent)s;border-radius:2px;}
 QSlider::handle:horizontal{width:16px;margin:-6px 0;background:%(surface)s;border:1px solid %(border)s;border-radius:8px;}
-QSlider:focus::handle:horizontal{border:2px solid %(accent)s;}
+QSlider:focus{border:0;outline:0;}
 QScrollBar:vertical{width:8px;background:transparent;margin:2px;}
 QScrollBar::handle:vertical{background:#BFC3CC;min-height:28px;border-radius:3px;}
 QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical{background:transparent;}

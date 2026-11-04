@@ -72,6 +72,22 @@ def get_disabled_extensions():
         return None
 
 
+def reset_boolean_defaults(keys):
+    """Restore only displayed file-manager switches, never extension state."""
+    from gi.repository import Gio
+    if not keys or any(key not in BOOLEAN_KEYS for key in keys):
+        raise ValueError('只能恢复文件管理的显示与菜单设置')
+    source=Gio.SettingsSchemaSource.get_default()
+    schema=source.lookup(SCHEMA,True) if source else None
+    if not schema:raise ValueError('文件管理器设置服务不可用')
+    settings=Gio.Settings.new_full(schema,None,None)
+    if any(not schema.has_key(key) or not settings.is_writable(key) for key in keys):
+        raise ValueError('部分设置不可修改，未恢复默认值')
+    settings.delay()
+    for key in keys:settings.reset(key)
+    settings.apply();Gio.Settings.sync()
+
+
 def _get(key: str):
     """底层 gsettings get 调用"""
     result = subprocess.run(

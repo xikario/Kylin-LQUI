@@ -273,7 +273,7 @@ void PanelController::saveConfiguration() {
     s.setValue("appearance/highlight",m_surface.highlight);
     s.setValue("appearance/materialStyle",m_materialStyle);
     s.setValue("appearance/pointerHighlight",m_pointerHighlight);
-    s.setValue("appearance/reducedMotion",m_reducedMotion);s.sync();
+    s.setValue("appearance/reducedMotion",m_reducedMotion);
     s.setValue("dock/adaptive",m_dockAdaptive);s.setValue("dock/clickFeedback",m_dockClickFeedback);s.setValue("dock/hoverMagnification",m_dockMagnification);s.sync();
     qApp->setProperty("liquidPanelConfigWrites",qApp->property("liquidPanelConfigWrites").toInt()+1);
 }
@@ -310,6 +310,46 @@ void PanelController::applyMaterialPreset(const QString &style) {
     }
     if(m_dialog)if(auto *radius=m_dialog->findChild<QSlider*>("liquidPanelRadius")){const QSignalBlocker blocker(radius);radius->setValue(qRound(m_surface.radius));}
     apply();
+}
+void PanelController::resetAppearanceAndLayoutDefaults(QWidget *owner) {
+    const bool followChanged=!m_followWallpaper;
+    m_enabled=true;m_followWallpaper=true;m_reducedMotion=false;
+    m_dockAdaptive=true;m_dockClickFeedback=true;m_dockMagnification=false;
+    applyMaterialPreset("liquid");
+    if(followChanged)updateWallpaperWatchers();
+    refreshBackdrop();
+
+    if(auto *compat=owner?owner->findChild<PanelLayoutCompat *>(QString(),Qt::FindDirectChildrenOnly):nullptr) {
+        if(compat->supported()) {
+            compat->setCentered(false,68);
+            compat->setAutoExpand(false,98);
+        }
+    }
+    QSettings saved(configFile(),QSettings::IniFormat);
+    saved.setValue("tray/maxColumns",3);saved.sync();
+    qApp->setProperty("liquidTrayMaxColumns",3);
+
+    if(!m_dialog)return;
+    auto setCheck=[this](const char *name,bool value){
+        if(auto *control=m_dialog->findChild<QCheckBox *>(name)){const QSignalBlocker blocker(control);control->setChecked(value);}
+    };
+    auto setSlider=[this](const char *name,int value){
+        if(auto *control=m_dialog->findChild<QSlider *>(name)){const QSignalBlocker blocker(control);control->setValue(value);}
+    };
+    setCheck("liquidPanelFollowWallpaper",true);setCheck("liquidPanelReducedMotion",false);
+    setCheck("liquidDockAdaptive",true);setCheck("liquidDockClickFeedback",true);
+    setCheck("liquidDockHoverMagnification",false);setCheck("liquidDockAutoExpand",false);
+    setCheck("liquidPanelCentered",false);
+    setSlider("liquidPanelCenteredLength",68);setSlider("liquidDockMaximumLength",98);
+    setSlider("liquidTrayMaxColumns",3);
+    if(auto *length=m_dialog->findChild<QSlider *>("liquidPanelCenteredLength")) {
+        if(auto *number=length->parentWidget()->findChild<QLabel *>())number->setText("68%");
+        length->parentWidget()->setEnabled(false);
+    }
+    if(auto *expand=m_dialog->findChild<QCheckBox *>("liquidDockAutoExpand"))expand->setEnabled(false);
+    if(auto *maximum=m_dialog->findChild<QSlider *>("liquidDockMaximumLength"))maximum->setEnabled(false);
+    if(auto *dockHover=m_dialog->findChild<QCheckBox *>("liquidDockClickFeedback"))dockHover->setEnabled(true);
+    if(auto *magnify=m_dialog->findChild<QCheckBox *>("liquidDockHoverMagnification"))magnify->setEnabled(true);
 }
 void PanelController::settingsDialog(QWidget *owner) {
     if(LquiSettings::open("panel:material"))return;
@@ -375,7 +415,9 @@ void PanelController::settingsDialog(QWidget *owner) {
         auto *number=new QLabel(QString::number(value)+unit,row);number->setProperty("sliderValue",true);number->setFixedWidth(62);number->setAlignment(Qt::AlignRight|Qt::AlignVCenter);
         line->addWidget(bar,1);line->addWidget(number);form->addRow(name,row);
         connect(bar,&QSlider::valueChanged,dialog,[this,number,unit,change,rebuild](int v){number->setText(QString::number(v)+unit);change(v);apply(rebuild);});
-        connect(bar,&QSlider::sliderReleased,dialog,[this]{if(m_previewRefresh.isActive())flushPreview();if(m_configSave.isActive())saveConfiguration();});
+        // A released gesture previews synchronously; the single-shot config
+        // timer persists the last value after input settles.
+        connect(bar,&QSlider::sliderReleased,dialog,[this]{if(m_previewRefresh.isActive())flushPreview();});
         return bar;
     };
     auto *presets=new QWidget(material->parentWidget());auto *presetRow=new QHBoxLayout(presets);presetRow->setContentsMargins(0,0,0,0);presetRow->setSpacing(8);
@@ -401,8 +443,16 @@ void PanelController::settingsDialog(QWidget *owner) {
     connect(follow,&QCheckBox::toggled,dialog,[this](bool on){m_followWallpaper=on;updateWallpaperWatchers();if(on)refreshBackdrop();apply(false);});
     connect(refresh,&QPushButton::clicked,dialog,[this]{refreshBackdrop();});
     auto syncPreset=[=]{
-        clarity->setValue(qRound(m_clarity*100));strength->setValue(qRound(m_liquidStrength*100));highlight->setValue(qRound(m_surface.highlight*100));shade->setValue(qRound(m_surface.opacity*100));chroma->setValue(qRound(m_chroma*100));
-        transparency->setValue(qRound(m_transparency*100));pointer->setValue(qRound(m_pointerHighlight*100));through->setChecked(m_seeThrough);transparency->setEnabled(m_seeThrough);strength->setEnabled(m_materialStyle!="frosted");
+        {const QSignalBlocker blocker(clarity);clarity->setValue(qRound(m_clarity*100));}
+        {const QSignalBlocker blocker(strength);strength->setValue(qRound(m_liquidStrength*100));}
+        {const QSignalBlocker blocker(highlight);highlight->setValue(qRound(m_surface.highlight*100));}
+        {const QSignalBlocker blocker(shade);shade->setValue(qRound(m_surface.opacity*100));}
+        {const QSignalBlocker blocker(chroma);chroma->setValue(qRound(m_chroma*100));}
+        {const QSignalBlocker blocker(transparency);transparency->setValue(qRound(m_transparency*100));}
+        {const QSignalBlocker blocker(pointer);pointer->setValue(qRound(m_pointerHighlight*100));}
+        {const QSignalBlocker blocker(through);through->setChecked(m_seeThrough);}
+        transparency->setEnabled(m_seeThrough);strength->setEnabled(m_materialStyle!="frosted");
+        for(auto *button:group->buttons()){const QSignalBlocker blocker(button);button->setChecked(button->property("materialStyle").toString()==m_materialStyle);}
         description->setText(m_materialStyle=="soft"?"柔和扩散，淡化轮廓；适合更安静的桌面。":m_materialStyle=="frosted"?"细腻磨砂，突出内容；不弯折背景。":"清晰底色配细边折射，保持轻薄通透。");
     };
     strength->setEnabled(m_materialStyle!="frosted");
@@ -411,6 +461,12 @@ void PanelController::settingsDialog(QWidget *owner) {
     connect(reset,&QPushButton::clicked,dialog,[this,syncPreset]{applyMaterialPreset(m_materialStyle);syncPreset();});
 
     heading(layoutForm,"任务栏布局");addPanelLayoutSettings(layoutForm,dialog,owner,configFile());
+    auto *resetDefaults=new QPushButton("恢复任务栏外观与布局默认值",layoutForm->parentWidget());resetDefaults->setObjectName("liquidPanelResetDefaults");
+    resetDefaults->setToolTip("恢复材质、任务栏布局、Dock 交互和隐藏托盘列数的推荐值；保留固定应用、系统控制和其他个人设置。");layoutForm->addRow(resetDefaults);
+    connect(resetDefaults,&QPushButton::clicked,dialog,[this,owner,syncPreset]{
+        resetAppearanceAndLayoutDefaults(owner);syncPreset();
+        if(m_previewRefresh.isActive())flushPreview();saveConfiguration();
+    });
     slider(layoutForm,"底板圆角","liquidPanelRadius",0,24,qRound(m_surface.radius)," px","调整底板轮廓，不改变图标排列。",[this](int v){m_surface.radius=v;});
     heading(layoutForm,"系统控制区");
     auto *systemControls=new QCheckBox("紧凑系统控制区（网络、声音、电源和日历）",layoutForm->parentWidget());systemControls->setObjectName("liquidSystemControlsEnabled");systemControls->setChecked(qApp->property("liquidSystemControlsEnabled").toBool());layoutForm->addRow(systemControls);

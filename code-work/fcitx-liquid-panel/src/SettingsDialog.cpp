@@ -4,6 +4,7 @@
 #include <QPointer>
 #include <memory>
 #include <QTabWidget>
+#include <QTabBar>
 #include <QFormLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -32,11 +33,14 @@ SettingsDialog::SettingsDialog(CandidateWindow &live,QWidget *parent)
     resize(880,760);
     if (auto *screen=QGuiApplication::primaryScreen()) resize(size().boundedTo(screen->availableGeometry().size()-QSize(40,60)));
     auto *layout=new QVBoxLayout(this);
-    auto *intro=new QLabel(QStringLiteral("调整后立即预览；候选数量或候选拼音变更会重新部署 Rime，请在输入结束后应用。"));
+    auto *installHint=new QLabel(QStringLiteral("使用前：① 在系统软件管理器安装 fcitx-rime（Rime／中州韵）；② 打开 Fcitx 输入法配置，添加 Rime；③ 从输入法菜单切换到 Rime。选择 Rime 后，这里的候选窗设置才会用于实际输入。"));
+    installHint->setObjectName("rimeInstallHint"); installHint->setWordWrap(true); installHint->setStyleSheet("font-weight:600;"); layout->addWidget(installHint);
+    auto *intro=new QLabel(QStringLiteral("外观改动会即时预览，点击“应用”保存。候选数量或候选拼音变更会部署 Rime，建议在输入结束后应用。"));
     intro->setWordWrap(true); layout->addWidget(intro);
-    auto *presets=new QComboBox; presets->setObjectName("preset");
+    auto *presets=new QComboBox; presets->setObjectName("preset"); presets->setAccessibleName(QStringLiteral("候选窗预设"));
     presets->addItems({QStringLiteral("当前设置"),QStringLiteral("默认玻璃"),QStringLiteral("紧凑两行"),QStringLiteral("大字清晰")});
-    auto *presetRow=new QHBoxLayout; presetRow->addWidget(new QLabel(QStringLiteral("快速选择"))); presetRow->addWidget(presets,1); layout->addLayout(presetRow);
+    auto *presetContainer=new QWidget(this);auto *presetForm=new QFormLayout(presetContainer);presetForm->setContentsMargins(0,0,0,0);
+    presetForm->addRow(QStringLiteral("外观方案"),presets);layout->addWidget(presetContainer);
     auto *tabs=new QTabWidget; layout->addWidget(tabs,1);
     const QStringList groups={"Interface","Fonts","Geometry","Effects","Colors"};
     const QStringList names={QStringLiteral("外观与界面"),QStringLiteral("字体"),QStringLiteral("尺寸与间距"),QStringLiteral("玻璃效果"),QStringLiteral("颜色")};
@@ -71,10 +75,12 @@ SettingsDialog::SettingsDialog(CandidateWindow &live,QWidget *parent)
                     auto update=[this,button](const QColor &color){
                         button->setProperty("color",color); button->setText(color.name(QColor::HexArgb));
                         button->setStyleSheet(QString("QPushButton { border-left: 28px solid %1; padding: 5px; }").arg(color.name(QColor::HexRgb)));
-                        changed();
+                        changed(true);
                     };
-                    connect(&dialog,&QColorDialog::currentColorChanged,this,update);
-                    if(dialog.exec()!=QDialog::Accepted) update(before);
+                    connect(&dialog,&QColorDialog::currentColorChanged,&dialog,update);
+                    const int result=dialog.exec();
+                    if(result!=QDialog::Accepted) update(before);
+                    flushPreview();
                 });
             }
             if(f.key=="Interface/ShowCandidatePinyin")control->setToolTip(QStringLiteral("在汉字上方逐字显示带声调的拼音；轻声不标调。与顶部输入栏分别控制。"));
@@ -86,7 +92,7 @@ SettingsDialog::SettingsDialog(CandidateWindow &live,QWidget *parent)
         auto *scroll=new QScrollArea; scroll->setWidgetResizable(true); scroll->setWidget(page);
         tabs->addTab(scroll,names[i]);
     }
-    auto *previewTitle=new QLabel(QStringLiteral("实时预览 · 与实际候选窗使用同一绘制代码，可点击切换选中词"));
+    auto *previewTitle=new QLabel(QStringLiteral("候选窗示例预览"));
     previewTitle->setWordWrap(true); layout->addWidget(previewTitle);
     auto *scroll=new QScrollArea; scroll->setObjectName("previewScroll"); scroll->setMinimumHeight(180);
     scroll->setMaximumHeight(290); scroll->setWidgetResizable(false);
@@ -96,11 +102,16 @@ SettingsDialog::SettingsDialog(CandidateWindow &live,QWidget *parent)
     m_preview=new CandidateWindow(nullptr,true); m_preview->setObjectName("settingsPreview");
     scroll->setWidget(m_preview); m_preview->setAutoFillBackground(false); layout->addWidget(scroll);
     auto *background=new QComboBox; background->setObjectName("previewBackground");
-    background->addItems({QStringLiteral("彩色背景"),QStringLiteral("白色背景"),QStringLiteral("深色背景")});
-    layout->insertWidget(layout->indexOf(scroll),background);
+    background->addItems({QStringLiteral("彩色"),QStringLiteral("白色"),QStringLiteral("浅灰"),QStringLiteral("深灰"),QStringLiteral("黑色")});
+    background->setAccessibleName(QStringLiteral("预览背景"));
+    auto *backgroundContainer=new QWidget(this);auto *backgroundRow=new QFormLayout(backgroundContainer);backgroundRow->setContentsMargins(0,0,0,0);
+    backgroundRow->addRow(QStringLiteral("预览背景"),background);
+    layout->insertWidget(layout->indexOf(scroll),backgroundContainer);
     connect(background,qOverload<int>(&QComboBox::currentIndexChanged),this,[this,scroll](int mode){
         m_preview->setPreviewBackground(mode);
-        scroll->setStyleSheet(QString("QScrollArea {background:%1;border:1px solid #708399;border-radius:6px;}").arg(mode==1?"#fafafa":mode==2?"#232323":"#26364a"));
+        const QStringList colors={"#26364a","#fafafa","#dedede","#707070","#000000"};
+        scroll->setStyleSheet(QString("QScrollArea {background:%1;border:1px solid #708399;border-radius:6px;}").arg(colors.value(mode,colors.first())));
+        m_preview->repaint();
     });
     connect(m_preview,&CandidateWindow::selected,this,[this](int index){m_preview->state.cursor=index; m_preview->schedule();});
     m_status=new QLabel; m_status->setWordWrap(true); layout->addWidget(m_status);
@@ -116,16 +127,34 @@ SettingsDialog::SettingsDialog(CandidateWindow &live,QWidget *parent)
     connect(cancel,&QPushButton::clicked,this,&QDialog::reject);
     connect(presets,qOverload<int>(&QComboBox::activated),this,[this](int index){
         if(index==0) m_draft=m_live.config();
-        else {m_draft=CandidateConfig();
+        else {
+            m_draft=CandidateConfig();
             if(index==2) {m_draft.fontSize=13;m_draft.windowPadding=2;m_draft.horizontalPadding=12;m_draft.itemSidePadding=4;m_draft.itemHorizontalPadding=20;m_draft.candidateGap=1;m_draft.headerGap=0;m_draft.cornerRadius=12;}
             if(index==3) {m_draft.fontSize=20;m_draft.bold=true;m_draft.shade=.7;}
         }
         populate(); changed();
     });
     m_previewTimer.setSingleShot(true); m_previewTimer.setInterval(60);
-    connect(&m_previewTimer,&QTimer::timeout,this,[this]{m_preview->setConfiguration(m_draft);m_preview->refresh();});
+    connect(&m_previewTimer,&QTimer::timeout,this,&SettingsDialog::flushPreview);
     populate(); m_preview->setConfiguration(m_draft); m_preview->showPreview();
-    m_status->setText(QStringLiteral("当前默认沿用现有玻璃效果；预览背景为固定示例，实际效果随窗口背后的内容变化。"));
+    m_status->setText(QStringLiteral("预览使用示例候选和合成背景，不会采集桌面或影响当前输入。"));
+    // Export layout semantics for this form only. Background choices precede
+    // the preview in the unified client instead of following QObject order.
+    setProperty("settingsUiVersion",1);
+    QVariantList uiGroups;
+    for(const auto &group:QList<QPair<QString,QString>>{{"setup","使用前"},{"options","候选窗设置"},{"preview","示例预览"},{"actions",""}})
+        uiGroups.append(QVariantMap{{"key",group.first},{"title",group.second},{"order",uiGroups.size()*10},{"columns",1}});
+    setProperty("settingsUiGroups",uiGroups);
+    const auto mark=[](QWidget *widget,const QString &group,int order,const QString &role){
+        if(!widget)return;
+        widget->setProperty("settingsUiGroup",group);widget->setProperty("settingsUiOrder",order);widget->setProperty("settingsUiRole",role);
+    };
+    intro->setObjectName("inputSettingsIntro");previewTitle->setObjectName("inputPreviewHeading");m_status->setObjectName("inputPreviewStatus");
+    mark(installHint,"setup",0,"warning");mark(intro,"setup",1,"help");mark(presets,"options",0,"control");
+    mark(tabs->tabBar(),"options",1,"control");int controlOrder=10;
+    for(const auto &field:candidateFields())mark(m_controls.value(field.key),"options",controlOrder++,"control");
+    mark(previewTitle,"preview",0,"heading");mark(background,"preview",1,"control");mark(m_preview,"preview",2,"preview");mark(m_status,"preview",3,"status");
+    mark(reset,"actions",0,"action");mark(apply,"actions",1,"action");mark(save,"actions",2,"action");mark(cancel,"actions",3,"action");
 }
 bool SettingsDialog::eventFilter(QObject *object,QEvent *event) {
     if(event->type()==QEvent::Resize && m_preview && object==m_preview->parentWidget())
@@ -147,7 +176,7 @@ void SettingsDialog::populate() {
     }
     m_populating=false;
 }
-void SettingsDialog::changed() {
+void SettingsDialog::changed(bool coalescePreview) {
     if(m_populating) return;
     for(const auto &f:candidateFields()) {
         QWidget *w=m_controls.value(f.key); QVariant value;
@@ -159,9 +188,21 @@ void SettingsDialog::changed() {
         f.set(m_draft,value);
     }
     m_draft.maxWindowWidth=qMax(m_draft.minWindowWidth,m_draft.maxWindowWidth);
-    m_previewTimer.start(); m_status->setText(QStringLiteral("预览已更改，尚未保存。候选词会随可用宽度自动换行；0 表示自动尺寸或继承字号。"));
+    if(coalescePreview) m_previewTimer.start(); else flushPreview();
+    m_status->setText(QStringLiteral("预览已更新，尚未保存。候选词会随可用宽度自动换行；0 表示自动尺寸或继承字号。"));
 }
-void SettingsDialog::resetDefaults() {m_draft=CandidateConfig();populate();changed();}
+void SettingsDialog::flushPreview() {
+    m_previewTimer.stop();
+    if(!m_preview)return;
+    m_preview->setConfiguration(m_draft);
+    m_preview->refresh();
+    m_preview->repaint();
+}
+void SettingsDialog::resetDefaults() {
+    m_draft=CandidateConfig();
+    if(auto *presets=findChild<QComboBox *>("preset"))presets->setCurrentIndex(1);
+    populate();changed();
+}
 void SettingsDialog::reject() {
     if(m_saving){m_status->setText(QStringLiteral("正在保存配置，请稍候…"));return;}
     QDialog::reject();

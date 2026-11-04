@@ -86,7 +86,9 @@ int main(int argc, char **argv) {
     QApplication app(argc, argv);
     require(argc >= 3, "arguments");
     const QString pluginPath = QString::fromLocal8Bit(argv[1]), root = QString::fromLocal8Bit(argv[2]);
-    const bool crash = argc > 3;
+    const QString mode = argc > 3 ? QString::fromLocal8Bit(argv[3]) : QString();
+    const bool crash = mode == "crash";
+    const bool managedArgv = mode == "managed-argv";
     const QString configPath = qEnvironmentVariable("XDG_CONFIG_HOME") + "/peony-manager/cli-profiles.json";
     QDir().mkpath(QFileInfo(configPath).absolutePath());
     QPluginLoader loader(pluginPath);
@@ -109,8 +111,14 @@ int main(int argc, char **argv) {
     };
     QPointer<QMainWindow> a = createWindow(), b;
     auto open = [&](QMainWindow *window, const QString &directory, const QString &name) {
-        QJsonObject settings{{"enabled", true}, {"name", "测试 CLI"}, {"menuLabel", "测试入口"},
-            {"command", "/usr/bin/python3 '" + root + "/child.py' '" + root + "/" + name + ".json'"}};
+        QJsonObject settings;
+        if (managedArgv) {
+            settings = QJsonDocument::fromJson(content(root + "/managed-settings.fixture")).object();
+            require(!settings.isEmpty(), "managed Codex settings fixture loaded");
+        } else {
+            settings = QJsonObject{{"enabled", true}, {"name", "测试 CLI"}, {"menuLabel", "测试入口"},
+                {"command", "/usr/bin/python3 '" + root + "/child.py' '" + root + "/" + name + ".json'"}};
+        }
         QFile file(configPath); require(file.open(QIODevice::WriteOnly), "config write");
         file.write(QJsonDocument(settings).toJson()); file.close();
         QContextMenuEvent event(QContextMenuEvent::Mouse, QPoint(1,1));
@@ -119,20 +127,47 @@ int main(int argc, char **argv) {
         require(plugin->menuActions(Peony::MenuPluginInterface::DirectoryView, "trash:///", {}).isEmpty(), "virtual paths excluded");
         require(plugin->menuActions(Peony::MenuPluginInterface::DirectoryView, uri, {uri, uri}).isEmpty(), "multiple folders excluded");
         const auto actions = plugin->menuActions(Peony::MenuPluginInterface::DirectoryView, uri, {});
-        require(actions.size() == 1 && actions.first()->text() == "测试入口", "custom context action");
+        const QString expectedLabel = managedArgv ? settings.value("menuLabel").toString() : QStringLiteral("测试入口");
+        require(actions.size() == 1 && actions.first()->text() == expectedLabel, "custom context action");
         actions.first()->trigger();
         qDeleteAll(actions);
     };
     const QString directory = root + "/目录 空格 ' $HOME ; test";
     require(QDir().mkpath(directory), "special directory creation");
-    open(a, directory, "a");
+    open(a, directory, managedArgv ? "managed" : "a");
     int stage = 0;
+    int managedStage = 0;
     bool newlineKeysSent = false;
     QJsonObject recordA, recordB, recordC;
+    QJsonObject managedRecord;
     QElapsedTimer timeout; timeout.start();
     QTimer timer;
     QObject::connect(&timer, &QTimer::timeout, &app, [&]() {
         require(timeout.elapsed() < 20000, "integration timeout");
+        if (managedArgv) {
+            if (managedStage == 0) {
+                managedRecord = marker(root + "/managed.json");
+                if (managedRecord.isEmpty()) return;
+                require(managedRecord.value("cwd").toString() == directory, "managed Codex cwd passed literally");
+                const QJsonArray expectedArgs{"--model", "gpt-6-luna", "--config", "model_reasoning_effort=\"xhigh\""};
+                require(managedRecord.value("argv").toArray() == expectedArgs, "managed Codex model and effort are exact argv values");
+                require(managedRecord.value("loginEnv").toString() == "from login profile", "managed Codex retains login shell environment");
+                require(managedRecord.value("pids").toArray().size() == 3, "managed fake Codex child processes recorded");
+                auto *tabs = a->findChild<QTabWidget *>();
+                require(tabs && tabs->count() == 1, "managed Codex starts one session");
+                open(a, directory, "managed-again");
+                require(tabs->count() == 1, "same model settings reuse managed Codex session");
+                require(QMetaObject::invokeMethod(tabs, "tabCloseRequested", Qt::DirectConnection, Q_ARG(int, 0)), "close managed Codex tab");
+                require(tabs->count() == 0 && a, "managed session closes without closing Peony window");
+                managedStage = 1;
+                return;
+            }
+            if (managedStage == 1 && allDead(managedRecord)) {
+                qInfo("PASS: managed model argv is literal, login-shell environment and cwd are preserved, scope cleanup works");
+                app.exit(0);
+            }
+            return;
+        }
         if (stage == 0) {
             recordA = marker(root + "/a.json"); if (recordA.isEmpty()) return;
             require(recordA.value("cwd").toString() == directory, "special path passed literally");

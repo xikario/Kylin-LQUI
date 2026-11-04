@@ -19,6 +19,8 @@ BOOLEAN_LABELS={
     'show-hidden-file':'显示隐藏文件',
 }
 CLI_FIELDS=[('enabled','启用嵌入终端','boolean',None),('name','终端名称','text',80),('menuLabel','右键菜单名称','text',120),('command','启动命令','text',4096),('widthPercent','终端宽度','number',(25,65,' %')),('fontSize','字体大小','number',(8,24,' pt')),('historyLines','滚动历史','number',(100,10000,' 行')),('followSystemFont','跟随系统字体','boolean',None),('fontFamily','终端字体','choice',['Sarasa Fixed SC','Noto Sans Mono CJK SC']),('contentPadding','内容边距','number',(0,24,' px'))]
+MODEL_VALUES=['','gpt-6-luna','gpt-6.1-sol','gpt-6.1-terra','gpt-6-astra']
+EFFORT_VALUES=['','none','minimal','low','medium','high','xhigh','max','ultra']
 
 def field(fid,label,kind,value=None,**extra):
     return dict(id=fid,name=fid,label=label,kind=kind,value=value,enabled=True,help=label,**extra)
@@ -36,6 +38,8 @@ def page(name):
         for index,(key,label) in enumerate(BOOLEAN_LABELS.items()):
             if key in data['settings']:fields.append(annotate(field('global:'+key,label,'boolean',data['settings'][key]),'files' if key in ('show-file-extension','show-hidden-file') else 'menus',index))
         if data.get('errors'):fields.append(annotate(field('errors','','note','部分系统设置不可用：'+', '.join(data['errors'])),'files',99,'warning'))
+        group('defaults','',30)
+        fields.append(annotate(field('restore-file-defaults','恢复菜单与文件显示默认值','action',confirm='恢复菜单与文件显示的系统默认设置？不会改变插件启用状态或删除文件。'),'defaults',0,'action'))
     elif name=='terminal':
         group('terminal','嵌入终端',10)
         data=cli_settings.read()
@@ -46,6 +50,14 @@ def page(name):
             elif kind=='choice':extra['options']=limits;value=limits.index(value)
             fields.append(annotate(field('cli:'+key,label,kind,value,**extra),'terminal',len(fields)))
         fields.append(annotate(field('terminal-note','','note','设置立即保存。终端仍由用户点击时加载，关闭文件管理窗口时一起退出。'),'terminal',99,'help'))
+        fields.append(annotate(field('restore-terminal-defaults','恢复终端外观默认值','action',confirm='恢复终端宽度、字体、留白和滚动历史上限？保留启动命令、名称、模型偏好及启用状态。'),'terminal',100,'action'))
+        group('model','新会话默认模型',5)
+        model=data.get('model','');effort=data.get('reasoningEffort','')
+        fields.append(annotate(field('cli:model','默认模型','choice',MODEL_VALUES.index(model) if model in MODEL_VALUES else -1,
+            options=['跟随 Codex 设置']+MODEL_VALUES[1:],editable=True,text=model or '跟随 Codex 设置'),'model',0))
+        fields.append(annotate(field('cli:reasoningEffort','推理强度','choice',EFFORT_VALUES.index(effort),
+            options=['跟随 Codex 设置','不推理','最低','低','中','高','很高（xhigh）','最大（max）','超高（ultra）']),'model',1))
+        fields.append(annotate(field('model-note','','note','选择后会记住，供后续新建的文件夹 CLI 会话使用，不修改 Codex 全局配置。仅适用于默认 Codex 启动命令；自定义启动命令保持原样。CLI 内 /model 的临时调整不会自动回写此处。模型和强度是否可用由当前账号与 CLI 校验。'),'model',2,'help'))
     elif name=='plugins':
         group('intro','',0);group('plugins','已发现的扩展',10);group('maintenance','扩展维护',20)
         fields.append(annotate(field('open-manager','打开 Peony 插件管理器','action'),'intro',0,'action'))
@@ -76,14 +88,22 @@ def set_value(name,fid,encoded):
         result=gsettings_store.set(key,value)
         if not result.get('success'):raise ValueError(result.get('error','系统未接受此设置'))
     elif fid.startswith('cli:'):
-        key=fid[4:];data=cli_settings.read()
+        key=fid[4:]
+        if key=='model':
+            if type(value) is int and 0<=value<len(MODEL_VALUES):value=MODEL_VALUES[value]
+            elif isinstance(value,str):value='' if value.strip()=='跟随 Codex 设置' else value.strip()
+            else:raise ValueError('无效的模型选项')
+            cli_settings.update({key:value});return page(name)
+        if key=='reasoningEffort':
+            if type(value) is not int or not 0<=value<len(EFFORT_VALUES):raise ValueError('无效的推理强度')
+            cli_settings.update({key:EFFORT_VALUES[value]});return page(name)
         if definition['kind']=='number':
             if type(value) not in (int,float) or not float(value).is_integer():raise ValueError('需要整数')
             value=int(value)
         if definition['kind']=='choice':
             if type(value) is not int or not 0<=value<len(definition['options']):raise ValueError('无效的选项')
             value=definition['options'][value]
-        data[key]=value;cli_settings.save(data)
+        cli_settings.update({key:value})
     elif fid.startswith('plugin:'):
         from gi.repository import Gio
         filename=fid[7:]
@@ -98,11 +118,18 @@ def set_value(name,fid,encoded):
         if not settings.set_strv('disabled-extensions',disabled):raise ValueError('系统未接受插件状态')
         Gio.Settings.sync()
         if filename==cli_settings.FILE_NAME:
-            data=cli_settings.read();data['enabled']=value;cli_settings.save(data)
+            cli_settings.update({'enabled':value})
     else:raise ValueError('此项目不可写入')
     return page(name)
 
 def activate(name,fid):
+    if name=='general' and fid=='restore-file-defaults':
+        available=gsettings_store.get_all()['settings']
+        gsettings_store.reset_boolean_defaults([key for key in BOOLEAN_LABELS if key in available])
+        return page(name)
+    if name=='terminal' and fid=='restore-terminal-defaults':
+        defaults=cli_settings.defaults()
+        cli_settings.update({key:defaults[key] for key in ('widthPercent','fontSize','historyLines','followSystemFont','fontFamily','contentPadding')});return page(name)
     allowed={'install-copy':operations.install_copy_path_plugin,'remove-copy':operations.remove_copy_path_plugin,'install-cli':operations.install_cli_panel_plugin,'remove-cli':operations.remove_cli_panel_plugin}
     if name!='plugins':raise ValueError('无效操作')
     if fid=='open-manager':

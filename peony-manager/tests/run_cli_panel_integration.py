@@ -3,11 +3,16 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import tempfile
 import time
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
+import sys
+sys.path.insert(0, str(ROOT))
+from app import cli_settings
 
 
 def compile_harness(output):
@@ -53,6 +58,15 @@ threading.Thread(target=receive,daemon=True).start()
 time.sleep(90)
 '''
 
+MANAGED_CODEX = '''#!/usr/bin/python3
+import json,os,pathlib,re,subprocess,sys,time
+children=[subprocess.Popen(['/bin/sleep','90']),subprocess.Popen(['/bin/sleep','90'],start_new_session=True)]
+unit=re.search(r'peony-cli-[0-9a-f]{32}\\.scope',pathlib.Path('/proc/self/cgroup').read_text()).group()
+record={'cwd':os.getcwd(),'argv':sys.argv[1:],'loginEnv':os.environ.get('PEONY_TEST_LOGIN_ENV'),'pids':[os.getpid()]+[p.pid for p in children],'unit':unit}
+path=pathlib.Path(os.environ['PEONY_MANAGED_ARGV_MARKER']); tmp=path.with_suffix('.tmp'); tmp.write_text(json.dumps(record)); tmp.replace(path)
+time.sleep(90)
+'''
+
 
 def running(pid):
     try:
@@ -89,6 +103,42 @@ def main():
             finally:
                 for record in records:
                     subprocess.run(["systemctl", "--user", "stop", record['unit']], capture_output=True, timeout=10)
+
+        case = base / "managed-argv"
+        case.mkdir()
+        home = case / "isolated home"
+        home.mkdir()
+        (home / ".bash_profile").write_text("export PEONY_TEST_LOGIN_ENV='from login profile'\n")
+        fake_codex = case / "fake codex"
+        fake_codex.write_text(MANAGED_CODEX)
+        fake_codex.chmod(0o755)
+        with patch.object(cli_settings.shutil, "which", return_value=str(fake_codex)):
+            managed_settings = cli_settings.defaults()
+            managed_settings.update(command=shlex.quote(str(fake_codex)), model="gpt-6-luna", reasoningEffort="xhigh")
+            managed_settings = cli_settings.validate(managed_settings)
+        (case / "managed-settings.fixture").write_text(json.dumps(managed_settings))
+        environment = dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QPA_PLATFORMTHEME="",
+                           XDG_CONFIG_HOME=str(case / "config"), HOME=str(home),
+                           PEONY_MANAGED_ARGV_MARKER=str(case / "managed.json"))
+        command = [str(harness), str(ROOT / "plugins/peony-cli-panel/build/libpeony-cli-panel.so"),
+                   str(case), "managed-argv"]
+        result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=30)
+        print("managed-argv: " + result.stderr[-1800:])
+        records = [json.loads((case / "managed.json").read_text())] if (case / "managed.json").exists() else []
+        try:
+            assert result.returncode == 0, "managed Codex argv harness failed"
+            assert records, "Managed fake Codex did not start"
+            assert records[0]["argv"] == managed_settings["modelArgs"], "Model arguments changed across the login shell"
+            assert records[0]["cwd"].endswith("目录 空格 ' $HOME ; test"), "Managed working directory changed"
+            assert records[0]["loginEnv"] == "from login profile", "Login shell profile was not loaded"
+            deadline = time.monotonic() + 8
+            while any(running(pid) for pid in records[0]['pids']) and time.monotonic() < deadline:
+                time.sleep(.1)
+            assert not any(running(pid) for pid in records[0]['pids']), "Managed CLI descendants survived tab close"
+        finally:
+            for record in records:
+                subprocess.run(["systemctl", "--user", "stop", record['unit']], capture_output=True, timeout=10)
+        print("PASS: default Codex model args survive the login shell literally; cwd and scope cleanup verified")
         print("PASS: normal window cleanup and abrupt host death clean all descendant processes")
 
 

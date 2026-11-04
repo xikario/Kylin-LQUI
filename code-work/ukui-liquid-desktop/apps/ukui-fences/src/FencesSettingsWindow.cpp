@@ -11,6 +11,7 @@
 #include "ActivityRecorder.h"
 #include "FenceWidget.h"
 #include "FenceIconPicker.h"
+#include "GlassFinish.h"
 #include "LiquidOpticsRenderer.h"
 #include "LiquidMaterialPreparation.h"
 #include "LiquidPopup.h"
@@ -61,7 +62,7 @@ const Page pages[] = {{"appearance","液态外观"},{"wallpaper","壁纸与配�
     {"icons","图标与文字"},{"layout","分区与布局"},{"widgets","桌面小组件"},
     {"monitor","    系统监视"},{"clock","    时钟与倒计时"},
     {"activity","    活动统计"},{"music","    音乐播放器"},{"calendar","    日历与待办"},
-    {"sync","文件同步"},{"session","桌面接管（限时试用）"},{"help","帮助与维护"}};
+    {"sync","文件同步"},{"session","调试专用"},{"help","帮助与维护"}};
 QPushButton *button(QVBoxLayout *layout, const QString &text, const std::function<void()> &fn,
                     const QString &id = {}) {
     auto *b=new QPushButton(text,layout->parentWidget());b->setObjectName(id);
@@ -384,6 +385,17 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
                 clearIcon->setEnabled(fence->hasTitleIcon());
             };
             connect(f,&FenceWidget::titleIconChanged,page,refreshIcon);refreshIcon();
+            auto *resetAppearance=button(c,"恢复颜色、材质与标题图标默认值",[this,fence,refreshIcon]{
+                if(!fence||!m_canvas)return;
+                fence->setFenceColor(m_canvas->m_defaultFenceColor);
+                fence->setLiquidGlassEnabled(m_canvas->m_fenceLiquidGlassEnabled);
+                fence->setTitleIconThemeName(QString());
+                const auto defaults=FenceIconPicker::defaultIconPaths();
+                const int index=m_canvas->m_fences.indexOf(fence);
+                fence->setTitleIconPath(defaults.isEmpty()?QString():defaults.at(qMax(0,index)%defaults.size()));
+                refreshIcon();emit fence->geometryChanged();
+            },"fenceAppearanceResetDefaults");
+            resetAppearance->setToolTip("恢复当前桌面主题的分区颜色、玻璃开关和此分区默认标题图标；名称、锁定状态、文件内容、位置及用户图标文件都保留。字体可用下方各自的恢复按钮重置。");
             hint(c,"系统图标库可搜索当前主题及其继承图标；内置默认图标无需安装额外主题。");
             attachForm(card(layout,"内部图标字体"),f->createFontSettingsPage(page));
             attachForm(card(layout,"分区标题字体"),f->createTitleFontSettingsPage(page));
@@ -408,6 +420,15 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
         hint(c,"关闭弹出、折叠和排序动画，状态立即切换。");
         c->itemAt(c->count()-1)->widget()->setObjectName("reduceMotionHelp");
         button(c,"刷新壁纸与液态材质",[this]{m_canvas->refreshAll();},"refreshMaterialButton");
+        auto *resetAppearance=button(c,"恢复液态外观默认值",[this,glass,scrim,motion]{
+            m_canvas->setFenceLiquidGlassEnabled(false);
+            m_canvas->setGlassScrim(int(GlassFinish::Scrim::Balanced));
+            m_canvas->setReduceMotion(false);
+            {const QSignalBlocker block(glass);glass->setChecked(false);}
+            {const QSignalBlocker block(scrim);scrim->setCurrentIndex(int(GlassFinish::Scrim::Balanced));}
+            {const QSignalBlocker block(motion);motion->setChecked(false);}
+        },"fencesAppearanceResetDefaults");
+        resetAppearance->setToolTip("恢复分区玻璃关闭、均衡通透度和标准动态效果；不修改壁纸、分区或小组件内容。");
     } else if(id=="wallpaper") {
         auto *wallpaperCard=card(layout,"Fences 壁纸");wallpaperCard->parentWidget()->setProperty("settingsUiGroup","wallpaper");
         attachForm(wallpaperCard,m_canvas->createWallpaperSettingsPage(page));
@@ -420,7 +441,21 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
         button(c,"打开系统壁纸设置",[this]{m_canvas->openSystemWallpaper();},"openSystemWallpaper");
     } else if(id=="icons") {
         attachForm(card(layout,"图标底座"),m_canvas->createIconSettingsPage(page));
-        attachForm(card(layout,"桌面字体"),m_canvas->createFontSettingsPage(page));
+        auto *fontCard=card(layout,"桌面字体");
+        auto *fontForm=m_canvas->createFontSettingsPage(page);attachForm(fontCard,fontForm);
+        auto *resetFont=button(fontCard,"恢复桌面字体默认值",[this,page,fontCard,fontForm]{
+            m_canvas->m_fontFamily.clear();m_canvas->m_fontSize=11;m_canvas->m_fontBold=false;
+            m_canvas->m_fontItalic=false;m_canvas->m_fontColor=Qt::white;
+            m_canvas->applyFontToAll();m_canvas->saveLayout();
+            const int index=fontCard->indexOf(fontForm);
+            QTimer::singleShot(0,this,[this,page,fontCard,fontForm,index]{
+                if(!m_canvas||!fontCard||!fontForm)return;
+                fontCard->removeWidget(fontForm);fontForm->hide();fontForm->deleteLater();
+                auto *replacement=m_canvas->createFontSettingsPage(page);attachForm(fontCard,replacement);
+                fontCard->removeWidget(replacement);fontCard->insertWidget(qMax(1,index),replacement);
+            });
+        },"desktopFontResetDefaults");
+        resetFont->setToolTip("系统默认字体、11 px、常规字重、白色文字；应用到没有单独字体覆盖的桌面和分区图标，不移动图标或分区。");
     } else if(id=="sync") {
         attachForm(card(layout,"新文件收纳"),m_canvas->createSyncSettingsPage(page));
     } else if(id=="layout") {
@@ -429,7 +464,19 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
         auto *magnet=new QCheckBox("壁纸磁性画线",page);magnet->setObjectName("wallpaperMagnet");c->addWidget(magnet);
         connect(magnet,&QCheckBox::toggled,m_canvas,&DesktopCanvas::setWallpaperMagnetEnabled);
         hint(c,"壁纸磁性画线沿明暗边界调整分区轮廓；组件之间的矩形边缘磁吸在布局编辑时自动工作。");
-        attachForm(card(layout,"桌面网格"),m_canvas->createGridSettingsPage(page));
+        auto *gridCard=card(layout,"桌面网格");
+        auto *gridForm=m_canvas->createGridSettingsPage(page);attachForm(gridCard,gridForm);
+        auto *resetGrid=button(gridCard,"恢复桌面网格与图标尺寸默认值",[this,page,gridCard,gridForm]{
+            m_canvas->applyIconScale(1.0);m_canvas->applyDesktopGrid(18,11,1.0);
+            const int index=gridCard->indexOf(gridForm);
+            QTimer::singleShot(0,this,[this,page,gridCard,gridForm,index]{
+                if(!m_canvas||!gridCard||!gridForm)return;
+                gridCard->removeWidget(gridForm);gridForm->hide();gridForm->deleteLater();
+                auto *replacement=m_canvas->createGridSettingsPage(page);attachForm(gridCard,replacement);
+                gridCard->removeWidget(replacement);gridCard->insertWidget(qMax(1,index),replacement);
+            });
+        },"desktopGridResetDefaults");
+        resetGrid->setToolTip("恢复推荐网格 18×11 和 100% 图标尺寸。保留所有分区、文件、位置和排列方式。");
         c=card(layout,"分区");
         for(auto *f:m_canvas->m_fences){QPointer<FenceWidget> fence=f;auto *locked=new QCheckBox(f->title()+" · 锁定",page);locked->setChecked(f->locked());c->addWidget(locked);
             connect(locked,&QCheckBox::toggled,page,[fence](bool on){if(fence){fence->setLocked(on);emit fence->geometryChanged();}});
@@ -461,6 +508,9 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
         if(editor) {
             editor->setStyleSheet(QString());
             attachForm(c,editor);
+            QPointer<SystemMonitor> monitor=m_canvas->m_monitor;
+            auto *resetVisual=button(c,"恢复小组件视觉默认值",[monitor,editor]{if(monitor)monitor->resetVisualDefaults(editor);},"monitorVisualResetDefaults");
+            resetVisual->setToolTip("恢复样式、卡片尺寸、标题、字体、透明度和光感；保留采样、排序、框架显示、自启动与位置。");
             // A component may be removed via the desktop shortcut while its
             // form is open. Remove that page together with its model.
             connect(editor,&QObject::destroyed,scroll,[scroll]{scroll->deleteLater();});
@@ -497,6 +547,17 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
         interval->setEnabled(metrics->isChecked());
         connect(metrics,&QCheckBox::toggled,page,[=]{applyMetrics();});connect(retention,QOverload<int>::of(&QComboBox::currentIndexChanged),page,[=]{applyMetrics();});
         connect(interval,&QSlider::valueChanged,page,[=](int value){seconds->setText(QString::number(value)+" 秒");if(!interval->isSliderDown())applyMetrics();});connect(interval,&QSlider::sliderReleased,page,applyMetrics);
+        auto *resetSampling=button(c,"恢复采样默认值",[=]{
+            if(recorder)recorder->setRecording(true);
+            else {QSettings settings;settings.setValue("desklets/activity/recording",true);settings.sync();}
+            {const QSignalBlocker block(recording);recording->setChecked(true);}
+            {const QSignalBlocker block(metrics);metrics->setChecked(true);}
+            {const QSignalBlocker block(interval);interval->setValue(10);}
+            if(recorder)recorder->configureMetrics(true,10,retention->currentData().toInt());
+            else {QSettings settings;settings.setValue("desklets/activity/metricsEnabled",true);settings.setValue("desklets/activity/metricsInterval",10);settings.sync();}
+            seconds->setText("10 秒");interval->setEnabled(true);
+        },"activitySamplingResetDefaults");
+        resetSampling->setToolTip("恢复应用记录和资源采样开启、10 秒间隔；保留现有历史和详细日志保留期限。");
         hint(c,"采样设置即时保存。统计今日前五应用可关联的窗口进程及子进程；CPU 按单核 100% 计，RSS 共享页可能重复。暂停记录或锁屏时停止采样。");
         c->itemAt(c->count()-1)->widget()->setObjectName("activityMetricsDetails");
         hint(c,"日汇总保留 60 天；详细日志按上方天数滚动清理，约每分钟批量写入。旧记录的使用时长保留，资源指标从启用后开始累计。");
@@ -539,7 +600,8 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
             group("glass","分区液态玻璃",10);group("motion","动态效果",20);group("actions","",30);
             mark("fenceLiquidGlass","glass",10);mark("fenceGlassHelp","glass",11,"help","fenceLiquidGlass");
             mark("glassScrim","glass",20);mark("glassScrimHelp","glass",21,"help","glassScrim");
-            mark("reduceMotion","motion",10);mark("reduceMotionHelp","motion",11,"help","reduceMotion");mark("refreshMaterialButton","actions",10,"action");
+            mark("reduceMotion","motion",10);mark("reduceMotionHelp","motion",11,"help","reduceMotion");
+            mark("refreshMaterialButton","actions",10,"action");mark("fencesAppearanceResetDefaults","actions",20,"action");
         }else if(id=="activity"){
             group("recording","应用记录",10);group("metrics","资源采样",20);group("actions","",30);
             mark("activityRecordingEnabled","recording",10);mark("activityRecordingHelp","recording",11,"help","activityRecordingEnabled");
@@ -547,7 +609,7 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
             for(const QString &name:{"activityMetricsDetails","activityStorageDetails"}){
                 mark(name,"metrics",40,"detail");auto *w=page->findChild<QWidget*>(name);w->setProperty("settingsUiRow","metricsDetails");w->setProperty("settingsUiCollapsible",true);w->setProperty("settingsUiLabel","统计口径与存储说明");
             }
-            mark("activityHistoryDetails","actions",10,"action");
+            mark("activityHistoryDetails","actions",10,"action");mark("activitySamplingResetDefaults","actions",20,"action");
         }else{
             group("wallpaper","壁纸 · 修改后需应用",10);group("display","显示方式",20);group("apply","",30);group("theme","主题配色 · 按对应按钮立即执行",40);
             mark("wallpaperKind","wallpaper",10);mark("wallpaperPreview","wallpaper",20,"preview");
@@ -570,7 +632,11 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
 QWidget *FencesSettingsWindow::bridgePage(const QString &id) {openPage(id);return m_pages.value(id);}
 QJsonArray FencesSettingsWindow::bridgeCatalog() const {
     QJsonArray result;
-    for(int i=0;i<m_navigation->count();++i){auto *item=m_navigation->item(i);const QString id=item->data(Qt::UserRole).toString();if(!id.isEmpty()&&!id.startsWith("fence:"))result.append(QJsonObject{{"id",id},{"title",item->text().trimmed()},{"group","桌面"}});}
-    for(auto *fence:m_canvas->m_fences)if(fence)result.append(QJsonObject{{"id","fence:"+fence->fenceId()},{"title",fence->title()},{"group","分区"}});
+    for(int i=0;i<m_navigation->count();++i){auto *item=m_navigation->item(i);const QString id=item->data(Qt::UserRole).toString();if(!id.isEmpty()&&!id.startsWith("fence:")){
+        QJsonObject page{{"id",id},{"title",item->text().trimmed()},{"group","桌面"}};
+        if(QStringList{"monitor","clock","activity","music","calendar","sync"}.contains(id))page["parent"]="widgets";
+        result.append(page);
+    }}
+    for(auto *fence:m_canvas->m_fences)if(fence)result.append(QJsonObject{{"id","fence:"+fence->fenceId()},{"title",fence->title()},{"group","分区"},{"parent","layout"}});
     return result;
 }

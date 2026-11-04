@@ -23,9 +23,9 @@ LatinFamily=Noto Sans
 ; 通用字号；HeaderSize/CandidateSize 为 0 时继承这个值
 Size=15
 ; 顶部输入字母/辅助文字字号，0=继承 Size
-HeaderSize=15
+HeaderSize=0
 ; 候选词字号，0=继承 Size
-CandidateSize=15
+CandidateSize=0
 ; 候选拼音的小字号，0=按候选字号自动缩小
 PinyinSize=0
 ; 所有文字加粗：true / false

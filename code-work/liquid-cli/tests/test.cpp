@@ -431,12 +431,23 @@ private slots:
     void bridgeDiscardRebuildsSavedPreferences(){
         auto settings=config();Drawer drawer(settings,folder());
         LquiSettings::Bridge bridge("ai",[&](const QString &){return drawer.settingsBridgeRoot();},[]{return QJsonArray{QJsonObject{{"id","general"}}};});
-        const auto first=QJsonDocument::fromJson(bridge.Page("general").toUtf8()).object();QString id;
-        for(const auto &field:first["fields"].toArray())if(field.toObject()["name"]=="settingDirectory")id=field.toObject()["id"].toString();
+        const auto first=QJsonDocument::fromJson(bridge.Page("general").toUtf8()).object();QString id,widthId;
+        for(const auto &field:first["fields"].toArray()){
+            const auto item=field.toObject();
+            if(item["name"]=="settingDirectory")id=item["id"].toString();
+            if(item["name"]=="settingWidth")widthId=item["id"].toString();
+        }
         QVERIFY(!id.isEmpty());bridge.Set("general",id,QString::fromUtf8(QJsonDocument(QJsonObject{{"value","unsaved-path"}}).toJson()));
+        QVERIFY(!widthId.isEmpty());const int liveWidth=settings.width+20;
+        bridge.Set("general",widthId,QString::fromUtf8(QJsonDocument(QJsonObject{{"value",liveWidth}}).toJson()));
+        QCOMPARE(drawer.configuration().width,liveWidth);QCOMPARE(Settings::load(settings.file).width,liveWidth);
         bridge.Discard("general");const auto second=QJsonDocument::fromJson(bridge.Page("general").toUtf8()).object();
-        bool found=false;for(const auto &field:second["fields"].toArray())if(field.toObject()["name"]=="settingDirectory"){QCOMPARE(field.toObject()["value"].toString(),settings.directory);found=true;}
-        QVERIFY(found);
+        bool found=false,widthFound=false;for(const auto &field:second["fields"].toArray()){
+            const auto item=field.toObject();
+            if(item["name"]=="settingDirectory"){QCOMPARE(item["value"].toString(),settings.directory);found=true;}
+            if(item["name"]=="settingWidth"){QCOMPARE(item["value"].toInt(),liveWidth);widthFound=true;}
+        }
+        QVERIFY(found);QVERIFY(widthFound);
     }
     void dropBudgetUsesSerializedUtf8Bytes(){
         QMimeData mime;mime.setText(QString(1500000,QChar(0x4e2d)));QString error;
@@ -492,6 +503,35 @@ private slots:
         }
         QCOMPARE(d.configuration().width,620);const auto loaded=Settings::load(s.file);QCOMPARE(loaded.contextLimitK,128);QCOMPARE(loaded.idleStopMinutes,0);QCOMPARE(loaded.permissions,QString("workspace"));QVERIFY(!loaded.followLauncherMaterial);
         QVERIFY(d.findChild<QPushButton*>("contextButton")->text().contains("128K"));
+        dialog->close();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+    }
+    void immediateSettingsAndSafeDefaults(){
+        QString marker;auto s=config(&marker);s.width=610;s.height=860;s.model="saved-model";QVERIFY(s.save());const auto chatFolder=folder();
+        Conversation saved(chatFolder);saved.threadId="reset-must-preserve-thread";saved.append({"user","保留的历史",{}, {},0});QVERIFY(saved.save());
+        Drawer d(s,chatFolder);d.composer()->editor()->setPlainText("保留的草稿");d.Preferences();
+        QDialog *dialog=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="cliPreferences")dialog=qobject_cast<QDialog*>(w);QVERIFY(dialog);
+        auto *model=dialog->findChild<QComboBox*>("settingModel");QVERIFY(model);QTRY_VERIFY_WITH_TIMEOUT(model->findData("fixture-deep")>=0,10000);
+        QTRY_COMPARE_WITH_TIMEOUT(requests(marker,"model/list").size(),2,10000);const int discoveriesBefore=requests(marker,"model/list").size();
+        auto *width=dialog->findChild<QSlider*>("settingWidth");QVERIFY(width);width->setValue(680);
+        QCOMPARE(d.configuration().width,680);QCOMPARE(Settings::load(s.file).width,680);
+        width->setSliderDown(true);width->setValue(682);QTest::qWait(70);
+        QCOMPARE(d.configuration().width,682);QCOMPARE(Settings::load(s.file).width,680);
+        width->setSliderDown(false);QMetaObject::invokeMethod(width,"sliderReleased",Qt::DirectConnection);
+        QCOMPARE(Settings::load(s.file).width,682);
+        QCOMPARE(requests(marker,"model/list").size(),discoveriesBefore);QVERIFY(!d.client()->running());
+        auto *command=dialog->findChild<QLineEdit*>("settingCommand");auto *directory=dialog->findChild<QLineEdit*>("settingDirectory");QVERIFY(command);QVERIFY(directory);
+        auto *translation=dialog->findChild<QLineEdit*>("settingTranslationLanguage");QVERIFY(translation);
+        command->setText("unsubmitted-command");directory->setText("unsubmitted-directory");translation->setText("未提交语言");width->setValue(690);
+        QCOMPARE(d.configuration().command,s.command);QCOMPARE(d.configuration().directory,s.directory);
+        QCOMPARE(Settings::load(s.file).command,s.command);QCOMPARE(Settings::load(s.file).directory,s.directory);
+        QCOMPARE(Settings::load(s.file).translationLanguage,s.translationLanguage);
+        auto *restore=dialog->findChild<QPushButton*>("restoreAppearanceDefaults");QVERIFY(restore);restore->click();
+        const Settings defaults;
+        QCOMPARE(d.configuration().width,defaults.width);QCOMPARE(d.configuration().height,defaults.height);
+        QCOMPARE(d.configuration().command,s.command);QCOMPARE(d.configuration().directory,s.directory);QCOMPARE(d.configuration().model,s.model);
+        const auto loaded=Settings::load(s.file);QCOMPARE(loaded.width,defaults.width);QCOMPARE(loaded.command,s.command);QCOMPARE(loaded.directory,s.directory);QCOMPARE(loaded.model,s.model);
+        QCOMPARE(d.conversation().threadId,QString("reset-must-preserve-thread"));QCOMPARE(d.conversation().messages().size(),1);
+        QCOMPARE(d.composer()->text(),QString("保留的草稿"));
         dialog->close();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
     }
     void preferencesAnchorAndDelayedHelp(){

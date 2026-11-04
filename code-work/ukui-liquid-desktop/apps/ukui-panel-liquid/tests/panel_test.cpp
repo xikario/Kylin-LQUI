@@ -114,7 +114,22 @@ int main(int argc,char **argv) {
         check(panel.property("liquidPanelAttached").toBool(),"Qt style plugin attaches without panel source ABI");
         QObject *bridge=nullptr;for(auto *object:qApp->findChildren<QObject*>())if(QString::fromLatin1(object->metaObject()->className())=="LquiSettings::Bridge")bridge=object;
         check(bridge,"panel exposes settings bridge");
-        for(const QString &page:QStringList{"material","layout","material"}){QString encoded;check(QMetaObject::invokeMethod(bridge,"Page",Qt::DirectConnection,Q_RETURN_ARG(QString,encoded),Q_ARG(QString,page)),"settings bridge callable");const auto data=QJsonDocument::fromJson(encoded.toUtf8()).object();check(data["ok"].toBool()&&!data["fields"].toArray().isEmpty(),"all panel settings pages are exported");}
+        auto pageData=[bridge](const QString &page){
+            QString encoded;check(QMetaObject::invokeMethod(bridge,"Page",Qt::DirectConnection,Q_RETURN_ARG(QString,encoded),Q_ARG(QString,page)),"settings bridge callable");
+            return QJsonDocument::fromJson(encoded.toUtf8()).object();
+        };
+        auto fieldId=[&](const QString &page,const QString &name){
+            for(const auto &field:pageData(page)["fields"].toArray())if(field.toObject()["name"].toString()==name)return field.toObject()["id"].toString();
+            return QString();
+        };
+        auto setValue=[&](const QString &page,const QString &name,const QJsonValue &value){
+            const QString id=fieldId(page,name);if(id.isEmpty())return false;
+            const QString payload=QString::fromUtf8(QJsonDocument(QJsonObject{{"value",value}}).toJson(QJsonDocument::Compact));QString result;
+            return QMetaObject::invokeMethod(bridge,"Set",Qt::DirectConnection,Q_RETURN_ARG(QString,result),Q_ARG(QString,page),Q_ARG(QString,id),Q_ARG(QString,payload))
+                &&QJsonDocument::fromJson(result.toUtf8()).object()["ok"].toBool();
+        };
+        auto setField=[&](const QString &page,const QString &name,int value){return setValue(page,name,QJsonValue(value));};
+        for(const QString &page:QStringList{"material","layout","material"}){const auto data=pageData(page);check(data["ok"].toBool()&&!data["fields"].toArray().isEmpty(),"all panel settings pages are exported");}
         for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="liquidPanelSettings")check(!w->isVisible(),"central bridge does not show the old settings window");
 
         settle();
@@ -420,6 +435,18 @@ int main(int argc,char **argv) {
         clarity->setValue(60);strength->setValue(170);settle();saved.sync();
         check(qAbs(saved.value("appearance/clarity").toDouble()-.6)<.001 &&
               qAbs(saved.value("appearance/liquidStrength").toDouble()-1.7)<.001,"new material settings persist");
+        const int bridgeWrites=app.property("liquidPanelConfigWrites").toInt();
+        const int bridgeBatches=app.property("liquidPanelPreviewBatches").toInt();
+        const int bridgeBuilds=panel.property("liquidMaterialBuilds").toInt();
+        check(setField("material","liquidPanelClarity",65),"unified settings Set accepts a bounded panel material value");
+        check(app.property("liquidPanelPreviewBatches").toInt()==bridgeBatches+1
+                  &&app.property("liquidPanelConfigWrites").toInt()==bridgeWrites,
+              "unified settings Set flushes the live preview immediately and leaves persistence debounced");
+        settle();saved.sync();
+        check(qAbs(saved.value("appearance/clarity").toDouble()-.65)<.001
+                  &&panel.property("liquidMaterialBuilds").toInt()>bridgeBuilds,
+              "unified settings Set updates the real panel and persists the final value without a save action");
+        check(setField("material","liquidPanelClarity",60),"unified settings can restore the prior material value");settle();saved.sync();
         const int writes=app.property("liquidPanelConfigWrites").toInt();
         const int batches=app.property("liquidPanelPreviewBatches").toInt();
         for(int v=20;v<=60;++v)clarity->setValue(v);
@@ -480,6 +507,53 @@ int main(int argc,char **argv) {
         currentDialog->findChild<QTabBar *>("liquidPanelSettingsTabs")->setCurrentIndex(1);app.processEvents();
         currentDialog->grab().save("artifacts/panel-material/settings-layout.png");
         panel.findChild<QAbstractButton *>("liquidDialogClose")->click();settle();
+        saved.setValue("tray/hiddenOrder",QStringList{"network","volume"});
+        saved.setValue("user/personalPath","/home/tester/keep-this-path");saved.sync();
+        check(setField("material","liquidPanelClarity",45),"bridge stages customized clarity");
+        check(setField("material","liquidPanelShade",80),"bridge stages customized shade");
+        check(setValue("material","liquidPanelFollowWallpaper",false),"bridge stages wallpaper source behavior");
+        check(setValue("material","liquidPanelSeeThrough",false),"bridge stages window transmission");
+        check(setField("layout","liquidPanelRadius",12),"bridge stages taskbar corner radius");
+        check(setValue("layout","liquidPanelCentered",true),"bridge stages centered layout");
+        check(setValue("layout","liquidDockAutoExpand",true),"bridge stages Dock expansion");
+        check(setField("layout","liquidDockMaximumLength",90),"bridge stages Dock maximum length");
+        check(setValue("layout","liquidDockHoverMagnification",true),"bridge stages Dock magnification");
+        check(setValue("layout","liquidPanelReducedMotion",true),"bridge stages reduced motion");
+        check(setField("layout","liquidTrayMaxColumns",8),"bridge stages hidden tray columns");
+        const QString resetId=fieldId("layout","liquidPanelResetDefaults");
+        check(!resetId.isEmpty(),"unified settings exports the scoped panel defaults action");
+        QString resetResult;
+        check(QMetaObject::invokeMethod(bridge,"Activate",Qt::DirectConnection,Q_RETURN_ARG(QString,resetResult),
+                  Q_ARG(QString,QString("layout")),Q_ARG(QString,resetId))
+                  &&QJsonDocument::fromJson(resetResult.toUtf8()).object()["queued"].toBool(),
+              "unified settings can activate panel-scoped default restoration");
+        app.processEvents();settle();saved.sync();native.sync();
+        check(saved.value("appearance/materialStyle").toString()=="liquid"
+                  &&qAbs(saved.value("appearance/clarity").toDouble()-CohesiveGlass::Clarity)<.001
+                  &&qAbs(saved.value("appearance/opacity").toDouble()-CohesiveGlass::Tint)<.001
+                  &&qAbs(saved.value("appearance/chroma").toDouble()-CohesiveGlass::Chroma)<.001
+                  &&saved.value("appearance/followWallpaper").toBool()
+                  &&saved.value("appearance/seeThrough").toBool()
+                  &&!saved.value("appearance/reducedMotion").toBool(),
+              "restore action returns material and motion settings to CohesiveGlass defaults");
+        check(!saved.value("layout/panel1/centered",true).toBool()
+                  &&saved.value("layout/panel1/centeredLength").toInt()==68
+                  &&!saved.value("layout/panel1/autoExpand",true).toBool()
+                  &&saved.value("layout/panel1/maximumLength").toInt()==98
+                  &&saved.value("tray/maxColumns").toInt()==3
+                  &&app.property("liquidTrayMaxColumns").toInt()==3,
+              "restore action resets only the panel layout, Dock and hidden-tray defaults");
+        check(saved.value("tray/hiddenOrder").toStringList()==QStringList({"network","volume"})
+                  &&saved.value("user/personalPath").toString()=="/home/tester/keep-this-path"
+                  &&native.value("taskbar/apps/1/desktop").toString()=="preserve.desktop",
+              "restore action retains tray order, personal paths and fixed applications");
+        auto *restoredDialog=panel.findChild<QDialog *>("liquidPanelAppearanceDialog");
+        check(restoredDialog
+                  &&restoredDialog->findChild<QSlider *>("liquidPanelClarity")->value()==qRound(CohesiveGlass::Clarity*100)
+                  &&restoredDialog->findChild<QSlider *>("liquidPanelRadius")->value()==24
+                  &&!restoredDialog->findChild<QCheckBox *>("liquidPanelCentered")->isChecked()
+                  &&restoredDialog->findChild<QSlider *>("liquidTrayMaxColumns")->value()==3,
+              "restore action synchronizes the visible panel controls with persisted defaults");
         panel.resize(860,60);settle();
         check(!panel.mask().contains(QPoint(859,0)) && panel.mask().contains(QPoint(858,30)),"resize retains rounded ends");
         validatePhysicalShape();

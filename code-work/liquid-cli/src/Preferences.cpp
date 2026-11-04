@@ -19,6 +19,7 @@
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWindow>
 #include <memory>
@@ -115,7 +116,53 @@ void Drawer::Preferences() {
     auto *limit=number("压缩提示","settingContextLimit",settings.contextLimitK,32,765," K",1);
     auto *idle=number("模型后台休眠","settingIdleStop",settings.idleStopMinutes,0,240," 分钟");
     auto *resident=new QCheckBox("登录时常驻，点击小球立即打开",fields);resident->setObjectName("settingResident");resident->setChecked(ResidentStartup::enabled());form->addRow("界面常驻",resident);
-    auto *note=new QLabel("当前后台的模型与强度选择后即保存；切换后台及其他选项点“应用”。\n每个后台分别保留聊天、草稿与会话。",dialog);note->setObjectName("settingsNote");note->setWordWrap(true);layout->addWidget(note);
+    auto *note=new QLabel("外观与日常选项会即时保存。后台切换、CLI 命令、工作目录和权限请编辑完成后点“应用”。\n每个后台分别保留聊天、草稿与会话。",dialog);note->setObjectName("settingsNote");note->setWordWrap(true);layout->addWidget(note);
+    auto savedResident=std::make_shared<bool>(resident->isChecked());
+    auto appliedTranslation=std::make_shared<QString>(settings.translationLanguage);
+    auto immediateDirty=std::make_shared<bool>(false);
+    auto applyingImmediate=std::make_shared<bool>(false);
+    auto *previewTimer=new QTimer(dialog);previewTimer->setSingleShot(true);previewTimer->setInterval(40);
+    auto *saveTimer=new QTimer(dialog);saveTimer->setSingleShot(true);saveTimer->setInterval(180);
+    const auto collectImmediate=[=]{
+        auto next=settings;
+        next.width=width->value();next.height=height->value();next.animation=animation->currentData().toString();next.animationMs=duration->value();
+        next.followLauncherMaterial=sharedMaterial->isChecked();next.hideDelay=delay->value();next.liquid=liquid->value();next.darken=darken->value();next.fontSize=font->value();
+        next.translationLanguage=*appliedTranslation;next.contextLimitK=limit->value();next.idleStopMinutes=idle->value();next.residentOnLogin=resident->isChecked();next.normalize();return next;
+    };
+    const auto immediateEqual=[](const Settings &a,const Settings &b){
+        return a.width==b.width&&a.height==b.height&&a.animation==b.animation&&a.animationMs==b.animationMs&&
+            a.followLauncherMaterial==b.followLauncherMaterial&&a.hideDelay==b.hideDelay&&a.liquid==b.liquid&&a.darken==b.darken&&
+            a.fontSize==b.fontSize&&a.translationLanguage==b.translationLanguage&&a.contextLimitK==b.contextLimitK&&
+            a.idleStopMinutes==b.idleStopMinutes&&a.residentOnLogin==b.residentOnLogin;
+    };
+    const auto commitImmediate=[=](bool persist){
+        if(*applyingImmediate)return;
+        auto next=collectImmediate();
+        const bool changed=!immediateEqual(next,settings);
+        if(changed){*immediateDirty=true;applySettings(next);}
+        if(!persist||(!*immediateDirty&&next.residentOnLogin==*savedResident))return;
+        QString startupError;
+        const bool startupChanged=next.residentOnLogin!=*savedResident;
+        const bool startupOk=!startupChanged||ResidentStartup::save(next.residentOnLogin,&startupError);
+        if(startupOk&&startupChanged)*savedResident=next.residentOnLogin;
+        QString error;
+        if(!next.save(&error))note->setText("已即时生效，但设置文件保存失败："+error);
+        else if(!startupOk)note->setText("其他日常设置已即时保存；登录常驻保存失败："+startupError);
+        else {note->setText("外观与日常设置已即时应用并保存。");*immediateDirty=false;}
+    };
+    const auto applyImmediate=[=]{
+        if(*applyingImmediate)return;
+        const auto next=collectImmediate();if(immediateEqual(next,settings)&&!*immediateDirty)return;
+        *immediateDirty=true;
+        const QList<QSlider*> liveSliders{width,height,duration,delay,liquid,darken,font,limit,idle};
+        bool dragging=false;for(auto *slider:liveSliders)dragging|=slider->isSliderDown();
+        if(dragging){if(!previewTimer->isActive())previewTimer->start();saveTimer->start();return;}
+        previewTimer->stop();saveTimer->stop();commitImmediate(true);
+    };
+    connect(previewTimer,&QTimer::timeout,dialog,[=]{commitImmediate(false);});
+    connect(saveTimer,&QTimer::timeout,dialog,[=]{commitImmediate(true);});
+    for(auto *slider:QList<QSlider*>{width,height,duration,delay,liquid,darken,font,limit,idle})
+        connect(slider,&QSlider::sliderReleased,dialog,[=]{previewTimer->stop();saveTimer->stop();commitImmediate(true);});
 
     struct Catalog {QJsonArray models;QString model,effort;bool ready=false;};auto catalog=std::make_shared<Catalog>();
     auto probe=std::make_shared<QPointer<AgentClient>>();
@@ -168,6 +215,12 @@ void Drawer::Preferences() {
         const auto values=effort->property("efforts").toStringList();
         effortLabel->setText(value==0?(effort->property("defaultEffort").toString().isEmpty()?"跟随":"默认 "+effort->property("defaultEffort").toString()):values.value(value));saveModel();
     });
+    for(auto *slider:QList<QSlider*>{width,height,duration,delay,liquid,darken,font,limit,idle})
+        connect(slider,&QSlider::valueChanged,dialog,[=]{applyImmediate();});
+    connect(animation,QOverload<int>::of(&QComboBox::activated),dialog,[=]{applyImmediate();});
+    connect(sharedMaterial,&QCheckBox::toggled,dialog,[=]{applyImmediate();});
+    connect(translation,&QLineEdit::editingFinished,dialog,[=]{*appliedTranslation=translation->text();applyImmediate();});
+    connect(resident,&QCheckBox::toggled,dialog,[=]{applyImmediate();});
     const auto resetBackend=[=]{
         modelReference->hide();
         refresh->setEnabled(true);model->setEnabled(true);
@@ -208,6 +261,17 @@ void Drawer::Preferences() {
         collectSelection();draft->selectBackend(backendChoice->currentData().toString());resetBackend();refresh->click();
     });
     resetBackend();
+    auto *restoreDefaults=new QPushButton("恢复外观与日常设置默认值",dialog);restoreDefaults->setObjectName("restoreAppearanceDefaults");layout->addWidget(restoreDefaults,0,Qt::AlignLeft);
+    connect(restoreDefaults,&QPushButton::clicked,dialog,[=]{
+        const Settings defaults;
+        previewTimer->stop();saveTimer->stop();
+        *applyingImmediate=true;
+        width->setValue(defaults.width);height->setValue(defaults.height);animation->setCurrentIndex(animation->findData(defaults.animation));duration->setValue(defaults.animationMs);
+        delay->setValue(defaults.hideDelay);sharedMaterial->setChecked(defaults.followLauncherMaterial);liquid->setValue(defaults.liquid);darken->setValue(defaults.darken);
+        font->setValue(defaults.fontSize);translation->setText(defaults.translationLanguage);*appliedTranslation=defaults.translationLanguage;limit->setValue(defaults.contextLimitK);idle->setValue(defaults.idleStopMinutes);
+        resident->setChecked(defaults.residentOnLogin);
+        *applyingImmediate=false;applyImmediate();
+    });
     auto *clear=new QPushButton("清空聊天记录并开始新对话…",dialog);clear->setObjectName("clearConversation");layout->addWidget(clear,0,Qt::AlignLeft);
     connect(clear,&QPushButton::clicked,dialog,[this,dialog,note]{
         const bool hidden=!dialog->isVisible();
@@ -225,7 +289,9 @@ void Drawer::Preferences() {
         next.followLauncherMaterial=sharedMaterial->isChecked();next.residentOnLogin=resident->isChecked();next.hideDelay=delay->value();next.liquid=liquid->value();next.darken=darken->value();next.fontSize=font->value();
         next.translationLanguage=translation->text();next.directory=directory->text();next.command=command->text();next.permissions=permissions->currentData().toString();next.contextLimitK=limit->value();next.idleStopMinutes=idle->value();next.normalize();
         if(backend->busy()&&(next.backend!=settings.backend||next.command!=settings.command||next.directory!=settings.directory||next.permissions!=settings.permissions)){note->setText("请先停止当前回复，再更改后台、命令、目录或权限。");return;}
-        QString error;if(!ResidentStartup::save(resident->isChecked(),&error)){note->setText("启动项保存失败："+error);return;}if(!next.save(&error)){note->setText("保存失败："+error);return;}applySettings(next);updateModelStatus();note->setText("已应用并保存。");
+        QString error;if(!ResidentStartup::save(resident->isChecked(),&error)){note->setText("启动项保存失败："+error);return;}if(!next.save(&error)){note->setText("保存失败："+error);return;}
+        previewTimer->stop();saveTimer->stop();*immediateDirty=false;*savedResident=resident->isChecked();*appliedTranslation=next.translationLanguage;
+        applySettings(next);updateModelStatus();note->setText("已应用并保存。");
     });
     connect(buttons->button(QDialogButtonBox::Close),&QPushButton::clicked,dialog,&QDialog::close);
     for(auto *surface:QList<QWidget*>{fields,scroll->viewport()}) {
@@ -262,6 +328,7 @@ void Drawer::Preferences() {
     }
     describe(refresh,"刷新模型","读取 CLI 模型和可用强度；ACP 会创建临时会话，不发送消息。");
     describe(clear,"开始新对话","清空聊天记录和附图；操作前会再次确认。");
+    describe(restoreDefaults,"恢复默认","恢复 AI 小站外观与日常选项的程序默认值，并立即保存。保留账号配置、后台、命令、工作目录、权限、模型选择和全部聊天记录。");
     describe(buttons->button(QDialogButtonBox::Apply),"应用","保存并应用窗口、外观和会话设置。");
     describe(buttons->button(QDialogButtonBox::Close),"关闭","关闭设置，保留已应用的选项。");
     for(const auto &item:QList<QPair<QString,QString>>{{"liquidDialogClose","关闭设置"},{"liquidDialogMinimize","最小化设置"},{"liquidDialogTitle","拖动标题栏可移动设置窗。"}})

@@ -78,6 +78,16 @@ with tempfile.TemporaryDirectory(prefix='lqui-module-fixture-') as folder:
                             switched=call(module,'Set',[page['id'],field['id'],json.dumps({'value':index})])
                             assert switched.get('ok'),(module,page,'tab failed',switched)
                             report[module][page['id']].setdefault('tabFields',[]).append(len(switched['fields']))
+            if module=='input':
+                current=call(module,'Page',['general']);background=next(f for f in current['fields'] if f.get('name')=='previewBackground')
+                frames=[]
+                for index in range(len(background['options'])):
+                    changed=call(module,'Set',['general',background['id'],json.dumps({'value':index})])
+                    assert changed.get('ok'),changed.get('error')
+                    frames.append(next(f['value'] for f in changed['fields'] if f.get('name')=='settingsPreview'))
+                assert len(frames)==5 and all(frames) and len(set(frames))==5,'each background must update the image in the Set reply'
+                call(module,'Set',['general',background['id'],json.dumps({'value':background['value']})])
+                report[module]['general']['previewBackgrounds']=5;report[module]['general']['previewUpdatedInSetReply']=True
             if module=='space':
                 interface=QtDBus.QDBusInterface(service,'/aiSpace',service,QtDBus.QDBusConnection.sessionBus());state=json.loads(interface.call('status').arguments()[0]);assert not state['visible'];assert not state['indexBusy'];assert not state.get('indexLoading',False)
                 response=interface.call('showWindow');assert response.type()!=QtDBus.QDBusMessage.ErrorMessage

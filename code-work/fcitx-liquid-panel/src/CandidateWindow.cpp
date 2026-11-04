@@ -108,7 +108,11 @@ void CandidateWindow::setPreviewBackground(int mode) {
     if(!m_preview)return;
     capture=[mode](QRect rect) {
         QImage image(rect.size(),QImage::Format_RGB32); QPainter p(&image);
-        if(mode==1 || mode==2) {p.fillRect(image.rect(),mode==1?QColor(250,250,250):QColor(35,35,35));return image;}
+        if(mode>0) {
+            const QColor colors[]={QColor(38,54,74),QColor(250,250,250),QColor(222,222,222),QColor(112,112,112),QColor(0,0,0)};
+            p.fillRect(image.rect(),colors[qBound(1,mode,4)]);
+            return image;
+        }
         QLinearGradient gradient(0,0,image.width(),image.height());
         gradient.setColorAt(0,QColor(47,87,121)); gradient.setColorAt(.48,QColor(154,113,158));
         gradient.setColorAt(1,QColor(38,116,133)); p.fillRect(image.rect(),gradient);

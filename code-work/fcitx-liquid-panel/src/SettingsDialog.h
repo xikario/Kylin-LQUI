@@ -16,7 +16,8 @@ signals:
 private:
     bool eventFilter(QObject *,QEvent *) override;
     void populate();
-    void changed();
+    void changed(bool coalescePreview=false);
+    void flushPreview();
     CandidateWindow &m_live;
     CandidateConfig m_draft;
     CandidateWindow *m_preview=nullptr;

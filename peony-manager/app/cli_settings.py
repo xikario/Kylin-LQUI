@@ -1,7 +1,10 @@
 """User-owned, atomically saved configuration for the lazy native CLI panel."""
 import json
 import os
+import fcntl
+from contextlib import contextmanager
 from pathlib import Path
+import re
 import shlex
 import shutil
 import tempfile
@@ -9,16 +12,51 @@ import tempfile
 BASE = Path(__file__).resolve().parent.parent
 FILE_NAME = "libpeony-cli-panel.so"
 BUILD = BASE / "plugins" / "peony-cli-panel" / "build"
+REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
+MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$")
 
 
 def config_path():
     return Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "peony-manager" / "cli-profiles.json"
 
 
+def lock_path():
+    return Path(str(config_path()) + ".lock")
+
+
+@contextmanager
+def _config_lock(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "r+") as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+def _codex_executable():
+    return shutil.which("codex") or str(Path.home() / ".local/bin/codex")
+
+
+def _model_args(model, reasoning_effort):
+    args = []
+    if model:
+        args.extend(("--model", model))
+    if reasoning_effort:
+        args.extend(("--config", 'model_reasoning_effort="%s"' % reasoning_effort))
+    return args
+
+
 def defaults():
-    program = shutil.which("codex") or str(Path.home() / ".local/bin/codex")
+    program = _codex_executable()
+    command = shlex.quote(program)
     return {"version": 1, "enabled": True, "name": "Codex CLI",
-            "menuLabel": "在此打开 Codex CLI", "command": shlex.quote(program),
+            "menuLabel": "在此打开 Codex CLI", "command": command,
+            "managedCommand": command, "codexExecutable": program,
+            "model": "", "reasoningEffort": "", "modelArgs": [], "modelArgsApplicable": True,
             "widthPercent": 40, "fontSize": 11, "historyLines": 2000,
             "defaultVisible": False, "closeWithWindow": True, "followSystemFont": True,
             "fontFamily": "Sarasa Fixed SC", "contentPadding": 10}
@@ -42,6 +80,19 @@ def validate(raw):
     if family not in ("Sarasa Fixed SC", "Noto Sans Mono CJK SC"):
         raise ValueError("请选择可用的终端字体")
     result["fontFamily"] = family
+    model = raw.get("model", result["model"])
+    if not isinstance(model, str) or len(model) > 128 or "\0" in model:
+        raise ValueError("model 必须是空值或有效的模型标识")
+    model = model.strip()
+    if model and not MODEL_ID.fullmatch(model):
+        raise ValueError("model 必须是空值或由字母、数字、点、下划线、冒号、斜线、加号和连字符组成的模型标识")
+    result["model"] = model
+    effort = raw.get("reasoningEffort", result["reasoningEffort"])
+    if not isinstance(effort, str) or effort not in ("",) + REASONING_EFFORTS:
+        raise ValueError("reasoningEffort 必须为空或 none/minimal/low/medium/high/xhigh/max/ultra")
+    result["reasoningEffort"] = effort
+    result["modelArgs"] = _model_args(model, effort)
+    result["modelArgsApplicable"] = result["command"] == result["managedCommand"]
     for key in ("enabled", "followSystemFont"):
         if key in raw:
             if type(raw[key]) is not bool:
@@ -53,16 +104,18 @@ def validate(raw):
     return result
 
 
-def read():
-    path = config_path()
+def _read_unlocked(path):
     if not path.exists():
         return defaults()
     return validate(json.loads(path.read_text(encoding="utf-8")))
 
 
-def save(raw):
-    result = validate(raw)
-    path = config_path()
+def read():
+    # Atomic replacement means a lock-free read sees either complete version.
+    return _read_unlocked(config_path())
+
+
+def _write_unlocked(path, result):
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp = tempfile.mkstemp(prefix=".cli-", suffix=".json", dir=str(path.parent))
     try:
@@ -76,6 +129,30 @@ def save(raw):
         if os.path.exists(temp):
             os.unlink(temp)
     return result
+
+
+def save(raw):
+    path = config_path()
+    with _config_lock(path):
+        candidate = dict(raw) if isinstance(raw, dict) else raw
+        if isinstance(candidate, dict) and path.exists():
+            # Older Peony pages submit their known fields only. Keep the new model
+            # preferences unless the caller explicitly sends an empty value.
+            previous = _read_unlocked(path)
+            for key in ("model", "reasoningEffort"):
+                if key not in candidate:
+                    candidate[key] = previous[key]
+        return _write_unlocked(path, validate(candidate))
+
+
+def update(changes):
+    if not isinstance(changes, dict):
+        raise ValueError("更新内容必须是对象")
+    path = config_path()
+    with _config_lock(path):
+        current = _read_unlocked(path)
+        current.update(changes)
+        return _write_unlocked(path, validate(current))
 
 
 def status():

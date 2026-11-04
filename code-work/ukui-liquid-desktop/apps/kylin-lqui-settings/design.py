@@ -71,17 +71,18 @@ class NavigationDelegate(QtWidgets.QStyledItemDelegate):
     def sizeHint(self,option,index):
         width=option.widget.viewport().width() if isinstance(option.widget,QtWidgets.QAbstractItemView) else 180
         font=QtGui.QFont(option.font);font.setBold(True);metrics=QtGui.QFontMetrics(font)
-        available=max(40,width-4-10-31-(17 if index.data(QtCore.Qt.UserRole+2) else 8)-1)
+        extra=16 if index.data(QtCore.Qt.UserRole+4)==2 else 0
+        available=max(40,width-4-10-31-extra-(17 if index.data(QtCore.Qt.UserRole+2) or index.data(QtCore.Qt.UserRole+5) else 8)-1)
         bounds=metrics.boundingRect(QtCore.QRect(0,0,available,10000),QtCore.Qt.TextWordWrap,navigation_text(index.data()))
         return QtCore.QSize(140,max(32 if index.data(QtCore.Qt.UserRole+1) else 36,metrics.height()+14,bounds.height()+12))
     def paint(self,painter,option,index):
         painter.save();painter.setRenderHint(QtGui.QPainter.Antialiasing)
-        rect=option.rect.adjusted(2,2,-2,-2);key=index.data(QtCore.Qt.UserRole) or '';module=key.split(':')[0];child=index.data(QtCore.Qt.UserRole+1);group=index.data(QtCore.Qt.UserRole+2)
+        rect=option.rect.adjusted(2,2,-2,-2);key=index.data(QtCore.Qt.UserRole) or '';module=key.split(':')[0];child=index.data(QtCore.Qt.UserRole+1);group=index.data(QtCore.Qt.UserRole+2) or index.data(QtCore.Qt.UserRole+5)
         selected=bool(option.state&QtWidgets.QStyle.State_Selected);hover=bool(option.state&QtWidgets.QStyle.State_MouseOver)
         if selected or hover:painter.setPen(QtCore.Qt.NoPen);painter.setBrush(QtGui.QColor('#DCEBFF' if selected else '#F0F3F8'));painter.drawRoundedRect(rect,6,6)
         left=rect.left()+10
         if not child:icon(module).paint(painter,QtCore.QRect(left,rect.center().y()-11,22,22));left+=31
-        else:left+=30
+        else:left+=46 if index.data(QtCore.Qt.UserRole+4)==2 else 30
         text=navigation_text(index.data())
         font=option.font;font.setBold(selected);painter.setFont(font);painter.setPen(QtGui.QColor('#095DB5' if selected else '#1D1D1F'))
         painter.drawText(QtCore.QRect(left,rect.top(),rect.right()-left-(17 if group else 8),rect.height()),QtCore.Qt.AlignVCenter|QtCore.Qt.TextWordWrap,text)

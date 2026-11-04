@@ -3,6 +3,45 @@ from collections import Counter
 from copy import deepcopy
 import json
 import math
+import re
+from html.parser import HTMLParser
+
+
+class _HelpText(HTMLParser):
+    def __init__(self):super().__init__(convert_charrefs=True);self.parts=[];self.hidden=0
+    def handle_starttag(self,tag,attrs):
+        if tag in ('script','style'):self.hidden+=1
+        elif tag in ('br','p','div','li') and not self.hidden:self.parts.append('\n')
+    def handle_endtag(self,tag):
+        if tag in ('script','style'):self.hidden=max(0,self.hidden-1)
+        elif tag in ('p','div','li') and not self.hidden:self.parts.append('\n')
+    def handle_data(self,data):
+        if not self.hidden:self.parts.append(data)
+
+
+def plain_help(value):
+    text=str(value or '')
+    if not re.search(r'</?(?:b|br|p|div|span|strong|em|i|ul|li|a|script|style)(?:\s|/?>)',text,re.I):return text
+    parser=_HelpText();parser.feed(text)
+    return '\n'.join(line.strip() for line in ''.join(parser.parts).splitlines() if line.strip())
+
+
+def navigation_pages(module,pages):
+    """Known desktop subpages nest under their real, still-selectable page."""
+    available={p['id'] for p in pages};parents={}
+    for page in pages:
+        key=page['id'];parent=''
+        if module=='fences':
+            if key.startswith('fence:') or page.get('group')=='分区':parent='layout'
+            elif key in ('monitor','clock','activity','music','calendar','sync'):parent='widgets'
+        parents[key]=parent if parent in available and parent!=key else ''
+    ordered=[]
+    for page in pages:
+        if parents[page['id']]:continue
+        children=[p for p in pages if parents[p['id']]==page['id']]
+        ordered.append((page,'',bool(children)))
+        ordered.extend((child,page['id'],False) for child in children)
+    return ordered
 
 ROLES = {'control', 'label', 'help', 'detail', 'warning', 'status', 'heading', 'preview', 'action'}
 COMPONENTS = {'auto', 'file-picker', 'preview', 'plugin-row'}
@@ -95,6 +134,11 @@ def normalize_page(data, module='', page='', instance=0):
     names = Counter(f.get('name') for f in fields if isinstance(f.get('name'), str) and f.get('name'))
     known_groups = {g['key'] for g in definitions}
     for index, field in enumerate(fields):
+        field['help']=plain_help(field.get('help',''))
+        # Tooltip authors often repeat the already-visible field caption.
+        lines=field['help'].splitlines()
+        if len(lines)>1 and lines[0].strip()==str(field.get('label','')).strip():field['help']='\n'.join(lines[1:])
+        if field.get('kind') in ('note','heading'):field['value']=plain_help(field.get('value',''))
         if not isinstance(field.get('name',''),str):field['name']=''
         if not isinstance(field.get('kind'),str):field['kind']='unsupported'
         field['_ui'] = _field_ui(field, names, known_groups, index, errors) if valid else {}

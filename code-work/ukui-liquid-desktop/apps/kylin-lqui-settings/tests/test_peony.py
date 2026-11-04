@@ -24,7 +24,7 @@ class TestPeony(unittest.TestCase):
         self.temp.cleanup()
     def test_all_cli_controls_round_trip(self):
         before=adapter.cli_settings.read();page=adapter.page('terminal')
-        self.assertEqual(len([f for f in page['fields'] if f['id'].startswith('cli:')]),10)
+        self.assertEqual(len([f for f in page['fields'] if f['id'].startswith('cli:')]),12)
         adapter.set_value('terminal','cli:fontSize',json.dumps({'value':14.0}))
         after=adapter.cli_settings.read();self.assertEqual(after['fontSize'],14);before['fontSize']=14;self.assertEqual(before,after)
         mode=adapter.cli_settings.config_path().stat().st_mode
@@ -38,4 +38,23 @@ class TestPeony(unittest.TestCase):
     def test_choices_validate(self):
         adapter.set_value('terminal','cli:fontFamily',json.dumps({'value':1}));self.assertEqual(adapter.cli_settings.read()['fontFamily'],'Noto Sans Mono CJK SC')
         with self.assertRaises(ValueError):adapter.set_value('terminal','cli:fontFamily',json.dumps({'value':99}))
+    def test_terminal_defaults_preserve_command_and_identity(self):
+        data=adapter.cli_settings.read();data.update(command='custom-cli --profile personal',name='我的终端',enabled=False,fontSize=20,widthPercent=60)
+        adapter.cli_settings.save(data);adapter.activate('terminal','restore-terminal-defaults')
+        after=adapter.cli_settings.read()
+        for key in ('command','name','enabled'):self.assertEqual(after[key],data[key])
+        for key in ('fontSize','widthPercent'):self.assertEqual(after[key],adapter.cli_settings.defaults()[key])
+    def test_file_defaults_never_reset_plugin_selection(self):
+        keys={'show-hidden-file':True,'disabled-extensions':['personal.so']}
+        with patch.object(adapter.gsettings_store,'get_all',return_value={'settings':keys,'errors':None}),patch.object(adapter.gsettings_store,'reset_boolean_defaults') as reset:
+            adapter.activate('general','restore-file-defaults');reset.assert_called_once_with(['show-hidden-file'])
+        with self.assertRaises(ValueError):adapter.activate('plugins','restore-file-defaults')
+    def test_model_preferences_roundtrip_and_survive_appearance_reset(self):
+        adapter.set_value('terminal','cli:model',json.dumps({'value':1}))
+        adapter.set_value('terminal','cli:reasoningEffort',json.dumps({'value':6}))
+        adapter.activate('terminal','restore-terminal-defaults')
+        data=adapter.cli_settings.read();self.assertEqual(data['model'],'gpt-6-luna');self.assertEqual(data['reasoningEffort'],'xhigh')
+        adapter.set_value('terminal','cli:model',json.dumps({'value':'custom-model'}));self.assertEqual(adapter.cli_settings.read()['model'],'custom-model')
+        for bad in (True,99,'xhigh'):
+            with self.assertRaises(ValueError):adapter.set_value('terminal','cli:reasoningEffort',json.dumps({'value':bad}))
 if __name__=='__main__':unittest.main()

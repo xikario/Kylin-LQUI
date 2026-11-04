@@ -13,6 +13,10 @@
 #include <string>
 #include <vector>
 
+#ifndef PEONY_CLI_SYSTEMD_RUN
+#define PEONY_CLI_SYSTEMD_RUN "/usr/bin/systemd-run"
+#endif
+
 static bool validUnit(const std::string &unit) {
     if (unit.size() != 48 || unit.substr(0, 10) != "peony-cli-" || unit.substr(42) != ".scope") return false;
     return unit.find_first_not_of("0123456789abcdef", 10) == 42;
@@ -46,8 +50,9 @@ static int stopUnit(const char *unit) {
     kill(child, SIGKILL); waitpid(child, &status, 0); return 1;
 }
 int main(int argc, char **argv) {
-    if (argc != 5) return 2;
+    if (argc < 5) return 2;
     if (std::strcmp(argv[1], "--run") == 0) {
+        if (argc != 5) return 2;
         const std::string unit(argv[2]), cwd = unhex(argv[3]), command = unhex(argv[4]);
         if (!validUnit(unit) || cwd.empty() || command.empty()) return 2;
         if (chdir(cwd.c_str()) != 0) { perror("无法进入工作目录"); return 1; }
@@ -56,7 +61,31 @@ int main(int argc, char **argv) {
               "--", "/bin/bash", "-lc", command.c_str(), static_cast<char *>(nullptr));
         perror("无法启动终端会话"); return 1;
     }
-    if (std::strcmp(argv[1], "--guard") != 0 || !validUnit(argv[4])) return 2;
+    if (std::strcmp(argv[1], "--run-argv") == 0) {
+        const std::string unit(argv[2]), cwd = unhex(argv[3]);
+        if (!validUnit(unit) || cwd.empty()) return 2;
+        std::vector<std::string> values;
+        values.reserve(static_cast<size_t>(argc - 4));
+        for (int i = 4; i < argc; ++i) {
+            const std::string value = unhex(argv[i]);
+            if (value.empty()) return 2;
+            values.push_back(value);
+        }
+        if (chdir(cwd.c_str()) != 0) { perror("无法进入工作目录"); return 1; }
+        std::vector<std::string> command{
+            "/usr/bin/systemd-run", "--user", "--scope", "--quiet", "--collect",
+            "--property=TimeoutStopSec=2s", "--property=KillMode=control-group", "--unit", unit, "--"
+        };
+        command.insert(command.end(), {"/bin/bash", "-lc", "exec \"$@\"", "peony-cli"});
+        command.insert(command.end(), values.begin(), values.end());
+        std::vector<char *> arguments;
+        arguments.reserve(command.size() + 1);
+        for (auto &value : command) arguments.push_back(const_cast<char *>(value.c_str()));
+        arguments.push_back(nullptr);
+        execv(PEONY_CLI_SYSTEMD_RUN, arguments.data());
+        perror("无法启动终端会话"); return 1;
+    }
+    if (std::strcmp(argv[1], "--guard") != 0 || argc != 5 || !validUnit(argv[4])) return 2;
     const int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return 1;
     struct sockaddr_un address{};

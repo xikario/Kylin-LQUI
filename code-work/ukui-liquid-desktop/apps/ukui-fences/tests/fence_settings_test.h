@@ -58,6 +58,8 @@ static int runFenceSettingsTest(const QString &root)
     settle(100);
     auto *fence = canvas.createFence("合并设置回归",QRect(100,100,420,300));
     auto *other = canvas.createFence("另一个分区",QRect(650,100,420,300));
+    const QColor defaultFenceColor=fence->fenceColor();
+    const QString defaultFenceIcon=fence->titleIconPath();
     check(!fence->titleIconPath().isEmpty() && !QIcon(fence->titleIconPath()).pixmap(24,24).isNull(),
           "new fence has a usable default icon without external assets");
     const auto byId=[](DesktopCanvas &desktop,const QString &id)->FenceWidget * {
@@ -250,6 +252,19 @@ static int runFenceSettingsTest(const QString &root)
         auto *loaded=byId(restored,fence->fenceId());
         check(loaded && !loaded->hasTitleIcon(),"cleared system icon stays cleared after reload");
     }
+    const QString userIconPath=iconRoot+"/fixture-other/32x32/places/fixture-shared.png";
+    fence->setTitle("保留的分区名称");fence->setLocked(true);fence->setFenceColor(QColor("#cc335577"));
+    fence->setLiquidGlassEnabled(true);fence->setTitleIconPath(userIconPath);
+    auto *resetAppearance=page()->findChild<QPushButton *>("fenceAppearanceResetDefaults");
+    check(resetAppearance,"per-fence page exposes a scoped appearance reset");
+    if(resetAppearance)resetAppearance->click();
+    check(fence->fenceColor()==defaultFenceColor && fence->titleIconPath()==defaultFenceIcon
+              &&fence->titleIconThemeName().isEmpty()&&!fence->liquidGlassEnabled(),
+          "per-fence appearance reset restores theme color, glass default and assigned built-in icon");
+    check(fence->title()=="保留的分区名称"&&fence->locked()&&fence->geometry()==originalGeometry
+              &&fence->items().size()==1&&fence->items().first().filePath==filePath
+              &&QFileInfo::exists(filePath)&&QFileInfo::exists(userIconPath),
+          "per-fence appearance reset keeps its name, lock, files and position without deleting user icons");
     QIcon::setThemeSearchPaths(oldRoots);QIcon::setFallbackSearchPaths(oldFallbackRoots);
     QIcon::setFallbackThemeName(oldFallback);QIcon::setThemeName(oldTheme);
     window->close();settle(200);

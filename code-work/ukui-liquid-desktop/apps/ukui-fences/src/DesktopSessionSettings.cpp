@@ -16,7 +16,7 @@
 
 QWidget *createDesktopSessionSettings(DesktopCanvas *canvas,QWidget *parent) {
     auto *page=new QWidget(parent);page->setObjectName("desktopSessionSettings");auto *layout=new QVBoxLayout(page);layout->setContentsMargins(0,0,0,0);
-    auto *intro=new QLabel("现在这项是“限时体验”，不是永久替换系统。点击后暂时关闭原生桌面，由 Fences 单独显示文件和组件；已打开的应用和文件管理窗口继续使用。",page);intro->setWordWrap(true);layout->addWidget(intro);
+    auto *intro=new QLabel("调试专用，非调试请勿开启。此操作仅用于排查桌面接管问题：会暂时关闭原生桌面，由 Fences 单独显示文件和组件。正常使用不需要开启；已打开的应用和文件管理窗口继续使用。",page);intro->setObjectName("desktopSessionWarning");intro->setProperty("settingsUiRole","warning");intro->setWordWrap(true);layout->addWidget(intro);
     auto *recovery=new QLabel("60 秒后会自动恢复，也可以提前点“立即恢复”。这不会卸载 UKUI、不会注销，也不会改变下次开机的启动方式。",page);recovery->setWordWrap(true);layout->addWidget(recovery);
     auto *login=new QLabel("正在读取登录桌面配置…",page);login->setObjectName("desktopLoginProvider");login->setWordWrap(true);login->setTextFormat(Qt::PlainText);layout->addWidget(login);
     auto *query=new QProcess(page);
@@ -29,8 +29,8 @@ QWidget *createDesktopSessionSettings(DesktopCanvas *canvas,QWidget *parent) {
     QObject::connect(query,&QProcess::errorOccurred,page,[=](QProcess::ProcessError){login->setText("登录桌面配置暂时无法读取。");});
     query->start("/usr/bin/gsettings",{"get","org.ukui.session.required-components","filemanager"});
     QTimer::singleShot(3000,query,[query]{if(query->state()!=QProcess::NotRunning)query->kill();});
-    auto *status=new QLabel("当前：正常使用模式，尚未开始限时体验",page);status->setObjectName("desktopSessionStatus");status->setWordWrap(true);status->setTextFormat(Qt::PlainText);layout->addWidget(status);
-    auto *trial=new QPushButton("体验 Fences 单独桌面 · 60 秒",page);trial->setObjectName("desktopSessionTrial");layout->addWidget(trial);
+    auto *status=new QLabel("当前：正常使用模式，未启动调试",page);status->setObjectName("desktopSessionStatus");status->setWordWrap(true);status->setTextFormat(Qt::PlainText);layout->addWidget(status);
+    auto *trial=new QPushButton("仅调试：临时接管桌面 60 秒",page);trial->setObjectName("desktopSessionTrial");layout->addWidget(trial);
     auto *restore=new QPushButton("立即恢复原生桌面",page);restore->setObjectName("desktopSessionRestore");layout->addWidget(restore);
     const QString installed=QDir(QCoreApplication::applicationDirPath()).absoluteFilePath("../libexec/ukui-liquid-desktop/session_bridge.py");
     const QString helper=QFileInfo::exists(installed)?installed:QStringLiteral(UKUI_LIQUID_SESSION_HELPER_PATH);

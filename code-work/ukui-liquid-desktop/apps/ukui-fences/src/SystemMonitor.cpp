@@ -1408,6 +1408,48 @@ void SystemMonitor::setSkin(Skin skin)
     emit appearanceChanged();
 }
 
+void SystemMonitor::resetVisualDefaults(QWidget *settingsPage)
+{
+    bool functionalDraft=false;
+    if(settingsPage) {
+        if(auto *interval=settingsPage->findChild<QSpinBox *>("monitorSampleInterval"))
+            functionalDraft|=interval->value()!=m_statIntervalSec;
+        if(auto *sort=settingsPage->findChild<QComboBox *>("monitorSortBy"))
+            functionalDraft|=(sort->currentData().toString()=="memory")!=m_sortByMemory;
+        if(auto *framework=settingsPage->findChild<QCheckBox *>("monitorFramework"))
+            functionalDraft|=framework->isChecked()!=m_showFramework;
+    }
+    const QPoint savedPosition=pos();
+    m_compact=false;
+    m_skin=Skin::Liquid;
+    m_scale=1.0;
+    m_premiumAesthetics=false;
+    m_widgetTitle=defaultWidgetTitle();
+    m_widgetFontFamily.clear();
+    m_widgetFontSize=9;
+    m_windowOpacity=100;
+    m_wallpaperThemeColor=wallpaperSampleColor();
+    resize(baseSize());
+    move(boundedPosition(savedPosition));
+    publishVideoCutout();
+    if(m_liquidPointerEffect)m_liquidPointerEffect->setEnabled(true);
+    if(settingsPage) {
+        if(auto *skin=settingsPage->findChild<QComboBox *>("monitorSkin"))skin->setCurrentIndex(int(Skin::Liquid));
+        if(auto *title=settingsPage->findChild<QLineEdit *>("monitorTitle"))title->setText(m_widgetTitle);
+        if(auto *font=settingsPage->findChild<QComboBox *>("monitorFont"))font->setCurrentIndex(qMax(0,font->findData(QString())));
+        if(auto *size=settingsPage->findChild<QSpinBox *>("monitorFontSize"))size->setValue(m_widgetFontSize);
+        if(auto *opacity=settingsPage->findChild<QSlider *>("monitorOpacity"))opacity->setValue(m_windowOpacity);
+        if(auto *glow=settingsPage->findChild<QCheckBox *>("monitorCardGlow"))glow->setChecked(m_premiumAesthetics);
+        if(auto *compact=settingsPage->findChild<QCheckBox *>("monitorCompact"))compact->setChecked(m_compact);
+        settingsPage->setProperty("settingsDirty",functionalDraft);
+    }
+    // Keep sampling, sorting, framework visibility, startup, process choice,
+    // and histories as they are. The normal settings writer preserves them.
+    saveSettings();
+    update();
+    emit appearanceChanged();
+}
+
 QPoint SystemMonitor::boundedPosition(const QPoint &position) const
 {
     if (!parentWidget())

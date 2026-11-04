@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QFileInfo>
 #include <QDir>
 #include <QProcess>
@@ -25,6 +26,7 @@
 #include <QFontDatabase>
 #include <QTemporaryFile>
 #include <QEvent>
+#include <QRegularExpression>
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QContextMenuEvent>
@@ -45,11 +47,63 @@ static QString runtimeDir() {
     return QFileInfo(QString::fromLocal8Bit(info.dli_fname)).absolutePath();
 }
 
+static QStringList managedModelArguments(const QJsonObject &config, bool *valid) {
+    *valid = true;
+    const QString command = config.value("command").toString("codex");
+    const QString managedCommand = config.value("managedCommand").toString();
+    if (managedCommand.isEmpty() || command != managedCommand) return {};
+
+    const QString model = config.value("model").toString();
+    const QString effort = config.value("reasoningEffort").toString();
+    static const QRegularExpression modelId(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$"));
+    static const QStringList efforts = {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"};
+    QStringList expected;
+    if (!model.isEmpty()) {
+        if (!modelId.match(model).hasMatch()) { *valid = false; return {}; }
+        expected << "--model" << model;
+    }
+    if (!effort.isEmpty()) {
+        if (!efforts.contains(effort)) { *valid = false; return {}; }
+        expected << "--config" << QString("model_reasoning_effort=\"%1\"").arg(effort);
+    }
+
+    if (config.contains("modelArgs")) {
+        const QJsonValue value = config.value("modelArgs");
+        if (!value.isArray()) { *valid = false; return {}; }
+        const QJsonArray supplied = value.toArray();
+        if (supplied.size() != expected.size()) { *valid = false; return {}; }
+        for (int i = 0; i < supplied.size(); ++i) {
+            if (!supplied.at(i).isString() || supplied.at(i).toString() != expected.at(i)) {
+                *valid = false;
+                return {};
+            }
+        }
+    }
+    return expected;
+}
+
+static QByteArray hexArgument(const QString &value) {
+    return value.toUtf8().toHex();
+}
+
 class SessionPage : public QWidget {
 public:
     SessionPage(const QString &cwd, const QJsonObject &config, QWidget *parent) : QWidget(parent), settings(config) {
         setProperty("cliDirectory", cwd);
-        setProperty("cliCommand", config.value("command").toString("codex"));
+        const QString command = config.value("command").toString("codex");
+        const QString managedCommand = config.value("managedCommand").toString();
+        const QString codexExecutable = config.value("codexExecutable").toString();
+        bool modelArgumentsValid = false;
+        const QStringList modelArguments = managedModelArguments(config, &modelArgumentsValid);
+        const bool directCodex = !managedCommand.isEmpty() && command == managedCommand
+            && QFileInfo(codexExecutable).isAbsolute() && modelArgumentsValid && !modelArguments.isEmpty();
+        QString launchKey = command;
+        if (directCodex) {
+            launchKey += QChar(0x1f);
+            launchKey += modelArguments.join(QChar(0x1f));
+        }
+        setProperty("cliCommand", launchKey);
+        if (!modelArgumentsValid) setProperty("cliModelPreferencesIgnored", true);
         auto *layout = new QVBoxLayout(this);
         const int padding = qBound(0, config.value("contentPadding").toInt(10), 24);
         layout->setContentsMargins(padding, padding, padding, padding);
@@ -114,7 +168,7 @@ public:
             setProperty("cliFinished", true);
             return;
         }
-        connect(server, &QLocalServer::newConnection, this, [this, helper, cwd, config]() {
+        connect(server, &QLocalServer::newConnection, this, [this, helper, cwd, config, directCodex, codexExecutable, modelArguments]() {
             while (server->hasPendingConnections()) {
                 auto *connection = server->nextPendingConnection();
                 struct ucred credentials{};
@@ -135,8 +189,17 @@ public:
                 terminal->setShellProgram(helper);
                 // QTermWidget 0.14 expands shell-like arguments itself. Hex-encode
                 // both user strings so filenames containing '$' remain literal.
-                terminal->setArgs({"--run", unit, QString::fromLatin1(cwd.toUtf8().toHex()),
-                                   QString::fromLatin1(config.value("command").toString("codex").toUtf8().toHex())});
+                QStringList helperArguments;
+                if (directCodex) {
+                    helperArguments << "--run-argv" << unit << QString::fromLatin1(hexArgument(cwd))
+                                    << QString::fromLatin1(hexArgument(codexExecutable));
+                    for (const auto &argument : modelArguments)
+                        helperArguments << QString::fromLatin1(hexArgument(argument));
+                } else {
+                    helperArguments << "--run" << unit << QString::fromLatin1(hexArgument(cwd))
+                                    << QString::fromLatin1(config.value("command").toString("codex").toUtf8().toHex());
+                }
+                terminal->setArgs(helperArguments);
                 terminal->setWorkingDirectory(QDir::homePath());
                 prepared = true;
                 status->hide();
@@ -441,7 +504,18 @@ public:
         title->setText(config.value("name").toString("Codex CLI"));
         for (int i = 0; i < tabs->count(); ++i) {
             auto *page = tabs->widget(i);
-            if (page->property("cliDirectory").toString() == cwd && page->property("cliCommand").toString() == config.value("command").toString("codex")
+            QString launchKey = config.value("command").toString("codex");
+            bool modelArgumentsValid = false;
+            const QStringList modelArguments = managedModelArguments(config, &modelArgumentsValid);
+            const QString managedCommand = config.value("managedCommand").toString();
+            const bool directCodex = !managedCommand.isEmpty() && launchKey == managedCommand
+                && QFileInfo(config.value("codexExecutable").toString()).isAbsolute()
+                && modelArgumentsValid && !modelArguments.isEmpty();
+            if (directCodex) {
+                launchKey += QChar(0x1f);
+                launchKey += modelArguments.join(QChar(0x1f));
+            }
+            if (page->property("cliDirectory").toString() == cwd && page->property("cliCommand").toString() == launchKey
                 && !page->property("cliFinished").toBool()) {
                 tabs->setCurrentIndex(i); show();
                 if (expandButton) expandButton->setState(true, true);

@@ -10,7 +10,7 @@ from backend import Backend, MODULES, ROOT
 from design import STYLE, COLORS, DESCRIPTIONS, NavigationDelegate, Switch, MaterialPreview, DesktopPreview, DragHeader, ImagePreview, WindowHeader, icon, navigation_text, FlowLayout
 
 from ui_tokens import COLORS as UI_COLORS, application_scale, build_settings_style, sidebar_width
-from ui_schema import normalize_page, structural_signature, searchable_text, field_visible, presentation_rows
+from ui_schema import normalize_page, structural_signature, searchable_text, field_visible, presentation_rows, navigation_pages
 from ui_components import SettingsGroup, SettingRow, ActionRow, DisclosureRow, PluginRow, WallpaperPreview, WallpaperFileRow, PathView, StatusLabel, SettingSlider, ActionButton, HelpBubble, label
 import sip
 
@@ -59,8 +59,10 @@ class SettingsWindow(QtWidgets.QMainWindow):
         self.backend=backend or Backend(self)
         self.current='';self.generation=0;self.revision=0;self.busy=False
         self.fields={};self.drafts={};self.signature='';self.request_serial=0
-        self.page_cache={};self.page_group_cache={};self.catalog={};self.collapsed=set(MODULES)
+        self.page_cache={};self.page_group_cache={};self.catalog={};self.collapsed=set(MODULES)|{'fences:layout','fences:widgets'}
         self.view_states={};self._render_serial=0;self._rebuilding=False;self._pending_actions=set()
+        self._catalog_requests={}
+        self._rejected_navigation_click=None
         self._restoring_generation=None;self._updating_visibility=False;self._font_update_queued=False;self._interaction_serial=0;self._ambiguous_native_edit=False
         self._normalized=None;self._page_data={};self._rendered_rows=[];self.groups=[];self._blocked_signature='';self._deferred_fields=set()
         self._explicit_font_scale=font_scale;self.ui_scale=application_scale(QtWidgets.QApplication.font(),font_scale)
@@ -84,7 +86,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         self.navigation=QtWidgets.QListWidget();self.navigation.setObjectName('navigation');self.navigation.setItemDelegate(NavigationDelegate(self.navigation));self.navigation.setMouseTracking(True);self.navigation.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff);left.addWidget(self.navigation,1)
         self.add_navigation('总览与模块状态','overview')
         for module,(title,service,glyph) in MODULES.items():self.add_navigation(glyph+'  '+title,module+':general')
-        self.add_navigation('集成与维护','integration')
+        self.add_navigation('帮助与恢复','integration')
         system=ActionButton('UKUI 系统设置');system.clicked.connect(self.open_system);left.addWidget(system)
         split.addWidget(self.sidebar)
         right=QtWidgets.QWidget();self.right_layout=QtWidgets.QVBoxLayout(right);self.right_layout.setContentsMargins(20,16,20,12);self.right_layout.setSpacing(8);split.addWidget(right,1)
@@ -145,6 +147,13 @@ class SettingsWindow(QtWidgets.QMainWindow):
 
     def toggle_group(self,item):
         if not item:return
+        if self._rejected_navigation_click==item.data(QtCore.Qt.UserRole):
+            self._rejected_navigation_click=None;return
+        subgroup=item.data(QtCore.Qt.UserRole+5)
+        if subgroup:
+            if subgroup in self.collapsed:self.collapsed.discard(subgroup)
+            else:self.collapsed.add(subgroup)
+            self.filter_search(self.search.text());return
         group=item.data(QtCore.Qt.UserRole+2)
         if not group:return
         if group in self.collapsed or not self.current.startswith(group+':'):
@@ -173,7 +182,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
                 if (entry['control'] is watched or self.line_editor(entry['control']) is watched) and entry['field'].get('_stable') and not entry['field'].get('secret'):self._last_focused_key=entry['field']['_key']
         if kind==QtCore.QEvent.KeyPress and watched is self.navigation and event.key() in (QtCore.Qt.Key_Return,QtCore.Qt.Key_Enter,QtCore.Qt.Key_Space):
             item=self.navigation.currentItem()
-            if item and item.data(QtCore.Qt.UserRole+2):self.toggle_group(item);return True
+            if item and (item.data(QtCore.Qt.UserRole+2) or item.data(QtCore.Qt.UserRole+5)):self.toggle_group(item);return True
         return False
 
     def add_navigation(self,title,key):
@@ -185,7 +194,12 @@ class SettingsWindow(QtWidgets.QMainWindow):
 
     def load_catalogs(self):
         for module in MODULES:
-            self.backend.call(module,'Catalog',[],lambda result,m=module:self.receive_catalog(m,result))
+            request=self._catalog_requests.get(module,0)+1;self._catalog_requests[module]=request
+            self.backend.call(module,'Catalog',[],lambda result,m=module,r=request:self.receive_catalog_reply(m,r,result))
+
+    def receive_catalog_reply(self,module,request,result):
+        if sip.isdeleted(self) or self._catalog_requests.get(module)!=request:return
+        self.receive_catalog(module,result)
 
     def receive_catalog(self,module,result):
         if sip.isdeleted(self):return
@@ -193,22 +207,37 @@ class SettingsWindow(QtWidgets.QMainWindow):
         pages=result.get('pages',[])
         if not pages:return
         old=self.current
+        removes_current=old.startswith(module+':') and not any(module+':'+p['id']==old for p in pages)
+        if removes_current and self._unstable_draft() and not self.confirm_discard():
+            self.message.setText('目录已变化；当前未保存内容和导航已保留，完成编辑后再刷新。');return
+        old_item=next((self.navigation.item(i) for i in range(self.navigation.count()) if self.navigation.item(i).data(QtCore.Qt.UserRole)==old),None)
+        old_ancestors=set(self.navigation_ancestors(old_item)) if old_item else set()
         blocker=QtCore.QSignalBlocker(self.navigation)
         indexes=[i for i in range(self.navigation.count()) if self.navigation.item(i).data(QtCore.Qt.UserRole).startswith(module+':')]
         start=indexes[0] if indexes else self.navigation.count()-1
         for i in reversed(indexes):self.navigation.takeItem(i)
         if len(pages)>1:
             header=QtWidgets.QListWidgetItem(('▸  ' if module in self.collapsed else '▾  ')+MODULES[module][0]);header.setData(QtCore.Qt.UserRole,module+':__group__');header.setData(QtCore.Qt.UserRole+2,module);self.navigation.insertItem(start,header);start+=1
-        for i,page in enumerate(pages):
+        for i,(page,parent,has_children) in enumerate(navigation_pages(module,pages)):
             key=module+':'+page['id'];title=page.get('title',page['id'])
-            label=MODULES[module][2]+'  '+MODULES[module][0] if len(pages)==1 else '    '+('分区 · ' if page.get('group')=='分区' else '')+title
+            if key=='fences:session':title='调试专用'
+            label=MODULES[module][2]+'  '+MODULES[module][0] if len(pages)==1 else title.strip()
             item=QtWidgets.QListWidgetItem(label);item.setData(QtCore.Qt.UserRole,key)
             if len(pages)>1:item.setData(QtCore.Qt.UserRole+1,module)
+            item.setData(QtCore.Qt.UserRole+3,module+':'+parent if parent else module+':__group__' if len(pages)>1 else '')
+            item.setData(QtCore.Qt.UserRole+4,2 if parent else 1 if len(pages)>1 else 0)
+            if has_children:item.setData(QtCore.Qt.UserRole+5,key)
+            item.setData(QtCore.Qt.UserRole+6,label)
             item.setToolTip(MODULES[module][0]);self.navigation.insertItem(start+i,item)
             if key==old:self.navigation.setCurrentItem(item);self.title.setText(title if len(pages)>1 else MODULES[module][0])
         del blocker
+        selected=self.navigation.currentItem()
+        if selected and selected.data(QtCore.Qt.UserRole)==old:
+            for ancestor in set(self.navigation_ancestors(selected))-old_ancestors:
+                self.collapsed.discard(ancestor.split(':')[0] if ancestor.endswith(':__group__') else ancestor)
         self.catalog[module]=pages
-        if old==module+':general' and not any(p['id']=='general' for p in pages):self.open_page(module+':'+pages[0]['id'])
+        if removes_current:
+            self.open_page(module+':'+pages[0]['id'])
         self.filter_search(self.search.text())
 
     def open_page(self,key):
@@ -223,6 +252,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
             item=self.navigation.item(i)
             if item.data(QtCore.Qt.UserRole)==key:selected=item;break
         if selected:
+            ancestors=self.navigation_ancestors(selected)
+            for ancestor in ancestors:self.collapsed.discard(ancestor.split(':')[0] if ancestor.endswith(':__group__') else ancestor)
             blocker=QtCore.QSignalBlocker(self.navigation);self.navigation.setCurrentItem(selected);del blocker
         title=navigation_text(selected.text()) if selected else MODULES.get(module,(key,))[0]
         self.activate_page(key,title)
@@ -244,9 +275,9 @@ class SettingsWindow(QtWidgets.QMainWindow):
         self.groups=[];self._rendered_rows=[];self._normalized=None;self._page_data={};self._last_focused_key=None
         self._ambiguous_native_edit=False;self._deferred_fields.clear();self._blocked_signature=''
         self.poll.setInterval(6000 if key=='overview' else 15000 if key.startswith('peony:') else 2500)
-        titles={'fences:appearance':'液态外观','fences:wallpaper':'壁纸','fences:activity':'活动统计','peony:general':'文件管理','peony:plugins':'Peony 扩展'}
+        titles={'fences:appearance':'液态外观','fences:wallpaper':'壁纸','fences:activity':'活动统计','fences:session':'调试专用 · 非调试请勿开启','peony:general':'文件管理','peony:plugins':'Peony 扩展','integration':'帮助与恢复'}
         self.title.setText(titles.get(key,title));self.message.setText('');self.save_mode.setText('');self.open_space.setVisible(key.startswith('space:'))
-        descriptions={'fences:appearance':'调整分区玻璃通透档位与动态效果。','fences:wallpaper':'壁纸修改需应用；主题配色按对应按钮立即执行。','fences:activity':'管理应用记录、资源采样与详细日志保留。','peony:general':'设置由文件管理器即时保存。','peony:plugins':''}
+        descriptions={'fences:appearance':'调整分区玻璃通透档位与动态效果。','fences:wallpaper':'壁纸修改需应用；主题配色按对应按钮立即执行。','fences:activity':'管理应用记录、资源采样与详细日志保留。','ai:general':'外观与日常选项即时生效；后台、命令、目录及权限需点击应用。','input:general':'先安装并启用 Rime；调整参数即可查看示例效果，应用后用于实际输入。','peony:general':'设置由文件管理器即时保存。','peony:plugins':''}
         self.description.setText(descriptions.get(key,DESCRIPTIONS.get(key,'')));self.description.setVisible(bool(self.description.text()))
         saved=self.view_states.get(key,{})
         blocker=QtCore.QSignalBlocker(self.search);self.search.setText(saved.get('search',''));del blocker
@@ -263,8 +294,17 @@ class SettingsWindow(QtWidgets.QMainWindow):
 
     def selection_changed(self,item,previous):
         if not item or item.data(QtCore.Qt.UserRole+2):return
-        if self.activate_page(item.data(QtCore.Qt.UserRole),navigation_text(item.text())) is False and previous:
-            blocker=QtCore.QSignalBlocker(self.navigation);self.navigation.setCurrentItem(previous);del blocker
+        self._rejected_navigation_click=None
+        if self.activate_page(item.data(QtCore.Qt.UserRole),navigation_text(item.text())) is False:
+            key=item.data(QtCore.Qt.UserRole);self._rejected_navigation_click=key
+            def clear_rejected_click():
+                if not sip.isdeleted(self) and self._rejected_navigation_click==key:self._rejected_navigation_click=None
+            QtCore.QTimer.singleShot(0,clear_rejected_click)
+            if previous:
+                blocker=QtCore.QSignalBlocker(self.navigation);self.navigation.setCurrentItem(previous);del blocker
+            return
+        for ancestor in self.navigation_ancestors(item):self.collapsed.discard(ancestor.split(':')[0] if ancestor.endswith(':__group__') else ancestor)
+        self.filter_search(self.search.text())
 
     def set_content(self,widget):
         old=self.scroll.takeWidget()
@@ -304,7 +344,10 @@ class SettingsWindow(QtWidgets.QMainWindow):
 
     def confirm_discard(self):
         dialog=QtWidgets.QMessageBox(self);dialog.setWindowTitle('保留当前编辑');dialog.setText('当前页面包含无法安全跨页面恢复的未保存内容。')
-        stay=dialog.addButton('继续编辑',QtWidgets.QMessageBox.RejectRole);leave=dialog.addButton('放弃修改并离开',QtWidgets.QMessageBox.DestructiveRole);dialog.setDefaultButton(stay);dialog.exec_()
+        stay=dialog.addButton('继续编辑',QtWidgets.QMessageBox.RejectRole);leave=dialog.addButton('放弃修改并离开',QtWidgets.QMessageBox.DestructiveRole);dialog.setDefaultButton(stay)
+        previous=self._rebuilding;self._rebuilding=True
+        try:dialog.exec_()
+        finally:self._rebuilding=previous
         if dialog.clickedButton() is not leave:return False
         self._ambiguous_native_edit=False
         for entry in self.fields.values():
@@ -457,7 +500,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
         if result.get('modalActive'):self.message.setText('请先完成当前的确认或文件选择窗口。');self.save_mode.setText('等待确认')
 
     def update_save_mode(self,result):
-        modes={'fences:activity':'即时保存','peony:general':'即时保存','peony:terminal':'即时保存','fences:wallpaper':'部分设置需应用'}
+        modes={'fences:activity':'即时保存','peony:general':'即时保存','peony:terminal':'即时保存','fences:wallpaper':'部分设置需应用',
+               'panel:material':'即时生效','panel:layout':'即时生效','panel:effects':'即时生效','ai:general':'部分设置需应用','input:general':'预览后应用'}
         self.save_mode.setText('有待应用修改' if result.get('dirty') else modes.get(self.current,''))
 
     def card(self,layout):
@@ -471,7 +515,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         elif kind in ('note','heading'):
             control=PathView(field.get('value','')) if field['_ui'].get('component')=='file-picker' else label(field.get('value',''),kind=='note')
             control.setProperty('warning',field['_role']=='warning')
-        elif kind=='preview':control=WallpaperPreview(field.get('value',''),field.get('previewStatus',''),field['_ui'].get('alt') or name)
+        elif kind=='preview':control=WallpaperPreview(field.get('value',''),field.get('previewStatus','') or ('随参数更新的示例预览' if key.startswith('input:') else ''),field['_ui'].get('alt') or name)
         elif kind in ('action','toggle'):
             control=ActionButton(name)
             control.setCheckable(kind=='toggle');control.setChecked(bool(field.get('value')))
@@ -664,7 +708,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             if kind=='heading' and entry.get('header') is not None:entry['header'].setText(str(value or ''))
         elif kind=='multiline' and not control.document().isModified():control.setPlainText(str(value or ''))
         elif kind=='list':self.populate_list(control,field)
-        elif kind=='preview':control.set_data(value or '',field.get('previewStatus',''))
+        elif kind=='preview':control.set_data(value or '',field.get('previewStatus','') or ('随参数更新的示例预览' if self.current.startswith('input:') else ''))
         del blocker
         self._deferred_fields.discard(field['id']);return True
 
@@ -730,15 +774,34 @@ class SettingsWindow(QtWidgets.QMainWindow):
         try:self._filter_search(query)
         finally:self._updating_visibility=previous
 
+    def navigation_ancestors(self,item,items=None):
+        if items is None:items={self.navigation.item(i).data(QtCore.Qt.UserRole):self.navigation.item(i) for i in range(self.navigation.count())}
+        result=[];parent=item.data(QtCore.Qt.UserRole+3)
+        while parent and parent not in result:
+            result.append(parent);parent=items[parent].data(QtCore.Qt.UserRole+3) if parent in items else ''
+        return result
+
     def _filter_search(self,query):
         query=query.strip().casefold()
+        navigation_items={self.navigation.item(i).data(QtCore.Qt.UserRole):self.navigation.item(i) for i in range(self.navigation.count())}
+        matches_by_key={}
         for i in range(self.navigation.count()):
             item=self.navigation.item(i);key=item.data(QtCore.Qt.UserRole);cached=self.page_cache.get(key,[])
             matches=not query or query in item.text().casefold() or any(query in searchable_text(f) for f in cached) or any(query in title.casefold() for title in self.page_group_cache.get(key,[]))
             group=item.data(QtCore.Qt.UserRole+2)
-            child=item.data(QtCore.Qt.UserRole+1)
             if group:item.setText(('▸  ' if group in self.collapsed else '▾  ')+MODULES[group][0])
-            item.setHidden((not matches and key!=self.current) or bool(not query and child in self.collapsed))
+            subgroup=item.data(QtCore.Qt.UserRole+5)
+            if subgroup:item.setText(('▸  ' if subgroup in self.collapsed else '▾  ')+item.data(QtCore.Qt.UserRole+6))
+            matches_by_key[key]=matches or key==self.current
+        if query:
+            for i in range(self.navigation.count()):
+                item=self.navigation.item(i)
+                if matches_by_key[item.data(QtCore.Qt.UserRole)]:
+                    for ancestor in self.navigation_ancestors(item,navigation_items):matches_by_key[ancestor]=True
+        for i in range(self.navigation.count()):
+            item=self.navigation.item(i);ancestors=self.navigation_ancestors(item,navigation_items)
+            collapsed=any((key.split(':')[0] if key.endswith(':__group__') else key) in self.collapsed for key in ancestors)
+            item.setHidden(not matches_by_key[item.data(QtCore.Qt.UserRole)] or bool(not query and collapsed))
         if not self._normalized:return
         values={f.get('name'):f.get('value') for f in self._normalized['fields'] if f.get('_stable') and not f.get('secret')}
         shown={group:False for group in self.groups}
@@ -786,8 +849,14 @@ class SettingsWindow(QtWidgets.QMainWindow):
 
     def render_integration(self,result):
         widget=QtWidgets.QWidget();layout=QtWidgets.QVBoxLayout(widget);layout.setContentsMargins(0,0,6,0)
-        for title,text in [('当前系统','Kylin-LQUI 负责桌面视觉与交互。KWin、Fcitx、网络、音频、电源和安全服务继续由 UKUI 提供。'),('桌面接管','“限时试用”只暂时让 Fences 单独显示桌面，60 秒后恢复原生桌面。开机进入 Fences 的正式模式尚未启用。'),('配置与恢复','各组件继续使用原有配置文件。统一设置通过所属组件写入，应用安装保留版本清单和配置备份。'),('资料与诊断','源码、原始 NextKde 参考、验收记录和待办都保存在 Kylin-LQUI 工作目录。')]:
+        self.description.setText('常见问题、设置入口与恢复说明。');self.description.show()
+        sections=[('找不到系统设置？','无线网络、声音、显示器和电源，请打开 UKUI 系统设置。','打开系统设置',self.open_system),
+                  ('输入法没有候选词？','先安装并在 Fcitx 中启用 Rime，再选择 Rime 输入法；详细步骤在输入法页面顶部。','查看输入法设置',lambda:self.open_page('input:general')),
+                  ('想恢复原来的外观？','在对应设置页使用“恢复默认”。只恢复按钮说明中的设置，不清除文件、账号或聊天记录。','查看桌面外观',lambda:self.open_page('fences:appearance')),
+                  ('桌面显示异常？','“调试专用”用于临时测试桌面接管，普通使用不需要开启。已经开始测试时，可在那里立即恢复原生桌面。','查看调试与恢复',lambda:self.open_page('fences:session'))]
+        for title,text,action,callback in sections:
             box=self.card(layout);heading=QtWidgets.QLabel(title);heading.setProperty('section',True);box.addWidget(heading);label=QtWidgets.QLabel(text);label.setWordWrap(True);box.addWidget(label)
+            button=ActionButton(action);button.clicked.connect(callback);box.addWidget(button,0,QtCore.Qt.AlignLeft)
         layout.addStretch();self.set_content(widget)
 
     def start_module(self,show_main=False):

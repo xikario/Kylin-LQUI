@@ -67,6 +67,7 @@ public:
     void setEditMode(bool edit);
     void refreshWallpaperTheme();
     void setSkin(Skin skin);
+    void resetVisualDefaults(QWidget *settingsPage = nullptr);
     Skin skin() const { return m_skin; }
 
     static bool autoStartEnabled();

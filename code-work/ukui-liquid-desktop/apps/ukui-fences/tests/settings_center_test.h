@@ -1,5 +1,7 @@
 #pragma once
 #include "FencesSettingsWindow.h"
+#include "SystemMonitor.h"
+#include "GlassFinish.h"
 #include <QStandardPaths>
 #include <QMessageBox>
 #include <QDialogButtonBox>
@@ -12,7 +14,9 @@
 #include <QComboBox>
 #include <QKeyEvent>
 #include <QAbstractItemView>
+#include <QWheelEvent>
 #include <QFileDialog>
+#include <QStandardPaths>
 #include <QStyle>
 static int runSettingsCenterTest(const QString &root) {
     qputenv("UKUI_FENCES_SMARTSPACE_ROOTS",root.toUtf8());
@@ -78,6 +82,34 @@ static int runSettingsCenterTest(const QString &root) {
     }
     for(const QString id:{"wallpaper","icons","layout","widgets","monitor","clock","activity","music","calendar","sync","session","help"}){window->openPage(id);settle(30);}
     check(!canvas.smartSpaceVisible() && !canvas.systemMonitorVisible(),"browsing all pages does not start hidden models");
+    window->openPage("appearance");
+    auto *glass=window->findChild<QCheckBox *>("fenceLiquidGlass");
+    auto *scrim=window->findChild<QComboBox *>("glassScrim");
+    auto *motion=window->findChild<QCheckBox *>("reduceMotion");
+    auto *glassReset=window->findChild<QPushButton *>("fencesAppearanceResetDefaults");
+    check(glass&&scrim&&motion&&glassReset,"liquid appearance page exposes its scoped default action");
+    if(glass&&scrim&&motion&&glassReset){glass->setChecked(true);scrim->setCurrentIndex(3);motion->setChecked(true);glassReset->click();
+        check(!canvas.fenceLiquidGlassEnabled()&&canvas.glassScrim()==int(GlassFinish::Scrim::Balanced)&&!canvas.reduceMotion(),
+              "liquid appearance reset restores its real initial settings");}
+    s.setValue("desklets/activity/recording",false);s.setValue("desklets/activity/metricsEnabled",false);
+    s.setValue("desklets/activity/metricsInterval",30);s.setValue("desklets/activity/logRetentionDays",21);s.sync();
+    window->openPage("activity");
+    auto *activityRecording=window->findChild<QCheckBox *>("activityRecordingEnabled");
+    auto *metrics=window->findChild<QCheckBox *>("activityMetricsEnabled");
+    auto *metricsInterval=window->findChild<QSlider *>("activityMetricsInterval");
+    auto *retention=window->findChild<QComboBox *>("activityLogRetention");
+    auto *samplingReset=window->findChild<QPushButton *>("activitySamplingResetDefaults");
+    check(activityRecording&&metrics&&metricsInterval&&retention&&samplingReset,"activity page exposes recording and sampling defaults");
+    if(activityRecording&&metrics&&metricsInterval&&retention&&samplingReset){
+        samplingReset->click();s.sync();
+        check(s.value("desklets/activity/recording").toBool()&&s.value("desklets/activity/metricsEnabled").toBool()
+                  &&s.value("desklets/activity/metricsInterval").toInt()==10,
+              "activity reset restores recording and the 10 second resource sampling interval");
+        check(s.value("desklets/activity/logRetentionDays").toInt()==21,
+              "activity reset preserves the user's history retention period");
+    }
+    s.setValue("desklets/activity/recording",true);s.setValue("desklets/activity/metricsEnabled",true);
+    s.setValue("desklets/activity/metricsInterval",10);s.setValue("desklets/activity/logRetentionDays",7);s.sync();
     for(auto *list:window->findChildren<QListWidget *>())
         for(int row=0;row<list->count();++row)
             check(list->item(row)->data(Qt::UserRole).toString()!="smart" && list->item(row)->data(Qt::UserRole).toString()!="cli", "settings navigation has no retired AI pages");
@@ -158,7 +190,15 @@ static int runSettingsCenterTest(const QString &root) {
         check(c->property("visibilityKey").toString()!="cli"&&c->property("startupKey").toString()!="cli","independent AI station has no Fences visibility or startup switch");
     check(!window->findChild<QPushButton *>("cliOpenButton"),"independent AI station has no Fences launcher");
 
+    s.setValue("systemMonitor/autoStart",false);s.setValue("systemMonitor/skin",int(SystemMonitor::Skin::Cyber));
+    s.setValue("systemMonitor/scale",1.3);s.setValue("systemMonitor/compact",true);s.setValue("systemMonitor/title","测试标题");
+    s.setValue("systemMonitor/fontFamily","DejaVu Sans");s.setValue("systemMonitor/fontSize",14);s.setValue("systemMonitor/opacity",65);
+    s.setValue("systemMonitor/premiumAesthetics",true);s.setValue("systemMonitor/statInterval",17);
+    s.setValue("systemMonitor/sortByMemory",true);s.setValue("systemMonitor/showFramework",false);
+    s.setValue("systemMonitor/position",QPoint(120,140));s.sync();
     canvas.showSystemMonitorWidget();settle(400);
+    auto *monitor=canvas.findChild<SystemMonitor *>();
+    const QPoint monitorPosition=monitor?monitor->pos():QPoint();
     for(const QString id:{"monitor"}){
         window->openPage(id);settle(100);
         auto *current=window->findChild<QStackedWidget *>("settingsPages")->currentWidget();
@@ -166,6 +206,32 @@ static int runSettingsCenterTest(const QString &root) {
         check(!forms.isEmpty(),"complex component form is embedded without a modal dialog");
         check(!QApplication::activeModalWidget(),"complex page leaves desktop interactive");
         if(id=="monitor" && !forms.isEmpty()){
+            auto *resetVisual=current->findChild<QPushButton *>("monitorVisualResetDefaults");
+            auto *samplingDraft=current->findChild<QSpinBox *>("monitorSampleInterval");
+            auto *sortDraft=current->findChild<QComboBox *>("monitorSortBy");
+            auto *frameworkDraft=current->findChild<QCheckBox *>("monitorFramework");
+            QWidget *monitorForm=nullptr;for(auto *form:current->findChildren<QWidget *>())if(form->property("settingsForm").toBool())monitorForm=form;
+            check(monitor&&resetVisual&&samplingDraft&&sortDraft&&frameworkDraft,"monitor page exposes a visual-only reset");
+            if(monitor&&resetVisual&&samplingDraft&&sortDraft&&frameworkDraft&&monitorForm){
+                samplingDraft->setValue(23);sortDraft->setCurrentIndex(sortDraft->findData("cpu"));frameworkDraft->setChecked(true);
+                resetVisual->click();s.sync();
+                check(monitor->skin()==SystemMonitor::Skin::Liquid&&s.value("systemMonitor/scale").toDouble()==1.0
+                          &&!s.value("systemMonitor/compact").toBool()
+                          &&s.value("systemMonitor/title").toString()=="桌面资源监控"
+                          &&s.value("systemMonitor/fontFamily").toString().isEmpty()
+                          &&s.value("systemMonitor/fontSize").toInt()==9&&s.value("systemMonitor/opacity").toInt()==100
+                          &&!s.value("systemMonitor/premiumAesthetics").toBool(),
+                      "monitor visual reset restores its shipped size, skin, title, font and opacity");
+                check(monitor->pos()==monitorPosition&&s.value("systemMonitor/statInterval").toInt()==17
+                          &&s.value("systemMonitor/sortByMemory").toBool()&&!s.value("systemMonitor/showFramework").toBool()
+                          &&!s.value("systemMonitor/autoStart").toBool(),
+                      "monitor visual reset preserves position, sampling, sorting, framework and startup state");
+                check(samplingDraft->value()==23&&sortDraft->currentData().toString()=="cpu"&&frameworkDraft->isChecked()
+                          &&monitorForm->property("settingsDirty").toBool(),
+                      "monitor visual reset leaves unrelated functional drafts untouched");
+                samplingDraft->setValue(17);sortDraft->setCurrentIndex(sortDraft->findData("memory"));frameworkDraft->setChecked(false);
+                monitorForm->setProperty("settingsDirty",false);
+            }
             auto *interval=current->findChildren<QSpinBox *>().last();
             const int value=interval->value();interval->stepUp();
             check(interval->buttonSymbols()!=QAbstractSpinBox::NoButtons,"spinbox retains normal step buttons");
@@ -178,12 +244,52 @@ static int runSettingsCenterTest(const QString &root) {
     window->openPage("monitor");canvas.toggleDesklet();settle(150);window->openPage("monitor");
     check(window && window->isVisible(),"removing component while its settings exist is safe");
     auto *fence=canvas.createFence("设置测试",QRect(200,200,350,280));
+    const QString keptFile=root+"/字体与网格重置保留.txt";QFile kept(keptFile);kept.open(QIODevice::WriteOnly);kept.write("keep");kept.close();
+    fence->addItem(DesktopItem::fromPath(keptFile));
+    const QRect fenceGeometry=fence->geometry();
     window->openPage("fence:"+fence->fenceId());
     auto *fencePage=window->findChild<QStackedWidget *>("settingsPages")->currentWidget();
     auto fontForms=fencePage->findChildren<QDialogButtonBox *>();
     check(fontForms.size()==2,"both per-fence font editors are embedded");
     if(!fontForms.isEmpty())fontForms.first()->button(QDialogButtonBox::Apply)->click();
     check(fence->hasLocalFont(),"per-fence font apply updates the original model");
+    canvas.setFontFamily("DejaVu Sans");canvas.setFontSize(19);canvas.setFontColor(QColor("#223344"));
+    canvas.setFontBold(true);canvas.setFontItalic(true);
+    window->openPage("help");window->openPage("icons");settle(50);
+    auto *fontReset=window->findChild<QPushButton *>("desktopFontResetDefaults");
+    check(fontReset,"desktop font page exposes its standalone default action");
+    if(fontReset)fontReset->click();settle(80);
+    check(canvas.fontFamily().isEmpty()&&canvas.fontSize()==11&&canvas.fontColor()==QColor(Qt::white),
+          "desktop font reset restores system-family, 11 px and white defaults");
+    QWidget *desktopFontForm=nullptr;auto *iconsPage=window->findChild<QStackedWidget *>("settingsPages")->currentWidget();
+    for(auto *form:iconsPage->findChildren<QWidget *>())if(form->windowTitle()=="桌面字体设置")desktopFontForm=form;
+    check(desktopFontForm&&!desktopFontForm->findChildren<QCheckBox *>().isEmpty()
+              &&!desktopFontForm->findChildren<QCheckBox *>().first()->isChecked()
+              &&!desktopFontForm->findChildren<QCheckBox *>().last()->isChecked(),
+          "desktop font form is refreshed to normal non-italic defaults after reset");
+    for(int i=0;i<4;++i){
+        const QPoint local(120,120),global=canvas.mapToGlobal(local);
+        QWheelEvent scaleWheel(QPointF(local),QPointF(global),QPoint(),QPoint(0,120),Qt::NoButton,Qt::ControlModifier,Qt::NoScrollPhase,false);
+        QApplication::sendEvent(&canvas,&scaleWheel);
+    }
+    window->openPage("layout");settle(50);
+    auto *layoutPage=window->findChild<QStackedWidget *>("settingsPages")->currentWidget();
+    QWidget *gridForm=nullptr;for(auto *form:layoutPage->findChildren<QWidget *>())if(form->windowTitle()=="桌面图标网格")gridForm=form;
+    auto gridSpins=gridForm?gridForm->findChildren<QSpinBox *>():QList<QSpinBox *>{};
+    if(gridSpins.size()>=3){gridSpins[0]->setValue(12);gridSpins[1]->setValue(7);gridSpins[2]->setValue(135);
+        if(auto *box=gridForm->findChild<QDialogButtonBox *>())box->button(QDialogButtonBox::Apply)->click();}
+    auto *gridReset=window->findChild<QPushButton *>("desktopGridResetDefaults");
+    check(gridReset,"layout page exposes a grid-only default action");
+    if(gridReset)gridReset->click();settle(80);
+    const QString layoutPath=QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)+"/kyfences/layout.json";
+    QFile savedLayout(layoutPath);savedLayout.open(QIODevice::ReadOnly);const auto layoutData=QJsonDocument::fromJson(savedLayout.readAll()).object();
+    check(layoutData.value("iconScale").toDouble()==1.0&&layoutData.value("desktopIconScale").toDouble()==1.0
+              &&layoutData.value("gridColumns").toInt()==18&&layoutData.value("gridRows").toInt()==11,
+          "grid reset writes the shipped 18 by 11, 100 percent defaults");
+    check(canvas.findChildren<FenceWidget *>(QString(),Qt::FindDirectChildrenOnly).contains(fence)
+              &&fence->geometry()==fenceGeometry&&fence->items().size()==1
+              &&fence->items().first().filePath==keptFile&&QFileInfo::exists(keptFile),
+          "font and grid resets preserve the existing partition, its files and its position");
     window->openPage("appearance");settle(300);QDir().mkpath("artifacts");
     window->grab().save(QString("artifacts/settings-center-%1.png").arg(window->devicePixelRatioF()));
     window->close();settle(100);

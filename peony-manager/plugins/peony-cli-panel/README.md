@@ -32,9 +32,20 @@ CLI 会话标签行的顶部与高度跟随左侧详细列表的列标题（文�
 
 ## 构建与安装
 
-运行 `bash build.sh`；使用项目 vendor 的 Qt/Peony 头文件和 QTermWidget 0.14.1 发行版二进制依赖。
+从本目录运行 `bash build.sh`，默认使用主机已安装的 Qt 5 Core/Gui/Widgets/Network、Peony 开发头文件和 QTermWidget 开发/运行包。需要 C++ 编译器、`pkg-config` 与 Qt 的 `moc`。发行版包名可能不同；安装对应开发包、QTermWidget 运行包和 `qtermwidget5-data` 后再构建。脚本不会安装依赖，也不会调用授权 helper。
 
-输出包含：
+若使用单独解包的兼容 SDK，可显式指定包含 `extract/qt/usr`、`extract/libpeony-dev/usr` 与 `qtermwidget/extract/usr` 的 SDK 根目录：
+
+```sh
+bash build.sh --sdk-root /path/to/vendor
+bash build.sh --sdk-root /path/to/vendor --output-dir /tmp/peony-cli-panel-build
+```
+
+不传 `--sdk-root` 时只查找系统开发包；仓库不包含该 SDK。SDK 模式使用 SDK 的 Qt/Peony/QTermWidget 头文件与 moc，并链接宿主已安装的 Qt 5 运行库，因此宿主 Qt 运行库 ABI 必须与 SDK 匹配。构建结果是 Peony 插件 `libpeony-cli-panel.so`、惰性加载的 `peony-cli-panel/libpeony-cli-terminal.so` 和原生 `peony-cli-panel/peony-cli-session` 三个目标。运行时目录还带有 QTermWidget、utf8proc 动态库、键盘布局、颜色方案及可用的许可证文本。终端运行库设置了 `$ORIGIN` RPATH，因此部署时必须把 `peony-cli-panel/` 目录作为插件 `.so` 旁边的整体保留；不要只复制两个原生 `.so`。
+
+QTermWidget 的键盘布局与颜色方案位于运行时目录的 `data/` 下，作为缺少系统 `/usr/share/qtermwidget5` 数据时的回退，并由颜色方案加载使用。构建脚本只写入默认的本目录 `build/` 或 `--output-dir` 指定的目录，不提供系统安装操作；部署/暂存由上层安装器或调用方在明确目标目录中完成，不会自动执行 `pkexec` 或安装 helper。
+
+默认输出包含：
 
 ```
 build/libpeony-cli-panel.so
@@ -44,12 +55,12 @@ build/peony-cli-panel/
   libutf8proc.so.2
   peony-cli-session
   data/
-  licenses/
+  licenses/       # 仅在依赖包提供许可证文本时
 ```
 
-Peony Manager 的安装按钮调用系统授权 helper 安装完整组件。安装或更新后重启文管生效；只改名称/命令则不用重启。移除入口保留运行组件，以免干扰更新前已有的会话。
+Peony Manager 的安装按钮调用系统授权 helper 安装完整组件。安装或更新后重启文管生效；只改名称/命令则不用重启。移除入口保留运行组件，以免干扰更新前已有的会话。该构建脚本本身只产生文件，不执行这个安装流程。
 
-QTermWidget 与 utf8proc 使用发行版原始库，许可证位于构建包 `licenses/`；对应软件包保存在项目 `vendor/qtermwidget/debs/`。
+QTermWidget 与 utf8proc 使用发行版原始库，许可证位于构建包 `licenses/`（依赖包提供相应版权文件时）。如使用外部 SDK，其二进制和数据由调用方提供；它们没有被伪装成仓库内置依赖。
 
 ## 已完成的验证
 

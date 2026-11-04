@@ -19,9 +19,19 @@ cmake --build code-work/ai-space/build -j2
 
 Fences、开始菜单及具体发行版依赖详见各自 README 和 `code-work/ukui-liquid-desktop/docs/BUILD.md`。若使用外部 Qt SDK，通过 CMake 参数传入路径；仓库不附带从系统提取的 SDK。
 
+Peony CLI 扩展提供独立源码构建入口（需要系统 `pkg-config`、Qt 5、Peony 与 QTermWidget 开发包）：
+
+```bash
+bash peony-manager/plugins/peony-cli-panel/build.sh --output-dir build-review/peony-cli-panel
+```
+
+该入口只构建插件、终端运行库、会话 helper 及伴随资源，不安装或重启文件管理器。可选外部 SDK 的目录结构、ABI 要求与完整产物布局见 [CLI 扩展说明](../peony-manager/plugins/peony-cli-panel/README.md)。
+
 ## 安装与恢复
 
 设置程序：`python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/install.py`。
+
+默认安装器通常读取各模块源码下的 `build/`。如果实际使用 `build-review/` 或其它目录，应先核对安装器输入与本次构建产物一致。支持指定路径的脚本按其说明传入产物；不支持的脚本应先在要求的目录重新构建，或使用经核对的独立暂存流程，不要让旧 `build/` 中的文件混入更新。构建成功不代表已经安装，Peony 系统插件的管理员安装也不由上述构建脚本执行。
 
 Panel：对应 `scripts/install.py` 只更新用户本地插件，宿主 ABI 不匹配时应回退原生 Panel；请遵循该模块的安装与恢复说明。AI 小站与输入法分别使用自己的安装脚本，先完成构建。不要在生成回复期间强行退出 AI 小站，不要为了替换候选窗退出 Fcitx 引擎。
 

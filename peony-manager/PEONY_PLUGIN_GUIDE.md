@@ -151,26 +151,26 @@ QList<QAction *> Plugin::menuActions(Peony::MenuPluginInterface::Types types,
 
 ### 5.1 系统安装构建依赖
 
-最稳方式：
+先安装匹配当前 Peony/Qt 版本的开发包。以下从统一仓库根目录执行，发行版包名可能不同：
 
 ```bash
-sudo apt install libpeony-dev qtbase5-dev qtbase5-dev-tools qt5-qmake g++
-cd /home/zhouzhang/应用/peony-manager/plugins/<plugin-name>
-./build.sh
+# CLI 扩展还需要 QTermWidget 开发包、运行包、数据文件和 pkg-config。
+bash peony-manager/plugins/peony-cli-panel/build.sh --output-dir build-review/peony-cli-panel
+# 复制路径扩展使用其现有 qmake 工程：
+(cd peony-manager/plugins/peony-copy-path && qmake peony-copy-path.pro && make -j2)
 ```
 
-### 5.2 使用项目内 vendor 构建
+### 5.2 使用显式指定的外部 SDK
 
-本项目已把 `libpeony-dev` 和 Qt dev 包解包到：
+历史本机环境曾把开发包解包到 `vendor/`；这些提取物并未随统一仓库分发。CLI 扩展构建脚本支持 `--sdk-root /path/to/vendor`，目录结构为：
 
 ```text
 vendor/extract/libpeony-dev/
 vendor/extract/qt/
+vendor/qtermwidget/extract/
 ```
 
-`plugins/peony-copy-path/build.sh` 已支持在系统没有 `qmake/moc` 时，使用 vendor 内的 Qt 头文件和 `moc`，再用 `g++` 直接编译。
-
-下次新插件可以复用这个 `build.sh` 模式。
+SDK 的头文件、moc 与宿主运行库必须兼容。详细依赖和产物布局见 [CLI 扩展构建说明](plugins/peony-cli-panel/README.md#构建与安装)。脚本不下载依赖、不调用安装 helper，也不自动重启 Peony；不要依赖统一仓库中不存在的 `peony-copy-path/build.sh`。
 
 ## 6. 手动装载流程
 

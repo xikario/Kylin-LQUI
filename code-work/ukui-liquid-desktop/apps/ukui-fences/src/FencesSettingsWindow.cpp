@@ -453,7 +453,7 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
                 if(!m_canvas||fontForm->isNull())return;
                 auto *previous=fontForm->data();
                 fontCard->removeWidget(previous);previous->hide();previous->deleteLater();
-                auto *replacement=m_canvas->createFontSettingsPage(page);attachForm(fontCard,replacement);
+                auto *replacement=m_canvas->createFontSettingsPage(page);SettingsComboPopup::install(replacement,m_canvas);attachForm(fontCard,replacement);
                 fontCard->removeWidget(replacement);fontCard->insertWidget(qMax(1,index),replacement);
                 *fontForm=replacement;
             });
@@ -476,7 +476,7 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
                 if(!m_canvas||gridForm->isNull())return;
                 auto *previous=gridForm->data();
                 gridCard->removeWidget(previous);previous->hide();previous->deleteLater();
-                auto *replacement=m_canvas->createGridSettingsPage(page);attachForm(gridCard,replacement);
+                auto *replacement=m_canvas->createGridSettingsPage(page);SettingsComboPopup::install(replacement,m_canvas);attachForm(gridCard,replacement);
                 gridCard->removeWidget(replacement);gridCard->insertWidget(qMax(1,index),replacement);
                 *gridForm=replacement;
             });

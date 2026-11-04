@@ -507,6 +507,23 @@ class SettingsWindow(QtWidgets.QMainWindow):
     def card(self,layout):
         frame=QtWidgets.QFrame();frame.setProperty('card',True);box=QtWidgets.QVBoxLayout(frame);box.setContentsMargins(12,8,12,8);box.setSpacing(8);layout.addWidget(frame);return box
 
+    @staticmethod
+    def set_choice_value(control,field):
+        value=field.get('value',0);index=-1
+        if type(value) is int or type(value) is float and math.isfinite(value) and value.is_integer():
+            index=int(value)
+        elif isinstance(value,str):
+            # Editable choices return literal custom text in some providers;
+            # numeric text must not silently select an unrelated option index.
+            if control.isEditable():index=control.findText(value)
+            else:
+                try:index=int(value)
+                except ValueError:index=control.findText(value)
+        control.setCurrentIndex(index if 0<=index<control.count() else -1)
+        if control.isEditable():
+            if 'text' in field:control.setEditText(str(field['text']))
+            elif isinstance(value,str):control.setEditText(value)
+
     def _create_control(self,field,canvas):
         kind=field.get('kind');name=field.get('label') or '设置项';fid=field['id'];key=self.current
         entry={'field':field,'label':None};control=None;container=None
@@ -539,8 +556,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
             control.addItems(field.get('options',[]))
             for index,allowed in enumerate(field.get('optionsEnabled',[])):
                 if control.model().item(index):control.model().item(index).setEnabled(allowed)
-            control.setEditable(bool(field.get('editable')));control.setCurrentIndex(int(field.get('value',0)))
-            if control.isEditable() and 'text' in field:control.setEditText(str(field['text']))
+            control.setEditable(bool(field.get('editable')))
+            self.set_choice_value(control,field)
             control.activated[int].connect(lambda value,f=fid,k=key,c=control:self.mutate(f,value,page_key=k,source=c))
             if control.isEditable():control.lineEdit().editingFinished.connect(lambda f=fid,c=control,k=key:self.mutate(f,c.currentText(),page_key=k,source=c) if c.lineEdit().isModified() else None)
         elif kind=='text':
@@ -700,8 +717,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         elif kind=='number':
             control.setValue(round((float(value)-entry['low'])/entry['step']));entry['readout'].setText(self.number_text(value,field))
         elif kind in ('choice','tabs'):
-            control.setCurrentIndex(int(value))
-            if control.isEditable() and 'text' in field:control.setEditText(str(field['text']))
+            self.set_choice_value(control,field)
         elif kind in ('note','text','heading'):
             if isinstance(control,PathView):control.set_value(value or '')
             else:control.setText(str(value or ''))
@@ -889,12 +905,10 @@ class Adaptor(QtDBus.QDBusAbstractAdaptor):
     @QtCore.pyqtSlot(result=bool)
     def CloseForUpdate(self):
         window=self.parent()
-        if QtWidgets.QApplication.activeModalWidget() or window.busy or window.drafts:return False
+        if QtWidgets.QApplication.activeModalWidget() or window.busy or window.drafts or window._page_data.get('dirty'):return False
         for entry in window.fields.values():
-            widget=entry['control']
-            if isinstance(widget,QtWidgets.QLineEdit) and widget.isModified():return False
-            if isinstance(widget,QtWidgets.QPlainTextEdit) and widget.document().isModified():return False
-        window.close();return True
+            if window.modified(entry['control']):return False
+        return bool(window.close())
 
 def main():
     QtCore.QCoreApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)

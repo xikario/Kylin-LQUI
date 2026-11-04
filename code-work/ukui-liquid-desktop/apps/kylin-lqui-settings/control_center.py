@@ -136,7 +136,8 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
     def eventFilter(self,obj,event):
         if event.type()==QtCore.QEvent.MouseButtonPress and event.button()==QtCore.Qt.LeftButton and self.page!='home' and not self.navigation_active and isinstance(obj,QtWidgets.QWidget) and obj.window() is self:
             point=event.globalPos()
-            if not any(card.isVisible() and QtCore.QRect(card.mapToGlobal(QtCore.QPoint()),card.size()).contains(point) for card in self.findChildren(GlassCard)):
+            surfaces=self.findChildren((GlassCard,GlassStatusLabel,QtWidgets.QScrollBar))
+            if not any(surface.isVisible() and surface.rect().contains(surface.mapFromGlobal(point)) for surface in surfaces):
                 self.dismiss();return True
         return super().eventFilter(obj,event)
     def dismiss_if_inactive(self):

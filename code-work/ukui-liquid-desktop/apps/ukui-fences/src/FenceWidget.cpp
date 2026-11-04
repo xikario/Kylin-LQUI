@@ -58,6 +58,7 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QLabel>
+#include <QSignalBlocker>
 #include <QRegion>
 #include <QtMath>
 
@@ -2354,8 +2355,14 @@ QWidget *FenceWidget::createFontSettingsPage(QWidget *parent)
     fontCombo->addItem("系统默认", QString());
     for (const QString &f : families)
         fontCombo->addItem(f, f);
-    if (m_hasLocalFont && !m_localFontFamily.isEmpty()) {
-        int idx = fontCombo->findData(m_localFontFamily);
+    const QString effectiveFontFamily = m_hasLocalFont
+        ? m_localFontFamily : m_inheritedIconFontFamily;
+    if (!effectiveFontFamily.isEmpty()) {
+        int idx = fontCombo->findData(effectiveFontFamily);
+        if (idx < 0) {
+            fontCombo->addItem(effectiveFontFamily, effectiveFontFamily);
+            idx = fontCombo->count() - 1;
+        }
         if (idx >= 0) fontCombo->setCurrentIndex(idx);
     }
     layout->addRow("内部字体：", fontCombo);
@@ -2363,22 +2370,23 @@ QWidget *FenceWidget::createFontSettingsPage(QWidget *parent)
     // 字号
     auto *sizeSpin = new QSpinBox(&dlg);
     sizeSpin->setRange(8, 24);
-    sizeSpin->setValue(m_hasLocalFont ? m_localFontSize : 11);
+    sizeSpin->setValue(m_hasLocalFont ? m_localFontSize : m_inheritedIconFontSize);
     sizeSpin->setSuffix(" px");
     layout->addRow("内部字号：", sizeSpin);
 
     // 粗体
     auto *boldCheck = new QCheckBox("粗体", &dlg);
-    boldCheck->setChecked(m_hasLocalFont ? m_localFontBold : false);
+    boldCheck->setChecked(m_hasLocalFont ? m_localFontBold : m_inheritedIconFontBold);
     layout->addRow("", boldCheck);
 
     // 斜体
     auto *italicCheck = new QCheckBox("斜体", &dlg);
-    italicCheck->setChecked(m_hasLocalFont ? m_localFontItalic : false);
+    italicCheck->setChecked(m_hasLocalFont ? m_localFontItalic : m_inheritedIconFontItalic);
     layout->addRow("", italicCheck);
 
     // 字体颜色
-    auto chosenColor = std::make_shared<QColor>(m_hasLocalFont ? m_localFontColor : Qt::white);
+    auto chosenColor = std::make_shared<QColor>(m_hasLocalFont
+        ? m_localFontColor : m_inheritedIconFontColor);
     auto *colorBtn = new QPushButton(&dlg);
     auto updateColorBtn = [colorBtn, chosenColor] {
         QPixmap px(48, 16);
@@ -2411,18 +2419,41 @@ QWidget *FenceWidget::createFontSettingsPage(QWidget *parent)
             m_hasLocalFont = false;
             for (auto *icon : m_icons)
                 applyInheritedIconFont(icon);
+            const QSignalBlocker b1(fontCombo), b2(sizeSpin), b3(boldCheck), b4(italicCheck);
+            int inheritedFontIndex = fontCombo->findData(m_inheritedIconFontFamily);
+            if (!m_inheritedIconFontFamily.isEmpty() && inheritedFontIndex < 0) {
+                fontCombo->addItem(m_inheritedIconFontFamily, m_inheritedIconFontFamily);
+                inheritedFontIndex = fontCombo->count() - 1;
+            }
+            fontCombo->setCurrentIndex(inheritedFontIndex >= 0 ? inheritedFontIndex : 0);
+            sizeSpin->setValue(m_inheritedIconFontSize);
+            boldCheck->setChecked(m_inheritedIconFontBold);
+            italicCheck->setChecked(m_inheritedIconFontItalic);
+            *chosenColor = m_inheritedIconFontColor;
+            updateColorBtn();
             update();
             emit geometryChanged();
             dlg.setProperty("settingsDirty",false);
     });
     connect(buttons->button(QDialogButtonBox::Apply),&QPushButton::clicked,&dlg,[=, &dlg] {
 
+        const QString family = fontCombo->currentData().toString();
+        const bool bold = boldCheck->isChecked();
+        const bool italic = italicCheck->isChecked();
+        if (!m_hasLocalFont && family == m_inheritedIconFontFamily
+            && sizeSpin->value() == m_inheritedIconFontSize
+            && *chosenColor == m_inheritedIconFontColor
+            && bold == m_inheritedIconFontBold
+            && italic == m_inheritedIconFontItalic) {
+            dlg.setProperty("settingsDirty",false);
+            return;
+        }
         m_hasLocalFont = true;
-        m_localFontFamily = fontCombo->currentData().toString();
+        m_localFontFamily = family;
         m_localFontSize = sizeSpin->value();
         m_localFontColor = *chosenColor;
-        m_localFontBold = boldCheck->isChecked();
-        m_localFontItalic = italicCheck->isChecked();
+        m_localFontBold = bold;
+        m_localFontItalic = italic;
 
         // 应用到所有图标
         for (auto *icon : m_icons)
@@ -2454,7 +2485,11 @@ QWidget *FenceWidget::createTitleFontSettingsPage(QWidget *parent)
     for (const QString &f : families)
         fontCombo->addItem(f, f);
     if (m_hasTitleFont && !m_titleFontFamily.isEmpty()) {
-        const int idx = fontCombo->findData(m_titleFontFamily);
+        int idx = fontCombo->findData(m_titleFontFamily);
+        if (idx < 0) {
+            fontCombo->addItem(m_titleFontFamily, m_titleFontFamily);
+            idx = fontCombo->count() - 1;
+        }
         if (idx >= 0) fontCombo->setCurrentIndex(idx);
     }
     layout->addRow("标题字体：", fontCombo);
@@ -2502,18 +2537,34 @@ QWidget *FenceWidget::createTitleFontSettingsPage(QWidget *parent)
     connect(resetBtn,&QPushButton::clicked,&dlg,[=, &dlg] {
 
             m_hasTitleFont = false;
+            const QSignalBlocker b1(fontCombo), b2(sizeSpin), b3(boldCheck), b4(italicCheck);
+            fontCombo->setCurrentIndex(0);
+            sizeSpin->setValue(13);
+            boldCheck->setChecked(true);
+            italicCheck->setChecked(false);
+            *chosenColor = Qt::white;
+            updateColorBtn();
             update();
             emit geometryChanged();
             dlg.setProperty("settingsDirty",false);
     });
     connect(buttons->button(QDialogButtonBox::Apply),&QPushButton::clicked,&dlg,[=, &dlg] {
 
+        const QString family = fontCombo->currentData().toString();
+        const int size = sizeSpin->value();
+        const bool bold = boldCheck->isChecked();
+        const bool italic = italicCheck->isChecked();
+        if (!m_hasTitleFont && family.isEmpty() && size == 13
+            && *chosenColor == QColor(Qt::white) && bold && !italic) {
+            dlg.setProperty("settingsDirty",false);
+            return;
+        }
         m_hasTitleFont = true;
-        m_titleFontFamily = fontCombo->currentData().toString();
-        m_titleFontSize = sizeSpin->value();
+        m_titleFontFamily = family;
+        m_titleFontSize = size;
         m_titleFontColor = *chosenColor;
-        m_titleFontBold = boldCheck->isChecked();
-        m_titleFontItalic = italicCheck->isChecked();
+        m_titleFontBold = bold;
+        m_titleFontItalic = italic;
         update();
         emit geometryChanged();
         dlg.setProperty("settingsDirty",false);

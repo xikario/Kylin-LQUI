@@ -1,9 +1,10 @@
 """Settings organization and rendering regressions; synthetic backend only."""
 import copy,sys,unittest
+from unittest.mock import patch
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from PyQt5 import QtCore,QtGui,QtWidgets,QtTest
-from main import SettingsWindow
+from main import SettingsWindow,Adaptor
 from ui_schema import normalize_page,navigation_pages,plain_help,searchable_text
 from apple_fixture import Fixture
 
@@ -106,5 +107,47 @@ class Usability(unittest.TestCase):
         # The blue filled track legitimately reaches the left/right edge;
         # the regression is the enclosing top/bottom rectangular frame.
         self.assertFalse(any(c.blue()>180 and c.red()<80 and 70<c.green()<190 for c in edge))
+    def test_editable_choice_custom_string_update_and_close_for_update_guards_modified_combo(self):
+        field={'id':'font_choice','name':'font_choice','kind':'choice','label':'字体选择','options':['文泉驿微米黑','思源黑体'],'editable':True,'value':0}
+        self.backend.pages['fences:fonts']={'ok':True,'fields':[field]}
+        self.window.open_page('fences:fonts');QtTest.QTest.qWait(30)
+        combo=self.window.fields['font_choice']['control']
+        self.assertEqual(combo.currentIndex(),0)
+        self.assertEqual(combo.currentText(),'文泉驿微米黑')
+        updated_field=copy.deepcopy(field)
+        updated_field['value']='文泉驿等宽微米黑'
+        self.assertTrue(self.window.update_field(updated_field))
+        self.assertEqual(combo.currentText(),'文泉驿等宽微米黑')
+        updated_field['value']='自定义外部字体 😀'
+        self.assertTrue(self.window.update_field(updated_field))
+        self.assertEqual(combo.currentText(),'自定义外部字体 😀')
+        self.assertEqual(combo.currentIndex(),-1)
+        adaptor=Adaptor(self.window)
+        combo.lineEdit().setText('未提交的草稿')
+        combo.lineEdit().setModified(True)
+        self.assertFalse(adaptor.CloseForUpdate())
+        combo.lineEdit().setModified(False)
+        self.assertTrue(adaptor.CloseForUpdate())
+    def test_choice_creation_and_updates_distinguish_literal_text_from_indexes(self):
+        field={'id':'choice','name':'choice','kind':'choice','label':'候选','options':['1','文字','另一项'],'editable':True,'value':'1'}
+        self.backend.pages['fences:choices']={'ok':True,'fields':[field]}
+        self.window.open_page('fences:choices');QtTest.QTest.qWait(40)
+        combo=self.window.fields['choice']['control'];self.window.search.setFocus()
+        self.assertEqual(combo.currentText(),'1');self.assertEqual(combo.currentIndex(),0)
+        for value,index in [('未知 😀',-1),('1',0),(1,1),(1.0,1),(True,-1),(None,-1),(1.5,-1),(float('inf'),-1),(float('nan'),-1)]:
+            with self.subTest(value=value):
+                self.window.update_field(dict(field,value=value))
+                self.assertEqual(combo.currentIndex(),index)
+                if isinstance(value,str):self.assertEqual(combo.currentText(),value)
+        self.window.update_field(dict(field,value=-1,text='原生 currentText'))
+        self.assertEqual(combo.currentText(),'原生 currentText')
+        self.assertFalse(any(method=='Set' for _,method,_ in self.backend.calls))
+    def test_update_close_preserves_native_unapplied_draft_and_reports_close_result(self):
+        self.window.open_page('fences:wallpaper');QtTest.QTest.qWait(40)
+        data=copy.deepcopy(self.backend.pages['fences:wallpaper']);data['dirty']=True;self.window.receive_page(data)
+        adaptor=Adaptor(self.window);self.assertFalse(adaptor.CloseForUpdate());self.assertTrue(self.window.isVisible())
+        data['dirty']=False;self.window.receive_page(data)
+        with patch.object(self.window,'close',return_value=False):self.assertFalse(adaptor.CloseForUpdate())
+        self.assertTrue(adaptor.CloseForUpdate())
 
 if __name__=='__main__':unittest.main()

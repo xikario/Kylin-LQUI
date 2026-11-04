@@ -448,6 +448,25 @@ class ControlUi(unittest.TestCase):
         viewport=self.window.scroll.viewport()
         QtTest.QTest.mouseClick(viewport,QtCore.Qt.LeftButton,pos=QtCore.QPoint(50,viewport.height()-60));QtTest.QTest.qWait(300)
         self.assertFalse(self.window.isVisible())
+    def test_status_label_on_detail_page_does_not_dismiss_popup(self):
+        self.window.dialog_open=True;self.window.navigate('wifi');deadline=QtCore.QElapsedTimer();deadline.start()
+        while self.window.navigation_active and deadline.elapsed()<3000:QtTest.QTest.qWait(20)
+        self.assertFalse(self.window.navigation_active)
+        self.window.status.setText('正在查找 Wi-Fi 网络…');self.window.status.show();self.window.layout().activate()
+        self.assertTrue(self.window.status.isVisible())
+        QtTest.QTest.mouseClick(self.window.status,QtCore.Qt.LeftButton,pos=QtCore.QPoint(self.window.status.width()//2,self.window.status.height()//2));QtTest.QTest.qWait(100)
+        self.assertTrue(self.window.isVisible());self.assertFalse(self.window.closing)
+    def test_detail_scrollbar_is_clickable_outside_glass_cards(self):
+        self.window.dialog_open=True;self.window.navigate('wifi');self.window.poll.stop()
+        deadline=QtCore.QElapsedTimer();deadline.start()
+        while self.window.navigation_active and deadline.elapsed()<3000:QtTest.QTest.qWait(20)
+        self.assertFalse(self.window.navigation_active)
+        self.window.scroll.widget().setMinimumHeight(1800);self.window.layout().activate();QtTest.QTest.qWait(40)
+        bar=self.window.scroll.verticalScrollBar()
+        self.assertTrue(bar.isVisible());self.assertGreater(bar.maximum(),0)
+        bar.setValue(0)
+        QtTest.QTest.mouseClick(bar,QtCore.Qt.LeftButton,pos=QtCore.QPoint(bar.width()//2,bar.height()*3//4))
+        self.assertFalse(self.window.closing);self.assertTrue(self.window.isVisible());self.assertGreater(bar.value(),0)
     def test_detail_click_while_reading_applies_result_to_current_page(self):
         self.window.maybe_scan_wifi=lambda:None # this test isolates the snapshot/navigation race
         self.window.refresh_microphone=lambda:None

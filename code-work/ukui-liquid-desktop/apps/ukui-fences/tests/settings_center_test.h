@@ -247,12 +247,132 @@ static int runSettingsCenterTest(const QString &root) {
     const QString keptFile=root+"/字体与网格重置保留.txt";QFile kept(keptFile);kept.open(QIODevice::WriteOnly);kept.write("keep");kept.close();
     fence->addItem(DesktopItem::fromPath(keptFile));
     const QRect fenceGeometry=fence->geometry();
+    canvas.setFontFamily("DejaVu Sans");canvas.setFontSize(19);canvas.setFontColor(QColor("#223344"));
+    canvas.setFontBold(true);canvas.setFontItalic(true);
     window->openPage("fence:"+fence->fenceId());
     auto *fencePage=window->findChild<QStackedWidget *>("settingsPages")->currentWidget();
     auto fontForms=fencePage->findChildren<QDialogButtonBox *>();
     check(fontForms.size()==2,"both per-fence font editors are embedded");
-    if(!fontForms.isEmpty())fontForms.first()->button(QDialogButtonBox::Apply)->click();
-    check(fence->hasLocalFont(),"per-fence font apply updates the original model");
+    if(fontForms.size()==2) {
+        auto *iconForm=fontForms[0]->parentWidget();
+        auto *fontCombo=iconForm->findChild<QComboBox *>();
+        auto *sizeSpin=iconForm->findChild<QSpinBox *>();
+        auto checks=iconForm->findChildren<QCheckBox *>();
+        QPushButton *colorButton=nullptr,*resetButton=nullptr;
+        for(auto *button:iconForm->findChildren<QPushButton *>()) {
+            if(button->text()=="内部图标恢复为全局设置")resetButton=button;
+            if(button->text()==canvas.fontColor().name())colorButton=button;
+        }
+        check(fontCombo&&fontCombo->currentData().toString()==canvas.fontFamily()
+                  &&sizeSpin&&sizeSpin->value()==canvas.fontSize()
+                  &&checks.size()==2&&checks[0]->isChecked()==canvas.fontBold()
+                  &&checks[1]->isChecked()==canvas.fontItalic()
+                  &&colorButton,
+              "per-fence font form opens with the actual inherited global font values");
+        check(resetButton,"per-fence icon font form exposes its global reset action");
+        if(fontCombo&&sizeSpin&&checks.size()==2&&resetButton) {
+            fontCombo->setCurrentIndex(0);sizeSpin->setValue(20);
+            checks[0]->setChecked(false);checks[1]->setChecked(false);
+            fontForms[0]->button(QDialogButtonBox::Apply)->click();
+            check(fence->hasLocalFont(),"per-fence font apply updates the original model");
+            fontCombo->setCurrentIndex(0);sizeSpin->setValue(8);
+            checks[0]->setChecked(false);checks[1]->setChecked(false);
+            resetButton->click();
+            colorButton=nullptr;
+            for(auto *button:iconForm->findChildren<QPushButton *>())
+                if(button->text()==canvas.fontColor().name())colorButton=button;
+            check(!fence->hasLocalFont()&&fontCombo->currentData().toString()==canvas.fontFamily()
+                      &&sizeSpin->value()==canvas.fontSize()
+                      &&checks[0]->isChecked()==canvas.fontBold()
+                      &&checks[1]->isChecked()==canvas.fontItalic()
+                      &&colorButton&&!iconForm->property("settingsDirty").toBool(),
+                  "global reset refreshes every visible internal font value to the inherited settings");
+            iconForm->setProperty("settingsDirty",true); // A canceled color picker can leave the outer form dirty.
+            fontForms[0]->button(QDialogButtonBox::Apply)->click();
+            check(!fence->hasLocalFont()&&!iconForm->property("settingsDirty").toBool(),
+                  "dirty state without an effective change keeps the fence inheriting future global changes");
+        }
+
+        auto *titleForm=fontForms[1]->parentWidget();
+        auto *titleCombo=titleForm->findChild<QComboBox *>();
+        auto *titleSize=titleForm->findChild<QSpinBox *>();
+        auto titleChecks=titleForm->findChildren<QCheckBox *>();
+        QPushButton *titleReset=nullptr,*titleColor=nullptr;
+        for(auto *button:titleForm->findChildren<QPushButton *>()) {
+            if(button->text()=="标题恢复为默认设置")titleReset=button;
+            if(button->text()==QColor(Qt::white).name())titleColor=button;
+        }
+        check(titleCombo&&titleCombo->currentData().toString().isEmpty()
+                  &&titleSize&&titleSize->value()==13&&titleChecks.size()==2
+                  &&titleChecks[0]->isChecked()&&!titleChecks[1]->isChecked()&&titleColor,
+              "title font form defaults match the fence paint fallback");
+        check(titleReset,"title font form exposes its reset action");
+        if(titleCombo&&titleSize&&titleChecks.size()==2&&titleReset) {
+            titleCombo->setCurrentIndex(titleCombo->count()-1);titleSize->setValue(20);
+            titleChecks[0]->setChecked(false);titleChecks[1]->setChecked(true);
+            fontForms[1]->button(QDialogButtonBox::Apply)->click();
+            titleCombo->setCurrentIndex(0);titleSize->setValue(9);
+            titleChecks[0]->setChecked(false);titleChecks[1]->setChecked(true);
+            titleReset->click();
+            check(titleCombo->currentData().toString().isEmpty()&&titleSize->value()==13
+                      &&titleChecks[0]->isChecked()&&!titleChecks[1]->isChecked()
+                      &&!titleForm->property("settingsDirty").toBool(),
+                  "title reset refreshes the open form to the actual paint fallback");
+            titleForm->setProperty("settingsDirty",true);
+            fontForms[1]->button(QDialogButtonBox::Apply)->click();
+            canvas.saveLayout();
+            const QString savedPath=QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+                +"/kyfences/layout.json";
+            QFile savedFonts(savedPath);savedFonts.open(QIODevice::ReadOnly);
+            bool titleOverrideSaved=false;
+            for(const auto &entry:QJsonDocument::fromJson(savedFonts.readAll()).object()["fences"].toArray()) {
+                const auto object=entry.toObject();
+                if(object["id"].toString()==fence->fenceId())titleOverrideSaved=object.contains("titleFont");
+            }
+            check(!titleOverrideSaved&&!titleForm->property("settingsDirty").toBool(),
+                  "applying immediately after title reset keeps the paint fallback instead of creating an override");
+        }
+    }
+    const QString unavailableFont="LQUI-Uninstalled-Test-Font";
+    canvas.setFontFamily(unavailableFont);
+    window->openPage("help");window->openPage("fence:"+fence->fenceId());
+    fencePage=window->findChild<QStackedWidget *>("settingsPages")->currentWidget();
+    fontForms=fencePage->findChildren<QDialogButtonBox *>();
+    auto *unknownFontForm=fontForms.isEmpty()?nullptr:fontForms[0]->parentWidget();
+    auto *unknownFontCombo=unknownFontForm?unknownFontForm->findChild<QComboBox *>():nullptr;
+    auto *unknownSize=unknownFontForm?unknownFontForm->findChild<QSpinBox *>():nullptr;
+    check(unknownFontCombo&&unknownFontCombo->currentData().toString()==unavailableFont,
+          "an inherited font missing from the installed family list remains selected");
+    if(unknownFontCombo&&unknownSize&&!fontForms.isEmpty()) {
+        unknownSize->setValue(unknownSize->value()==18?17:18);
+        fontForms[0]->button(QDialogButtonBox::Apply)->click();
+        check(fence->hasLocalFont()&&unknownFontCombo->currentData().toString()==unavailableFont,
+              "editing another font value preserves an unavailable inherited family");
+        for(auto *button:unknownFontForm->findChildren<QPushButton *>())
+            if(button->text()=="内部图标恢复为全局设置")button->click();
+        fontForms[0]->button(QDialogButtonBox::Apply)->click();
+        check(!fence->hasLocalFont(),"unknown-family reset also remains inherited after Apply");
+    }
+    auto *standaloneFontForm=fence->createFontSettingsPage(window);
+    auto *standaloneSize=standaloneFontForm->findChild<QSpinBox *>();
+    const int inheritedSize=canvas.fontSize();
+    auto *standaloneBox=standaloneFontForm->findChild<QDialogButtonBox *>();
+    auto *standaloneApply=standaloneBox?standaloneBox->button(QDialogButtonBox::Apply):nullptr;
+    check(standaloneSize&&standaloneApply,"standalone font form has editable controls");
+    check(!standaloneFontForm->property("settingsDirty").toBool(),
+          "standalone font form does not require attachForm to mark edits");
+    if(standaloneSize&&standaloneApply) {
+        standaloneSize->setValue(inheritedSize==24?inheritedSize-1:inheritedSize+1);
+        standaloneApply->click();
+        check(fence->hasLocalFont(),"standalone font form applies an effective user edit");
+        for(auto *button:standaloneFontForm->findChildren<QPushButton *>())
+            if(button->text()=="内部图标恢复为全局设置")button->click();
+        standaloneFontForm->setProperty("settingsDirty",true);
+        standaloneApply->click();
+        check(!fence->hasLocalFont()&&!standaloneFontForm->property("settingsDirty").toBool(),
+              "standalone form keeps reset values inherited despite unrelated dirty state");
+    }
+    delete standaloneFontForm;
     canvas.setFontFamily("DejaVu Sans");canvas.setFontSize(19);canvas.setFontColor(QColor("#223344"));
     canvas.setFontBold(true);canvas.setFontItalic(true);
     window->openPage("help");window->openPage("icons");settle(50);
@@ -267,6 +387,16 @@ static int runSettingsCenterTest(const QString &root) {
               &&!desktopFontForm->findChildren<QCheckBox *>().first()->isChecked()
               &&!desktopFontForm->findChildren<QCheckBox *>().last()->isChecked(),
           "desktop font form is refreshed to normal non-italic defaults after reset");
+    auto *rebuiltFontCombo=desktopFontForm?desktopFontForm->findChild<QComboBox *>():nullptr;
+    check(rebuiltFontCombo&&rebuiltFontCombo->property("settingsComboPopup").toBool(),
+          "rebuilt desktop font form reinstalls the liquid combo behavior");
+    if(rebuiltFontCombo) {
+        rebuiltFontCombo->showPopup();settle(100);
+        auto *popup=rebuiltFontCombo->view()->window();
+        check(popup->isVisible()&&popup->property("settingsComboPopupSurface").toBool(),
+              "rebuilt desktop font selector opens with its liquid popup surface");
+        rebuiltFontCombo->hidePopup();settle(20);
+    }
     QPointer<QWidget> oldFontForm=desktopFontForm;
     QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
     if(fontReset){fontReset->click();settle(80);}
@@ -289,6 +419,18 @@ static int runSettingsCenterTest(const QString &root) {
     auto *gridReset=window->findChild<QPushButton *>("desktopGridResetDefaults");
     check(gridReset,"layout page exposes a grid-only default action");
     if(gridReset)gridReset->click();settle(80);
+    gridForm=nullptr;
+    for(auto *form:layoutPage->findChildren<QWidget *>())if(form->windowTitle()=="桌面图标网格")gridForm=form;
+    auto *rebuiltGridCombo=gridForm?gridForm->findChild<QComboBox *>():nullptr;
+    check(rebuiltGridCombo&&rebuiltGridCombo->property("settingsComboPopup").toBool(),
+          "rebuilt grid form reinstalls the liquid combo behavior");
+    if(rebuiltGridCombo) {
+        rebuiltGridCombo->showPopup();settle(100);
+        auto *popup=rebuiltGridCombo->view()->window();
+        check(popup->isVisible()&&popup->property("settingsComboPopupSurface").toBool(),
+              "rebuilt grid selector opens with its liquid popup surface");
+        rebuiltGridCombo->hidePopup();settle(20);
+    }
     QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
     if(gridReset){gridReset->click();gridReset->click();settle(80);}
     QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);

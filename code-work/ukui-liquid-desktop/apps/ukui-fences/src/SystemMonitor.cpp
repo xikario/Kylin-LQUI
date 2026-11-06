@@ -445,7 +445,7 @@ QVector<SystemMonitor::Sample::FrameworkInfo> SystemMonitor::readFrameworkSnapsh
         const auto component=value.toObject(), config=component.value("monitor").toObject();
         if(config.isEmpty())continue;
         Sample::FrameworkInfo row;row.id=component.value("id").toString();row.name=config.value("label").toString();row.status=config.value("idle").toString();
-        bool cpuValid=true,memoryValid=true;QStringList states;
+        bool cpuValid=true,memoryValid=true,panelHost=false;QStringList states;
         for(const auto &process:processes) {
             if(process.uid!=int(getuid()))continue;
             const auto executable=QFileInfo(process.executablePath).fileName();
@@ -466,10 +466,15 @@ QVector<SystemMonitor::Sample::FrameworkInfo> SystemMonitor::readFrameworkSnapsh
             cpuValid=cpuValid&&process.cpuValid;
             if(process.state=="T"||process.state=="t"){row.warning=true;states<<"已暂停";}
             else if(process.state=="D"){row.warning=true;states<<"I/O 等待";}
-            if(component.value("id").toString()=="panel") {
+            if(row.id=="panel" && executable=="ukui-panel") {
+                // The Python launcher belongs in resource totals, but only
+                // the native host can load the QStyle plugin.
+                panelHost=true;
                 QFile maps(QString("/proc/%1/maps").arg(process.pid));
-                if(!maps.open(QIODevice::ReadOnly)||!maps.readAll().contains("libukuiliquidpanel.so")) {
-                    row.warning=true;states<<"原生样式";
+                if(!maps.open(QIODevice::ReadOnly)) {
+                    row.warning=true;states<<"样式未知";
+                } else {
+                    states<<(maps.readAll().contains("libukuiliquidpanel.so") ? "液态样式" : "原生样式");
                 }
             }
             QFile memory(QString("/proc/%1/smaps_rollup").arg(process.pid));
@@ -485,6 +490,7 @@ QVector<SystemMonitor::Sample::FrameworkInfo> SystemMonitor::readFrameworkSnapsh
             memoryValid=memoryValid&&hasPss&&hasSwap;
         }
         if(!row.pids.isEmpty()) {
+            if(row.id=="panel" && !panelHost)states<<"启动中";
             states.removeDuplicates();row.status=states.isEmpty()?QStringLiteral("运行"):states.join(" / ");
             row.cpuValid=cpuValid;row.memoryValid=memoryValid;
         }

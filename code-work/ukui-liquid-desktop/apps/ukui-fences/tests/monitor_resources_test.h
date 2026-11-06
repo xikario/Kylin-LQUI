@@ -32,6 +32,30 @@ struct SystemMonitorTestAccess {
         check(byId(framework,"fences").pids.contains(getpid()),"framework catalog identifies exact main executable and current user");
         check(!byId(framework,"fences").cpuValid&&byId(framework,"fences").memoryValid&&byId(framework,"fences").pss>0,"first CPU sample is unknown while proportional memory is measured");
         check(byId(framework,"peony-manager").status=="按需启动"&&byId(framework,"peony-manager").pids.isEmpty(),"optional manager is on demand, not a failed service");
+        // Use real /proc entries for a native host fixture and a Python
+        // launcher. Mapping a harmless fixture file exercises plugin detection
+        // without loading a style plugin into this test application.
+        QTemporaryDir panelFixture;
+        QFile launcherScript(panelFixture.path()+"/ukui-panel-liquid");launcherScript.open(QIODevice::WriteOnly);
+        launcherScript.write("import time\ntime.sleep(30)\n");launcherScript.close();
+        QProcess launcher;launcher.start("/usr/bin/python3",{launcherScript.fileName()});
+        check(launcher.waitForStarted(),"panel launcher fixture starts");
+        const auto launcherDetails=SystemMonitor::readProcessDetails(launcher.processId());
+        ProcessInfo launcherInfo;launcherInfo.pid=launcher.processId();launcherInfo.startTicks=launcherDetails.startTicks;
+        launcherInfo.executablePath="/usr/bin/python3";launcherInfo.uid=getuid();launcherInfo.state="S";
+        ProcessInfo panelInfo=ownFixture;panelInfo.executablePath="/usr/bin/ukui-panel";
+        auto panelRow=byId(SystemMonitor::readFrameworkSnapshot({panelInfo,launcherInfo}),"panel");
+        check(panelRow.name=="原生任务栏" && panelRow.status=="原生样式" && !panelRow.warning,
+              "native panel without the plugin is a valid native style, not a failed component");
+        QFile pluginMap(panelFixture.path()+"/libukuiliquidpanel.so");pluginMap.open(QIODevice::ReadWrite);pluginMap.resize(4096);
+        auto *mapped=pluginMap.map(0,4096);check(mapped!=nullptr,"plugin mapping fixture exists");
+        panelRow=byId(SystemMonitor::readFrameworkSnapshot({launcherInfo,panelInfo}),"panel");
+        check(panelRow.status=="液态样式" && !panelRow.warning && panelRow.pids.size()==2,
+              "launcher is counted for resources without overriding the host's loaded liquid style");
+        panelRow=byId(SystemMonitor::readFrameworkSnapshot({launcherInfo}),"panel");
+        check(panelRow.status=="启动中","launcher alone is not reported as a running native panel");
+        if(mapped)pluginMap.unmap(mapped);
+        launcher.terminate();launcher.waitForFinished(3000);
         ownFixture.uid=getuid()+1;
         check(byId(SystemMonitor::readFrameworkSnapshot({ownFixture}),"fences").pids.isEmpty(),"other users' processes are excluded");
         ownFixture.uid=getuid();++ownFixture.startTicks;

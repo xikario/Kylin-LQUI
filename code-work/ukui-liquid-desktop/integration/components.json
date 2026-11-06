@@ -120,7 +120,7 @@
       ],
       "hosting": "QStylePlugin inside the original panel process",
       "monitor": {
-        "label": "液态任务栏",
+        "label": "原生任务栏",
         "idle": "未运行"
       },
       "executables": [

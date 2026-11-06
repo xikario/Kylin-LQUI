@@ -1,6 +1,8 @@
 # 构建入口
 
-需要 CMake ≥3.16、C++17 编译器、Python ≥3.8、Qt 5.12 开发包。按模块安装 Qt Widgets/DBus/Network/Test、X11、KDE Frameworks 5、GIO/PyGObject、PyQt5 等依赖。Peony 扩展另需 Peony/Qt 开发头文件，终端扩展另需 qtermwidget。不要把个人机器的 SDK 绝对路径提交到仓库。
+需要 CMake ≥3.16、C++17 编译器、Python ≥3.8、Qt 5.12 开发包。按模块安装 Qt Widgets/DBus/Network/Test、X11/XCB/OpenGL、GIO/PyGObject、PyQt5 等依赖。Peony 扩展另需 Peony/Qt 开发头文件，终端扩展另需 qtermwidget。不要把个人机器的 SDK 绝对路径提交到仓库。
+
+`ukui-panel-liquid` 构建的是加载到已有 `ukui-panel` 中的 Qt 样式插件，不重新编译系统面板，也不需要整套 KDE Frameworks 5 开发包。其构建依赖为 Qt 5 Core/Gui/Widgets/DBus、X11/XCB 与 OpenGL 头文件等；部分测试另用 Qt Test/Network。Dock 通过运行时符号查找复用宿主已有的 `KWindowSystem` 能力，不包含 KF5 头文件或链接 `KF5::` 目标。系统面板及其原生模块自身需要的运行库由系统包管理，不应与本插件的开发依赖混淆。
 
 ## 常用模块
 

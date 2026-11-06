@@ -44,6 +44,8 @@ Fences 使用视频壁纸时，任务栏读取同一视频已缓存的首帧生�
 
 ## 构建与安装
 
+本插件不需要 KDE Frameworks 5 开发包。构建使用 Qt 5 Core/Gui/Widgets/DBus、X11/XCB 与 OpenGL 开发头文件；测试可能另需 Qt Test/Network。运行依托系统已有的 `ukui-panel` 及其运行库，插件必须与宿主的 Qt/OEM 接口匹配。不要将重新编译系统面板所需的依赖清单套用到此插件。
+
 从**仓库根目录**执行，使用与系统面板相同版本的 Qt：
 
 ```sh

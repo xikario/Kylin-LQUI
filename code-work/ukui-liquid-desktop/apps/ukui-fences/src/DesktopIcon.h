@@ -99,6 +99,7 @@ private:
     bool        m_selected  = false;
     bool        m_cut       = false;
     bool        m_hovered   = false;
+    bool        m_dragPreviewActive = false;
     QPoint      m_dragStart;
     QPoint      m_dragGlobalStart;
     QPoint      m_widgetStart;

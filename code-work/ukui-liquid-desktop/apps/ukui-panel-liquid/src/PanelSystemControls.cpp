@@ -43,6 +43,8 @@ class Capsule:public QWidget {
 public:Capsule(QWidget *parent):QWidget(parent){setObjectName("liquidSystemCapsule");setAttribute(Qt::WA_TransparentForMouseEvents);setAttribute(Qt::WA_TranslucentBackground);}
 protected:void paintEvent(QPaintEvent*)override{
     QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.setPen(QPen(QColor(100,116,139,150),1));p.setBrush(QColor(10,16,23,135));p.drawRoundedRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5),11,11);
+    const int separator=property("separatorX").toInt();
+    if(separator>0){p.setPen(QColor("#334155"));p.drawLine(separator,(height()-20)/2,separator,(height()+20)/2);}
 }
 };
 }
@@ -52,6 +54,7 @@ void PanelSystemControls::schedule(){if(!applying&&!pending.isActive())pending.s
 void PanelSystemControls::restore(){
     ++activationRevision;
     applying=true;if(capsule)delete capsule;
+    if(cluster){cluster->setProperty("liquidUnifiedStatus",false);cluster->update();cluster.clear();}
     for(const auto &saved:originals)if(saved.widget){saved.widget->setMinimumSize(saved.minimum);saved.widget->setMaximumSize(saved.maximum);saved.widget->setIconSize(saved.icon);saved.widget->setProperty("liquidSystemPage",QVariant());}
     for(const auto &saved:hosts)if(saved.widget&&saved.widget->layout())restoreGrid(saved.widget->layout(),saved.minimum,saved.maximum);
     for(const auto &saved:bounds)if(saved.widget){saved.widget->setMinimumSize(saved.minimum);saved.widget->setMaximumSize(saved.maximum);saved.widget->updateGeometry();}
@@ -99,9 +102,32 @@ void PanelSystemControls::sync(){
         const int width=layout->count()*25;widthFor(row,width);total+=width;
     }
     if(total>0){widthFor(home,total);QWidget *area=home->parentWidget();while(area&&!area->inherits("StatusNotiferScrollArea"))area=area->parentWidget();if(area)widthFor(area,total);}
-    if(!capsule){capsule=new Capsule(home);capsule->lower();capsule->show();}
-    const int height=qMin(36,home->height());const QRect area(0,(home->height()-height)/2,home->width(),height);
+    auto *nextCluster=home->window()->findChild<QWidget*>("aiStationCluster");
+    if(nextCluster && !nextCluster->isVisible())nextCluster=nullptr;
+    if(cluster!=nextCluster){
+        if(cluster){cluster->setProperty("liquidUnifiedStatus",false);cluster->update();}
+        cluster=nextCluster;
+    }
+    QWidget *surface=home;
+    QRect area(0,(home->height()-qMin(36,home->height()))/2,home->width(),qMin(36,home->height()));
+    int separator=0;
+    auto *orb=cluster?cluster->findChild<QWidget*>("aiStationOrb"):nullptr;
+    if(cluster && orb){
+        // Paint on the nearest shared ancestor, underneath the OEM tray and
+        // calendar wrappers. They retain all native event routing and layouts.
+        while(surface && !surface->isAncestorOf(cluster))surface=surface->parentWidget();
+        if(!surface)surface=home->window();
+        const QPoint tray=home->mapTo(surface,QPoint());
+        const QPoint station=cluster->mapTo(surface,QPoint());
+        const int top=station.y()+(cluster->height()-36)/2;
+        area=QRect(tray.x(),top,station.x()+orb->x()-8-tray.x()+1,36);
+        separator=station.x()-tray.x()+3;
+        if(!cluster->property("liquidUnifiedStatus").toBool()){cluster->setProperty("liquidUnifiedStatus",true);cluster->update();}
+    }
+    if(capsule && capsule->parentWidget()!=surface){delete capsule;capsule.clear();}
+    if(!capsule){capsule=new Capsule(surface);capsule->lower();capsule->show();}
     if(capsule->geometry()!=area)capsule->setGeometry(area);
+    if(capsule->property("separatorX").toInt()!=separator){capsule->setProperty("separatorX",separator);capsule->update();}
     applying=false;
 }
 bool PanelSystemControls::eventFilter(QObject *object,QEvent *event){
@@ -155,8 +181,8 @@ bool PanelSystemControls::eventFilter(QObject *object,QEvent *event){
         }
     }
     if(widget->inherits("StatusNotifierButton")&&event->type()==QEvent::Paint&&page.isEmpty()&&!role(widget).isEmpty())schedule();
-    const bool related=widget==home||widget->inherits("StatusNotifierButton")||widget->inherits("UKUIPanel")||widget->objectName().startsWith("StatusNotifier_");
-    if(related&&(event->type()==QEvent::Resize||event->type()==QEvent::LayoutRequest||event->type()==QEvent::Show||event->type()==QEvent::ChildPolished))schedule();
+    const bool related=widget==home||widget==cluster||widget->objectName()=="aiStationOrb"||widget->objectName()=="ukui-panel_plugin_QFrame_calendar"||widget->inherits("StatusNotifierButton")||widget->inherits("UKUIPanel")||widget->objectName().startsWith("StatusNotifier_");
+    if(related&&(event->type()==QEvent::Move||event->type()==QEvent::Hide||event->type()==QEvent::Resize||event->type()==QEvent::LayoutRequest||event->type()==QEvent::Show||event->type()==QEvent::ChildPolished))schedule();
     if(widget->objectName()=="BackgroundWidget"&&event->type()==QEvent::Paint&&LquiControl::enabled())sync();
     return false;
 }

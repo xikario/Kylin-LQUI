@@ -169,7 +169,9 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             core=[w for w in nodes(initial['panel']) if w.get('accessibleName') in ['ukui-panel_sni_QToolButton_'+name for name in ('kylin-nm','ukui-volume-control-applet-qt','ukui-power-manager-tray','ukui-sidebar','ukui-bluetooth')]]
             check(len(core)==5 and all(w['w']==25 for w in core if w['visible']),'all five system controls exist and visible entries remain compact')
             compact_width=named(initial,'StatusNotifier')['w']
-            check(named(initial,'liquidSystemCapsule')['w']==compact_width,'capsule encloses the entire tray group')
+            capsule=named(initial,'liquidSystemCapsule');cluster=named(initial,'aiStationCluster');orb=named(initial,'aiStationOrb')
+            check(capsule['w']>compact_width+100 and capsule['x']+capsule['w']==orb['x']-7,'one capsule encloses tray, temperature, network and calendar, ending before the orb')
+            capture('BackgroundWidget','unified-status.png')
             samples=[call(wait=250) for _ in range(4)];(args.output/'control-samples.json').write_text(json.dumps(samples,ensure_ascii=False))
             check(samples[-1]['controlSyncs']-samples[0]['controlSyncs']<=4,'idle control group has no relayout or repaint loop')
             for target,page in [('ukui-panel_sni_QToolButton_kylin-nm','wifi'),('ukui-panel_sni_QToolButton_ukui-volume-control-applet-qt','sound'),('ukui-panel_sni_QToolButton_ukui-power-manager-tray','power'),('ukui-panel_sni_QToolButton_ukui-sidebar','notifications'),('ukui-panel_sni_QToolButton_ukui-bluetooth','bluetooth')]:
@@ -197,6 +199,10 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             visible_motion=[e for e in native.get('calendarEvents',[]) if e['opacity']>.05]
             check(len(visible_motion)>2 and len({e['x'] for e in visible_motion})==1 and visible_motion[0]['y']>visible_motion[-1]['y'],'calendar rises vertically with no visible sideways motion')
             (args.output/'calendar-motion.json').write_text(json.dumps(visible_motion,indent=2))
+            # OEM font/style polish can resize the calendar once after mapping
+            # at fractional DPI (also present in the unmodified host). Let that
+            # initial work finish before measuring persistent geometry motion.
+            call(wait=2500)
             calendar_positions=[]
             for _ in range(12):
                 state=call(wait=100);cal=next(w for w in state['windows'] if w['class']=='LunarCalendarWidget');calendar_positions.append(tuple(cal[k] for k in ('x','y','w','h')))

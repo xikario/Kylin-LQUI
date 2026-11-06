@@ -23,7 +23,7 @@ private:
     QHash<QWidget*,Host> hosts;
     struct Bounds {QPointer<QWidget> widget;QSize minimum,maximum;};
     QHash<QWidget*,Bounds> bounds;
-    QPointer<QWidget> home,capsule;
+    QPointer<QWidget> home,capsule,cluster;
     QTimer pending;
     quint64 activationRevision=0;
     bool applying=false;

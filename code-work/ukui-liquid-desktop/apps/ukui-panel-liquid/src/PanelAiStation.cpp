@@ -324,6 +324,7 @@ protected:
     void leaveEvent(QEvent *event) override {update();QWidget::leaveEvent(event);}
     bool eventFilter(QObject *,QEvent *event) override {if(event->type()==QEvent::Enter||event->type()==QEvent::Leave||event->type()==QEvent::MouseMove)update();return false;}
     void paintEvent(QPaintEvent *) override {
+        if(property("liquidUnifiedStatus").toBool())return;
         QPainter p(this);p.setRenderHint(QPainter::Antialiasing);const QRectF r(.5,(height()-36)/2.,qMax(1,orb->x()-8),36);
         const bool hover=r.contains(mapFromGlobal(QCursor::pos()));p.setBrush(QColor(0,0,0,102));
         p.setPen(QPen(hover?QColor("#475569"):QColor(51,65,85,180),1));p.drawRoundedRect(r,10,10);

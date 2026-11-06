@@ -265,7 +265,8 @@ private:
     bool applyWallpaperThemeToFences();
     void applyThemeToFences(const QColor &fenceColor,
                             const QColor &textColor = QColor());
-    void layoutLooseIcons();
+    friend struct DesktopPlacementTestAccess;
+    void layoutLooseIcons(const QSet<QString> &movingPaths = {});
     QRect desktopIconArea() const;
     QRect smartSpaceReservedGeometry() const;
     QList<QWidget *> desktopWidgets() const;
@@ -310,7 +311,8 @@ private:
     QStringList selectedFilePaths() const;
     bool pasteToDesktop(const QPoint &preferredPos = QPoint(-1, -1));
     void placeFilesOnDesktop(const QStringList &paths,
-                             const QPoint &preferredPos = QPoint(-1, -1));
+                             const QPoint &preferredPos = QPoint(-1, -1),
+                             bool dragCentered = false);
     void trashSelectedIcons();
     void deleteSelectedIconsPermanently();
     void renameFirstSelectedIcon();

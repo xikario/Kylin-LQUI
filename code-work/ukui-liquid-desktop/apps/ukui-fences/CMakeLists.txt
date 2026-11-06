@@ -146,6 +146,14 @@ if(BUILD_TESTING)
         add_test(NAME desktop_persistence COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
             ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --persistence-only)
         set_tests_properties(desktop_persistence PROPERTIES TIMEOUT 30 ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1" LABELS "integration;files")
+        foreach(DRAG_SCALE 1 1.5)
+            add_test(NAME desktop_icon_placement_${DRAG_SCALE}
+                COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2160x1350x24"
+                        ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test>
+                        --desktop-placement-only)
+            set_tests_properties(desktop_icon_placement_${DRAG_SCALE} PROPERTIES TIMEOUT 30
+                LABELS "integration;ui;drag" ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1;QT_STYLE_OVERRIDE=ukui;QT_SCREEN_SCALE_FACTORS=1;QT_SCALE_FACTOR=${DRAG_SCALE}")
+        endforeach()
         add_test(NAME desktop_selection_drag
             COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1440x900x24"
                     ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test>

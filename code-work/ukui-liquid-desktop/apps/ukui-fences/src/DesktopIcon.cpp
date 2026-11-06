@@ -15,6 +15,7 @@
 #include <QMoveEvent>
 #include <QContextMenuEvent>
 #include <QDrag>
+#include <QWindow>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDragLeaveEvent>
@@ -53,6 +54,21 @@
 #include "../../../shared/async-work/BackgroundTask.h"
 
 namespace {
+
+// Qt's native drag surface is transient artwork, not a popup. Prevent the
+// window manager from adding a large dark shadow to the transparent preview.
+class DragSurfaceGuard final : public QObject {
+public:
+    DragSurfaceGuard(){qApp->installEventFilter(this);}
+    ~DragSurfaceGuard() override{qApp->removeEventFilter(this);}
+protected:
+    bool eventFilter(QObject *object,QEvent *event) override {
+        auto *window=qobject_cast<QWindow *>(object);
+        if(window && window->inherits("QShapedPixmapWindow") && event->type()==QEvent::Show)
+            window->setFlags(window->flags() | Qt::NoDropShadowWindowHint);
+        return false;
+    }
+};
 
 constexpr const char *kSystemIconMime = "application/x-kyfences-sysicon";
 constexpr const char *kInternalFileDragMime =
@@ -705,6 +721,7 @@ void DesktopIcon::moveEvent(QMoveEvent *event)
 
 void DesktopIcon::paintEvent(QPaintEvent *)
 {
+    if(m_dragPreviewActive)return;
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
@@ -863,6 +880,7 @@ void DesktopIcon::mouseMoveEvent(QMouseEvent *e)
     m_renameTimer.stop();
     m_clickAnimTimer.stop();m_clickAnim=false;m_clickAnimProgress=0;
     m_hovered=false;update();
+    DragSurfaceGuard dragSurface;
     if (m_item.isSystemIcon) {
         auto *drag = new QDrag(this);
         auto *mime = new QMimeData;
@@ -873,8 +891,10 @@ void DesktopIcon::mouseMoveEvent(QMouseEvent *e)
         drag->setHotSpot(QPoint(qRound(preview.width()/preview.devicePixelRatioF()/2),
                                qRound(preview.height()/preview.devicePixelRatioF()/2)));
         const QPointer<DesktopIcon> guard(this);
+        m_dragPreviewActive=true;update();
         drag->exec(Qt::MoveAction);
         if (!guard) return;
+        m_dragPreviewActive=false;update();
         emit dragFinished();
         e->accept();
         return;
@@ -895,9 +915,11 @@ void DesktopIcon::mouseMoveEvent(QMouseEvent *e)
     // An external move can remove this icon via the filesystem watcher while
     // QDrag runs its nested event loop. Do not access a deleted source afterwards.
     const QPointer<DesktopIcon> guard(this);
+    m_dragPreviewActive=true;update();
     const Qt::DropAction action =
         drag->exec(Qt::MoveAction | Qt::CopyAction, Qt::MoveAction);
     if (!guard) return;
+    m_dragPreviewActive=false;update();
     emit dragFinished();
     if (action == Qt::MoveAction) {
         QStringList draggedPaths;

@@ -67,6 +67,7 @@ static QImage wallpaper(QSize logical, qreal dpr)
 #include "folder_drop_undo_test.h"
 #include "fence_reorder_test.h"
 #include "icon_damage_test.h"
+#include "desktop_placement_test.h"
 #include "review_async_test.h"
 #include "monitor_placement_test.h"
 #include "monitor_resources_test.h"
@@ -225,6 +226,8 @@ int main(int argc, char **argv)
         return runPermanentDeleteTest(isolated.path());
     if (app.arguments().contains("--external-drag-only"))
         return runExternalDragTest(isolated.path());
+    if (app.arguments().contains("--desktop-placement-only"))
+        return runDesktopPlacementTest(isolated.path());
     if (app.arguments().contains("--selection-only"))
         return runSelectionDragTest(isolated.path());
     if (app.arguments().contains("--features-only"))

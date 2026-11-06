@@ -1,3 +1,4 @@
+#include <limits>
 #include "LiquidDialog.h"
 #include "VideoWallpaperTrial.h"
 #include "VideoWallpaperPreview.h"
@@ -3702,7 +3703,7 @@ void DesktopCanvas::revealLooseIcons()
     update();
 }
 
-void DesktopCanvas::layoutLooseIcons()
+void DesktopCanvas::layoutLooseIcons(const QSet<QString> &movingPaths)
 {
     const int columns = qMax(4, m_gridColumns);
     const int rows = qMax(3, m_gridRows);
@@ -3736,10 +3737,17 @@ void DesktopCanvas::layoutLooseIcons()
         return true;
     };
 
+    // Reserve stationary icons first. A dragged item must not displace a
+    // neighbour merely because it occurs earlier in the filesystem list.
+    QList<DesktopIcon *> ordered = m_looseIcons;
+    if (!movingPaths.isEmpty())
+        std::stable_sort(ordered.begin(), ordered.end(), [&movingPaths](DesktopIcon *a, DesktopIcon *b) {
+            return !movingPaths.contains(a->item().filePath) && movingPaths.contains(b->item().filePath);
+        });
     QRegion damage;
     bool stackingChanged=false;
-    for (int index = 0; index < m_looseIcons.size(); ++index) {
-        DesktopIcon *icon = m_looseIcons[index];
+    for (int index = 0; index < ordered.size(); ++index) {
+        DesktopIcon *icon = ordered[index];
         if (!icon) continue;
 
         const QString path = icon->item().filePath;
@@ -3759,19 +3767,20 @@ void DesktopCanvas::layoutLooseIcons()
 
         int chosenCol = -1;
         int chosenRow = -1;
-        const int maxDistance = columns + rows;
-        for (int distance = 0; distance <= maxDistance && chosenCol < 0;
-             ++distance) {
-            for (int row = 0; row < rows && chosenCol < 0; ++row) {
-                for (int col = 0; col < columns; ++col) {
-                    if (qAbs(col - preferredCol) +
-                        qAbs(row - preferredRow) != distance)
-                        continue;
-                    if (validCell(col, row, icon)) {
-                        chosenCol = col;
-                        chosenRow = row;
-                        break;
-                    }
+        // Compare physical distances, including the pointer's position inside
+        // a cell. Manhattan rings otherwise prefer the upper row even when a
+        // vacant cell below/right is visibly closer.
+        const QPoint target = m_autoArrange ? cellPosition(preferredCol, preferredRow, icon) : preferred;
+        qint64 bestDistance = std::numeric_limits<qint64>::max();
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < columns; ++col) {
+                if (!validCell(col, row, icon)) continue;
+                const QPoint delta = cellPosition(col, row, icon) - target;
+                const qint64 distance = qint64(delta.x()) * delta.x() + qint64(delta.y()) * delta.y();
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    chosenCol = col;
+                    chosenRow = row;
                 }
             }
         }
@@ -4505,7 +4514,7 @@ void DesktopCanvas::copySelectedIcons(bool move)
 }
 
 void DesktopCanvas::placeFilesOnDesktop(const QStringList &paths,
-                                        const QPoint &preferredPos)
+                                        const QPoint &preferredPos, bool dragCentered)
 {
     if (paths.isEmpty()) return;
 
@@ -4543,13 +4552,13 @@ void DesktopCanvas::placeFilesOnDesktop(const QStringList &paths,
         }
 
         if (hasPreferredPos) {
-            m_looseIconPositions[item.filePath] = pos;
-            existing->move(pos);
+            m_looseIconPositions[item.filePath] = dragCentered
+                ? pos - existing->contentIconRect().center().toPoint() : pos;
             pos += QPoint(18, 18);
         }
     }
 
-    layoutLooseIcons();
+    layoutLooseIcons(paths.toSet());
     saveLayout();
     syncCutVisualState();
 }
@@ -4661,11 +4670,11 @@ void DesktopCanvas::dropEvent(QDropEvent *e)
                 continue;
 
             const QPoint pos = e->pos()
-                - QPoint(icon->width() / 2, icon->height() / 2);
+                - icon->contentIconRect().center().toPoint();
             disableAutoArrangeForManualPlacement();
             m_looseIconPositions[path] = pos;
             icon->show();
-            layoutLooseIcons();
+            layoutLooseIcons({path});
             saveLayout();
             e->acceptProposedAction();
             return;
@@ -4686,11 +4695,11 @@ void DesktopCanvas::dropEvent(QDropEvent *e)
         m_looseIcons.append(icon);
 
         const QPoint pos = e->pos()
-            - QPoint(icon->width() / 2, icon->height() / 2);
+            - icon->contentIconRect().center().toPoint();
         disableAutoArrangeForManualPlacement();
         m_looseIconPositions[item.filePath] = pos;
         icon->show();
-        layoutLooseIcons();
+        layoutLooseIcons({path});
         saveLayout();
         e->acceptProposedAction();
         return;
@@ -4720,7 +4729,7 @@ void DesktopCanvas::dropEvent(QDropEvent *e)
         const QStringList placedPaths = desktopPaths + result.placedPaths;
         for (const auto &path : placedPaths)
             for (auto *fence : m_fences) fence->removeItem(path);
-        placeFilesOnDesktop(placedPaths, position);
+        placeFilesOnDesktop(placedPaths, position, true);
         saveLayout();
         if (!result.failedPaths.isEmpty())
             LiquidDialog::warning(this, "拖放未完成", QString("有 %1 个项目失败或已取消。").arg(result.failedPaths.size()));

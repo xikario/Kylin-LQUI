@@ -3703,6 +3703,76 @@ void DesktopCanvas::revealLooseIcons()
     update();
 }
 
+bool DesktopCanvas::canDragLooseIcon(DesktopIcon *icon, const QPoint &globalPosition) const
+{
+    if (!icon || !m_looseIcons.contains(icon) || m_selectedIcons.size()>1) return false;
+    QWidget *under=QApplication::widgetAt(globalPosition);
+    if (!under || under->window()!=this) return false;
+    const QPoint point=mapFromGlobal(globalPosition);
+    for (auto *fence:m_fences)
+        if (fence && fence->isVisible() && fence->geometry().contains(point)) return false;
+    for (QWidget *widget:desktopWidgets())
+        if (widget && widget->isVisible() && widget->geometry().contains(point)) return false;
+    // Hand off real folder/trash drops to Xdnd instead of treating them as
+    // layout moves. Other occupied icon cells simply remain unavailable.
+    for (auto *other:m_looseIcons)
+        if (other && other!=icon && other->isVisible() && other->geometry().contains(point)
+            && ((!other->item().isSystemIcon && other->item().isDir)
+                || other->item().filePath=="trash:///")) return false;
+    return true;
+}
+
+QPoint DesktopCanvas::nearestLooseIconCell(DesktopIcon *icon, const QPoint &position) const
+{
+    const QRect area=desktopIconArea();
+    const int columns=qMax(4,m_gridColumns),rows=qMax(3,m_gridRows);
+    const qreal cellW=area.width()/qreal(columns),cellH=area.height()/qreal(rows);
+    QSet<int> occupied;
+    for (auto *other:m_looseIcons) if(other && other!=icon) {
+        const QPoint p=m_looseIconPositions.value(other->item().filePath,other->pos());
+        const int col=qBound(0,qRound((p.x()+other->width()/2-area.left())/cellW-.5),columns-1);
+        const int row=qBound(0,qRound((p.y()+other->height()/2-area.top())/cellH-.5),rows-1);
+        occupied.insert(row*columns+col);
+    }
+    QList<QRect> reserved=desktopWidgetReservedGeometries();
+    for (auto *fence:m_fences) if(fence)reserved.append(fence->geometry());
+    QPoint best=m_looseIconPositions.value(icon->item().filePath,icon->pos());
+    qint64 distance=std::numeric_limits<qint64>::max();
+    for(int row=0;row<rows;++row)for(int col=0;col<columns;++col) {
+        if(occupied.contains(row*columns+col))continue;
+        QPoint p(qRound(area.left()+(col+.5)*cellW)-icon->width()/2,
+                 qRound(area.top()+(row+.5)*cellH)-icon->height()/2);
+        p.setX(qBound(area.left(),p.x(),qMax(area.left(),area.right()-icon->width())));
+        p.setY(qBound(area.top(),p.y(),qMax(area.top(),area.bottom()-icon->height())));
+        bool blocked=false;for(const QRect &r:reserved)if(r.intersects(QRect(p,icon->size()))){blocked=true;break;}
+        if(blocked)continue;
+        const QPoint delta=p-position;const qint64 d=qint64(delta.x())*delta.x()+qint64(delta.y())*delta.y();
+        if(d<distance){best=p;distance=d;}
+    }
+    return best;
+}
+
+void DesktopCanvas::previewLooseIconDrop(DesktopIcon *icon, const QPoint &position)
+{
+    const QRect previous=m_iconDropPreview;
+    m_iconDropPreview=icon?icon->plateRect().translated(nearestLooseIconCell(icon,position)).toAlignedRect().adjusted(-3,-3,3,3):QRect();
+    if(previous!=m_iconDropPreview)update(QRegion(previous.adjusted(-2,-2,2,2))|m_iconDropPreview.adjusted(-2,-2,2,2));
+}
+
+void DesktopCanvas::finishLooseIconDrag(DesktopIcon *icon, bool commit)
+{
+    previewLooseIconDrop(nullptr,{});
+    if(!icon || !m_looseIcons.contains(icon))return;
+    QPoint target=m_looseIconPositions.value(icon->item().filePath,icon->pos());
+    if(commit){
+        target=nearestLooseIconCell(icon,icon->pos());
+        disableAutoArrangeForManualPlacement();
+        m_looseIconPositions[icon->item().filePath]=target;
+        saveLayout();
+    }
+    icon->moveToGrid(target,true);
+}
+
 void DesktopCanvas::layoutLooseIcons(const QSet<QString> &movingPaths)
 {
     const int columns = qMax(4, m_gridColumns);
@@ -3797,11 +3867,12 @@ void DesktopCanvas::layoutLooseIcons(const QSet<QString> &movingPaths)
         snapped.setY(qBound(area.top(), snapped.y(),
                             area.bottom() - icon->height()));
         m_looseIconPositions[path] = snapped;
+        if(icon->isLocalDragging())continue;
         const bool moved=icon->pos()!=snapped;
         const bool hidden=icon->isHidden();
         if(moved || hidden) {
             damage += icon->geometry();
-            icon->move(snapped);
+            icon->moveToGrid(snapped);
             icon->show();icon->raise();icon->update();
             damage += icon->geometry();stackingChanged=true;
         }
@@ -4662,6 +4733,7 @@ void DesktopCanvas::dragMoveEvent(QDragMoveEvent *e)
 
 void DesktopCanvas::dropEvent(QDropEvent *e)
 {
+    const auto *sourceIcon=qobject_cast<DesktopIcon *>(e->source());
     if (e->mimeData()->hasFormat(kSystemIconMime)) {
         const QString path =
             QString::fromUtf8(e->mimeData()->data(kSystemIconMime)).trimmed();
@@ -4670,7 +4742,7 @@ void DesktopCanvas::dropEvent(QDropEvent *e)
                 continue;
 
             const QPoint pos = e->pos()
-                - icon->contentIconRect().center().toPoint();
+                - (sourceIcon?sourceIcon->dragAnchor():icon->contentIconRect().center().toPoint());
             disableAutoArrangeForManualPlacement();
             m_looseIconPositions[path] = pos;
             icon->show();
@@ -4695,7 +4767,7 @@ void DesktopCanvas::dropEvent(QDropEvent *e)
         m_looseIcons.append(icon);
 
         const QPoint pos = e->pos()
-            - icon->contentIconRect().center().toPoint();
+            - (sourceIcon?sourceIcon->dragAnchor():icon->contentIconRect().center().toPoint());
         disableAutoArrangeForManualPlacement();
         m_looseIconPositions[item.filePath] = pos;
         icon->show();
@@ -4710,7 +4782,8 @@ void DesktopCanvas::dropEvent(QDropEvent *e)
         return;
     }
 
-    const QPoint position = e->pos();
+    const QPoint position = e->pos() - (sourceIcon
+        ? sourceIcon->dragAnchor()-sourceIcon->contentIconRect().center().toPoint() : QPoint());
     const bool move = e->proposedAction() == Qt::MoveAction || e->dropAction() == Qt::MoveAction;
     QStringList desktopPaths, transferPaths;
     for (const auto &url : e->mimeData()->urls()) {
@@ -4831,6 +4904,12 @@ void DesktopCanvas::paintEvent(QPaintEvent *)
         g.setColorAt(0, QColor("#1a2a3a"));
         g.setColorAt(1, QColor("#2c5f8a"));
         p.fillRect(rect(), g);
+    }
+
+    if(!m_iconDropPreview.isEmpty()) {
+        p.save();p.setRenderHint(QPainter::Antialiasing);p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(QColor(125,192,255,185),1.5));
+        p.drawRoundedRect(QRectF(m_iconDropPreview).adjusted(1,1,-1,-1),10,10);p.restore();
     }
 
     // 编辑模式：顶部提示条

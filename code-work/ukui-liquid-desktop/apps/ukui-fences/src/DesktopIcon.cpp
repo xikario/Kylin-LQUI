@@ -355,6 +355,8 @@ QString htmlLine(const QString &label, const QString &value)
 DesktopIcon::DesktopIcon(const DesktopItem &item, QWidget *parent)
     : QWidget(parent), m_item(item)
 {
+    m_gridMotion.setTargetObject(this);m_gridMotion.setPropertyName("pos");
+    m_gridMotion.setDuration(140);m_gridMotion.setEasingCurve(QEasingCurve::OutCubic);
     setVisualScale(1.0);
     setMouseTracking(true);
     setAutoFillBackground(false);
@@ -564,6 +566,7 @@ void DesktopIcon::updateToolTip()
 
 bool DesktopIcon::event(QEvent *e)
 {
+    if(m_localDragging && (e->type()==QEvent::UngrabMouse || e->type()==QEvent::Hide))finishLocalDrag(false);
     if (e->type() == QEvent::ToolTip) requestFolderDetails();
     return QWidget::event(e);
 }
@@ -735,7 +738,7 @@ void DesktopIcon::paintEvent(QPaintEvent *)
         const qreal t = m_clickAnimProgress;
         drawScale = (t < 0.4) ? (1.0 - 0.1 * (t / 0.4))
                                : (0.9 + 0.1 * ((t - 0.4) / 0.6));
-    } else if (m_hovered) {
+    } else if (m_hovered && m_iconSurface!=IconSurface::Desktop) {
         drawScale = 1.05;
     }
 
@@ -746,8 +749,9 @@ void DesktopIcon::paintEvent(QPaintEvent *)
         p.translate(-pivot);
     }
 
-    // 选中 / 悬浮背景（灰色边框）
-    if (m_selected || m_hovered) {
+    // Desktop selection belongs to the artwork and caption, not a dark
+    // rectangle covering the complete grid cell and the empty label area.
+    if ((m_selected || m_hovered) && m_iconSurface!=IconSurface::Desktop) {
         QColor bg = m_selected
             ? QColor(160, 160, 160, 100)
             : QColor(255, 255, 255, 30);
@@ -804,6 +808,10 @@ void DesktopIcon::paintEvent(QPaintEvent *)
     if (m_renameEdit)
         return;
 
+    if(m_selected && m_iconSurface==IconSurface::Desktop) {
+        const QRect label=fm.boundingRect(textRect,flags,m_item.displayName).intersected(textRect).adjusted(-2,-1,2,1);
+        p.setPen(Qt::NoPen);p.setBrush(QColor(42,100,178,185));p.drawRoundedRect(label,3,3);
+    }
     const QColor textColor = m_cut
         ? QColor(210, 210, 210, 155)
         : m_fontColor;
@@ -851,6 +859,7 @@ void DesktopIcon::mousePressEvent(QMouseEvent *e)
         if (parentWidget())
             parentWidget()->setFocus(Qt::MouseFocusReason);
 
+        m_gridMotion.stop();m_dragCancelled=false;
         m_dragStart = e->pos();
         m_dragGlobalStart = e->globalPos();
         m_widgetStart = pos();
@@ -864,7 +873,9 @@ void DesktopIcon::mousePressEvent(QMouseEvent *e)
         }
 
         // 触发点击动画（参考特效文件的 ping 效果）
-        m_clickAnim = !LiquidPopup::theme().reducedMotion;
+        // Desktop pickup must not be covered by the wallpaper-coloured ping
+        // or change size just as pointer tracking begins.
+        m_clickAnim = m_iconSurface!=IconSurface::Desktop && !LiquidPopup::theme().reducedMotion;
         m_clickAnimProgress = 0.0;
         if(m_clickAnim)m_clickAnimTimer.start();
 
@@ -872,14 +883,48 @@ void DesktopIcon::mousePressEvent(QMouseEvent *e)
     }
 }
 
+void DesktopIcon::moveToGrid(const QPoint &target, bool animated)
+{
+    if(m_gridMotion.state()==QAbstractAnimation::Running && m_gridMotion.endValue().toPoint()==target)return;
+    m_gridMotion.stop();
+    if(animated && !LiquidPopup::theme().reducedMotion && pos()!=target) {
+        m_gridMotion.setStartValue(pos());m_gridMotion.setEndValue(target);m_gridMotion.start();
+    } else move(target);
+}
+
+void DesktopIcon::finishLocalDrag(bool commit)
+{
+    if(!m_localDragging)return;
+    m_localDragging=false;qApp->removeEventFilter(this);releaseMouse();
+    if(auto *canvas=qobject_cast<DesktopCanvas *>(parentWidget()))canvas->finishLooseIconDrag(this,commit);
+    emit dragFinished();update();
+}
+
 void DesktopIcon::mouseMoveEvent(QMouseEvent *e)
 {
-    if (!(e->buttons() & Qt::LeftButton)) return;
-    if ((e->pos() - m_dragStart).manhattanLength()
-            < QApplication::startDragDistance()) return;
-    m_renameTimer.stop();
+    if (!(e->buttons() & Qt::LeftButton) || m_dragCancelled) return;
+    auto *canvas=qobject_cast<DesktopCanvas *>(parentWidget());
+    const bool local=canvas && !(e->modifiers()&Qt::ControlModifier) && canvas->canDragLooseIcon(this,e->globalPos());
+    if (!m_localDragging && (e->globalPos()-m_dragGlobalStart).manhattanLength()
+            < (local?qMin(4,QApplication::startDragDistance()):QApplication::startDragDistance())) return;
+    m_renameTimer.stop();m_folderHoverTimer.stop();
+    if(!m_localDragging)LiquidPopup::hideText();
     m_clickAnimTimer.stop();m_clickAnim=false;m_clickAnimProgress=0;
-    m_hovered=false;update();
+    m_hovered=false;
+    if(local) {
+        if(!m_localDragging){m_localDragging=true;grabMouse();qApp->installEventFilter(this);raise();}
+        // Preserve the actual grab point. This is the same child on the same
+        // backing store throughout, with no compositor-managed drag window.
+        move(m_widgetStart+e->globalPos()-m_dragGlobalStart);
+        canvas->previewLooseIconDrop(this,pos());update();e->accept();return;
+    }
+    if(m_localDragging) {
+        // Crossing into another app/fence/folder keeps standard native file
+        // transfer semantics. Restore the hidden source before Xdnd takes over.
+        m_localDragging=false;qApp->removeEventFilter(this);releaseMouse();
+        canvas->previewLooseIconDrop(nullptr,{});m_dragPreviewActive=true;move(m_widgetStart);
+    }
+    update();
     DragSurfaceGuard dragSurface;
     if (m_item.isSystemIcon) {
         auto *drag = new QDrag(this);
@@ -888,8 +933,8 @@ void DesktopIcon::mouseMoveEvent(QMouseEvent *e)
         drag->setMimeData(mime);
         const QPixmap preview=dragPixmap();
         drag->setPixmap(preview);
-        drag->setHotSpot(QPoint(qRound(preview.width()/preview.devicePixelRatioF()/2),
-                               qRound(preview.height()/preview.devicePixelRatioF()/2)));
+        const QRectF bounds=m_visualStyle==IconVisualStyle::LiquidPlate?plateRect().adjusted(-3,-3,3,3):contentIconRect();
+        drag->setHotSpot(m_dragStart-bounds.topLeft().toPoint());
         const QPointer<DesktopIcon> guard(this);
         m_dragPreviewActive=true;update();
         drag->exec(Qt::MoveAction);
@@ -910,8 +955,8 @@ void DesktopIcon::mouseMoveEvent(QMouseEvent *e)
     drag->setMimeData(mime);
     const QPixmap preview=dragPixmap();
     drag->setPixmap(preview);
-    drag->setHotSpot(QPoint(qRound(preview.width()/preview.devicePixelRatioF()/2),
-                               qRound(preview.height()/preview.devicePixelRatioF()/2)));
+    const QRectF bounds=m_visualStyle==IconVisualStyle::LiquidPlate?plateRect().adjusted(-3,-3,3,3):contentIconRect();
+    drag->setHotSpot(m_dragStart-bounds.topLeft().toPoint());
     // An external move can remove this icon via the filesystem watcher while
     // QDrag runs its nested event loop. Do not access a deleted source afterwards.
     const QPointer<DesktopIcon> guard(this);
@@ -943,6 +988,8 @@ void DesktopIcon::mouseMoveEvent(QMouseEvent *e)
 
 void DesktopIcon::mouseReleaseEvent(QMouseEvent *e)
 {
+    if(e->button()==Qt::LeftButton && m_localDragging){finishLocalDrag(true);e->accept();return;}
+    m_dragCancelled=false;
     if (m_item.isSystemIcon && m_systemDragging) {
         emit systemIconMoved(this, pos());
         m_systemDragging = false;
@@ -960,6 +1007,10 @@ void DesktopIcon::mouseDoubleClickEvent(QMouseEvent *e)
 
 bool DesktopIcon::eventFilter(QObject *watched, QEvent *event)
 {
+    if(m_localDragging && event->type()==QEvent::ToolTip){event->accept();return true;}
+    if(m_localDragging && event->type()==QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key()==Qt::Key_Escape) {
+        m_dragCancelled=true;finishLocalDrag(false);event->accept();return true;
+    }
     if (watched == m_renameEdit && event->type() == QEvent::KeyPress) {
         auto *keyEvent = static_cast<QKeyEvent *>(event);
         if (keyEvent->key() == Qt::Key_Escape) {

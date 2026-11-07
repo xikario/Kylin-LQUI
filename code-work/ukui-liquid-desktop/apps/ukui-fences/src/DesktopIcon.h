@@ -8,6 +8,7 @@
 #include <QFont>
 #include <QTimer>
 #include <QVariantAnimation>
+#include <QPropertyAnimation>
 #include <QUrl>
 #include <QList>
 #include "DesktopItem.h"
@@ -35,6 +36,9 @@ public:
     IconSurface iconSurface() const { return m_iconSurface; }
     QColor liquidAccent() const { return m_liquidAccent; }
     QPixmap dragPixmap() const;
+    QPoint dragAnchor() const { return m_dragStart; }
+    bool isLocalDragging() const { return m_localDragging; }
+    void moveToGrid(const QPoint &target, bool animated = false);
     QRectF plateRect() const;
     QRectF contentIconRect() const;
 
@@ -81,6 +85,7 @@ protected:
 
 private:
     friend struct DesktopRefreshTestAccess;
+    void finishLocalDrag(bool commit);
     void updateToolTip();
     void requestFolderDetails();
     QString m_folderDetails;
@@ -100,6 +105,9 @@ private:
     bool        m_cut       = false;
     bool        m_hovered   = false;
     bool        m_dragPreviewActive = false;
+    bool        m_localDragging = false;
+    bool        m_dragCancelled = false;
+    QPropertyAnimation m_gridMotion;
     QPoint      m_dragStart;
     QPoint      m_dragGlobalStart;
     QPoint      m_widgetStart;

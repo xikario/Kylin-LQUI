@@ -61,6 +61,9 @@ public:
     void removeFence(FenceWidget *fence);
     bool transferFilesToFolder(const QStringList &paths, const QString &targetDir,
                                bool move, std::function<void()> completed = {});
+    bool canDragLooseIcon(DesktopIcon *icon, const QPoint &globalPosition) const;
+    void previewLooseIconDrop(DesktopIcon *icon, const QPoint &position);
+    void finishLooseIconDrag(DesktopIcon *icon, bool commit);
     void setGlobalEditMode(bool edit);
     bool globalEditMode() const { return m_editMode; }
     QRect snappedWidgetResize(QWidget *widget, const QRect &start,
@@ -265,6 +268,8 @@ private:
     bool applyWallpaperThemeToFences();
     void applyThemeToFences(const QColor &fenceColor,
                             const QColor &textColor = QColor());
+    QPoint nearestLooseIconCell(DesktopIcon *icon, const QPoint &position) const;
+    QRect m_iconDropPreview;
     friend struct DesktopPlacementTestAccess;
     void layoutLooseIcons(const QSet<QString> &movingPaths = {});
     QRect desktopIconArea() const;

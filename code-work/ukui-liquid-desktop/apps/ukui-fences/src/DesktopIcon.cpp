@@ -783,9 +783,15 @@ void DesktopIcon::paintEvent(QPaintEvent *)
         const int cy = iconRect.center().y();
         const int rw = qRound(iconRect.width() * expand / 2);
         const int rh = qRound(iconRect.height() * expand / 2);
-        p.setPen(Qt::NoPen);
-        QColor ripple=liquid ? m_liquidAccent : QColor(Qt::white); ripple.setAlpha(alpha);
-        p.setBrush(ripple);
+        QColor ripple=liquid ? m_liquidAccent : QColor(Qt::white);
+        if(m_iconSurface==IconSurface::Desktop) {
+            // Keep click feedback on dark wallpapers without an opaque tint
+            // over the artwork. Drag pickup cancels this transient ring.
+            ripple=QColor((ripple.red()+255)/2,(ripple.green()+255)/2,(ripple.blue()+255)/2,alpha);
+            p.setPen(QPen(ripple,1.6));p.setBrush(Qt::NoBrush);
+        } else {
+            ripple.setAlpha(alpha);p.setPen(Qt::NoPen);p.setBrush(ripple);
+        }
         p.drawRoundedRect(cx - rw, cy - rh, rw * 2, rh * 2, 8, 8);
     }
 
@@ -872,10 +878,9 @@ void DesktopIcon::mousePressEvent(QMouseEvent *e)
             m_renameTimer.stop();
         }
 
-        // 触发点击动画（参考特效文件的 ping 效果）
-        // Desktop pickup must not be covered by the wallpaper-coloured ping
-        // or change size just as pointer tracking begins.
-        m_clickAnim = m_iconSurface!=IconSurface::Desktop && !LiquidPopup::theme().reducedMotion;
+        // Click feedback is available on every surface. Starting a drag ends
+        // the animation before pointer tracking begins.
+        m_clickAnim = !LiquidPopup::theme().reducedMotion;
         m_clickAnimProgress = 0.0;
         if(m_clickAnim)m_clickAnimTimer.start();
 

@@ -76,9 +76,10 @@ static int runDesktopPlacementTest(const QString &root) {
     const QImage beforePress=artwork();
     QMouseEvent press(QEvent::MouseButtonPress,anchor,moving->mapToGlobal(anchor),Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
     QApplication::sendEvent(moving,&press);settle(55);
-    check(artwork()==beforePress,"pickup does not cover the icon with a dark ping or rescale its artwork");
+    check(artwork()!=beforePress,"desktop click feedback remains visibly animated");
     QMouseEvent release(QEvent::MouseButtonRelease,anchor,moving->mapToGlobal(anchor),Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
-    QApplication::sendEvent(moving,&release);
+    QApplication::sendEvent(moving,&release);settle(220);
+    check(artwork()==beforePress,"click feedback settles back to the original artwork");
 
     // Sample the entire gesture, including pickup and the 140 ms landing.
     // A fixed off-centre grab point must follow the pointer without a native

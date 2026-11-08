@@ -740,6 +740,26 @@ private slots:
         QVERIFY(restored.setQuickReply(false));QCOMPARE(restored.conversation().threadId,normalThread);
         QVERIFY(allText(restored).contains("普通追问"));
     }
+    void longStatusNeverWidensDrawerOrLeavesUnpaintedContent(){
+        auto s=config();s.model="gpt-6-luna";s.reasoningEffort="xhigh";s.height=680;s.contextLimitK=340;
+        const auto storage=folder();Conversation seed(storage);seed.contextTokens=179878;
+        seed.append({"user","翻译成中文："+QString(160,'x'),{},{},0});
+        seed.append({"assistant","这是用于验证窗口边界的长消息。"+QString(140,'y'),{},{},0});QVERIFY(seed.save());
+        Drawer d(s,storage);d.Show();
+        const QString message="请等待当前任务结束，再切换问答模式。";
+        for(int width:QList<int>{360,495}){
+            s.width=width;d.applySettings(s);d.client()->status(message.repeated(5));QTest::qWait(80);
+            QCOMPARE(d.size(),d.targetGeometry().size());QCOMPARE(d.width(),width);
+            auto *status=d.findChild<QLabel*>("cliStatus");QCOMPARE(status->text(),message.repeated(5));QCOMPARE(status->toolTip(),status->text());
+            for(auto *child:QList<QWidget*>{d.chat(),d.composer(),d.findChild<QPushButton*>("collapseDrawer"),d.findChild<QPushButton*>("quickReplyMode")}){
+                const QRect area(child->mapTo(&d,QPoint()),child->size());QVERIFY2(d.rect().contains(area),qPrintable(child->objectName()));
+            }
+        }
+        d.submit("SLOW",{});QVERIFY(!d.findChild<QPushButton*>("quickReplyMode")->isEnabled());
+        d.client()->interrupt();QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),5000);QVERIFY(d.findChild<QPushButton*>("quickReplyMode")->isEnabled());
+        const auto artifacts=qEnvironmentVariable("LIQUID_CLI_ARTIFACT_DIR");
+        if(!artifacts.isEmpty()){d.client()->status(message);QTest::qWait(80);QDir().mkpath(artifacts);d.grab().save(artifacts+"/bounded-long-status.png");}
+    }
     void quickReplyRejectsBusyAndCompactingSwitches(){
         auto s=config();s.model="gpt-6-luna";s.reasoningEffort="xhigh";Drawer d(s,folder());
         auto *toggle=d.findChild<QPushButton*>("quickReplyMode");

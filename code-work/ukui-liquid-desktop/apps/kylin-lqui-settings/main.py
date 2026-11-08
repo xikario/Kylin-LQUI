@@ -10,7 +10,7 @@ from backend import Backend, MODULES, ROOT
 from design import STYLE, COLORS, DESCRIPTIONS, NavigationDelegate, Switch, MaterialPreview, DesktopPreview, DragHeader, ImagePreview, WindowHeader, icon, navigation_text, FlowLayout
 
 from ui_tokens import COLORS as UI_COLORS, application_scale, build_settings_style, sidebar_width
-from ui_schema import normalize_page, structural_signature, searchable_text, field_visible, presentation_rows, navigation_pages
+from ui_schema import normalize_page, structural_signature, searchable_text, field_visible, presentation_rows, navigation_pages, pinned_page_row
 from ui_components import SettingsGroup, SettingRow, ActionRow, DisclosureRow, PluginRow, WallpaperPreview, WallpaperFileRow, PathView, StatusLabel, SettingSlider, ActionButton, HelpBubble, label
 import sip
 
@@ -95,8 +95,11 @@ class SettingsWindow(QtWidgets.QMainWindow):
         self.open_space=ActionButton('打开 AI 空间');self.open_space.clicked.connect(lambda:self.start_module(show_main=True));self.open_space.hide();head.addWidget(self.open_space)
         refresh=ActionButton('刷新');refresh.clicked.connect(self.reload_page);head.addWidget(refresh);self.right_layout.addLayout(head)
         self.description=label('',True);self.description.setObjectName('subtitle');self.right_layout.addWidget(self.description)
+        self.page_actions=QtWidgets.QWidget();self.page_actions.setObjectName('pageActions');self.page_actions.setMaximumWidth(900)
+        self.page_actions_layout=QtWidgets.QVBoxLayout(self.page_actions);self.page_actions_layout.setContentsMargins(0,0,0,0);self.page_actions_layout.setSpacing(0)
+        self.right_layout.addWidget(self.page_actions);self.page_actions.hide()
         self.scroll=QtWidgets.QScrollArea();self.scroll.setWidgetResizable(True);self.scroll.setAlignment(QtCore.Qt.AlignLeft|QtCore.Qt.AlignTop);self.scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff);self.right_layout.addWidget(self.scroll,1)
-        self.message=StatusLabel();self.message.setWordWrap(True);self.message.setTextFormat(QtCore.Qt.PlainText);self.message.setProperty('warning',True);self.message.setText('');self.right_layout.addWidget(self.message)
+        self.message=StatusLabel();self.message.setWordWrap(True);self.message.setTextFormat(QtCore.Qt.PlainText);self.message.setProperty('warning',True);self.message.setText('');self.right_layout.insertWidget(self.right_layout.indexOf(self.scroll),self.message)
         self.grip=QtWidgets.QSizeGrip(self);self.grip.setFixedSize(16,16)
         self.navigation.currentItemChanged.connect(self.selection_changed);self.navigation.itemClicked.connect(self.toggle_group)
         self.search.textChanged.connect(self.filter_search)
@@ -272,6 +275,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             control=entry['control']
             if isinstance(control,QtWidgets.QPlainTextEdit) and control.document().isModified() and entry['field'].get('_stable') and not entry['field'].get('secret'):self.drafts[(self.current,entry['field']['name'])]=control.toPlainText()
         self.current=key;self.generation+=1;self.request_serial+=1;self.signature='';self.fields={};self.busy=False
+        self.clear_page_actions()
         self.groups=[];self._rendered_rows=[];self._normalized=None;self._page_data={};self._last_focused_key=None
         self._ambiguous_native_edit=False;self._deferred_fields.clear();self._blocked_signature=''
         self.poll.setInterval(6000 if key=='overview' else 15000 if key.startswith('peony:') else 2500)
@@ -305,6 +309,12 @@ class SettingsWindow(QtWidgets.QMainWindow):
             return
         for ancestor in self.navigation_ancestors(item):self.collapsed.discard(ancestor.split(':')[0] if ancestor.endswith(':__group__') else ancestor)
         self.filter_search(self.search.text())
+
+    def clear_page_actions(self):
+        while self.page_actions_layout.count():
+            widget=self.page_actions_layout.takeAt(0).widget()
+            if widget:widget.hide();widget.deleteLater()
+        self.page_actions.hide()
 
     def set_content(self,widget):
         old=self.scroll.takeWidget()
@@ -385,7 +395,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
                 if disclosure:state['expanded']['field:'+str(f['_key'])]=disclosure.user_expanded
         for entry in self.fields.values():
             f=entry['field'];row=entry['row']
-            if f.get('_stable') and not f.get('secret') and not f.get('_absorbed') and not row.isHidden():
+            if f.get('_stable') and not f.get('secret') and not f.get('_absorbed') and not row.isHidden() and self.scroll.isAncestorOf(row):
                 y=row.mapTo(self.scroll.viewport(),QtCore.QPoint()).y()
                 if y<=8 and y+row.height()>0:state['anchor']=(f['_key'],y);break
         return state
@@ -431,7 +441,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             if state.get('anchor'):
                 key,y=state['anchor']
                 for entry in self.fields.values():
-                    if entry['field'].get('_key')==key:
+                    if entry['field'].get('_key')==key and self.scroll.isAncestorOf(entry['row']):
                         now=entry['row'].mapTo(self.scroll.viewport(),QtCore.QPoint()).y();bar.setValue(bar.value()+now-y);break
             for entry in self.fields.values():
                 if entry['field'].get('_key')==state.get('focus') and entry['control'].isVisible() and entry['control'].isEnabled():entry['control'].setFocus();break
@@ -596,11 +606,13 @@ class SettingsWindow(QtWidgets.QMainWindow):
         widget=QtWidgets.QWidget(self.scroll.viewport());widget.setObjectName('pageCanvas');widget.setMaximumWidth(900);widget.setMinimumWidth(0);widget.resize(min(900,self.scroll.viewport().width()),self.scroll.viewport().height())
         layout=QtWidgets.QVBoxLayout(widget);layout.setContentsMargins(0,0,0,0);layout.setSpacing(16)
         self.fields={};self.groups=[];self._rendered_rows=[]
+        self.clear_page_actions()
+        pinned=SettingsGroup();pinned.setObjectName('pinnedPageActions');pinned.set_unframed();self.page_actions_layout.addWidget(pinned)
         for field in self._normalized['fields']:
             entry=self._create_control(field,widget);self.fields[field['id']]=entry
             if field.get('_absorbed'):entry['container'].hide()
         for spec in self._normalized['groups']:
-            group=SettingsGroup(spec.get('title',''),spec.get('columns',1));self.groups.append(group)
+            group=SettingsGroup(spec.get('title',''),spec.get('columns',1))
             for field in spec.get('sourceHeadings',[]):
                 entry=self.fields[field['id']];entry['container'].deleteLater();entry.update(control=group.title,container=group.title,row=group)
                 entry['header']=group.title if spec['key'].startswith('@legacy:') else None
@@ -644,11 +656,14 @@ class SettingsWindow(QtWidgets.QMainWindow):
                     e['label']=view.title
                     for attached in row['attachments']:
                         entry=self.fields[attached['id']];entry['container'].deleteLater();presenter=view.title if attached['_role']=='label' else view.help;entry.update(control=presenter,container=presenter,row=view)
-                group.add_row(view)
-                record={'widget':view,'spec':row,'group':group};self._rendered_rows.append(record)
+                sticky=pinned_page_row(row)
+                owner=pinned if sticky else group;owner.add_row(view)
+                record={'widget':view,'spec':row,'group':owner,'pinned':sticky};self._rendered_rows.append(record)
                 for e in entries:e['row']=e['control'] if row['actions'] else view
-            layout.addWidget(group)
+            if group.rows:self.groups.append(group);layout.addWidget(group)
+            else:group.setParent(widget);group.hide()
             if spec['rows'] and all(row['actions'] for row in spec['rows']) and not spec.get('title'):group.set_unframed()
+        if pinned.rows:self.groups.append(pinned)
         for field in self._normalized['fields']:
             if field.get('_absorbed')=='page-title':
                 entry=self.fields[field['id']];entry['container'].deleteLater();entry.update(control=widget,container=widget,row=widget)
@@ -656,6 +671,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             if entry['container'].parentWidget() is None:entry['container'].setParent(widget)
         self.no_results=QtWidgets.QWidget();empty=QtWidgets.QHBoxLayout(self.no_results);empty.setContentsMargins(0,0,0,0);empty.addWidget(label('未找到相关设置'),1);clear=ActionButton('清除搜索');clear.clicked.connect(self.search.clear);empty.addWidget(clear);layout.addWidget(self.no_results);self.no_results.hide()
         layout.addStretch();self.set_content(widget);self._rebuilding=False
+        self.page_actions.setVisible(bool(pinned.rows))
         self.refresh_semantic_rows();self.reflow()
 
     def refresh_semantic_rows(self):
@@ -827,11 +843,11 @@ class SettingsWindow(QtWidgets.QMainWindow):
             primaries=[self.fields[f['id']]['field'] for f in spec['fields'] if field_visible(self.fields[f['id']]['field'],values)]
             available=[f for f in fields if field_visible(f,values)] if primaries else []
             group_match=bool(query and query in group.title.text().casefold())
-            match=bool(available) and (not query or group_match or any(query in searchable_text(f) for f in available))
+            match=bool(available) and (record.get('pinned') or not query or group_match or any(query in searchable_text(f) for f in available))
             view.setVisible(match);shown[group]|=match
             for f in spec['fields']:
                 entry=self.fields[f['id']];visible=field_visible(entry['field'],values)
-                if spec['actions']:visible &= not query or group_match or query in searchable_text(entry['field'])
+                if spec['actions'] and not record.get('pinned'):visible &= not query or group_match or query in searchable_text(entry['field'])
                 # Plugin headings/status are represented by their row widgets.
                 if entry.get('disclosure'):
                     entry['disclosure'].setVisible(visible);entry['disclosure'].search_expansion(bool(query and query in searchable_text(entry['field'])),bool(query))
@@ -840,7 +856,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
             action_containers={self.fields[f['id']].get('action_container') for f in spec['fields']}-{None}
             for container in action_containers:container.setVisible(any(not self.fields[f['id']]['control'].isHidden() for f in spec['fields'] if self.fields[f['id']].get('action_container') is container))
         for group,visible in shown.items():group.setVisible(visible);group.refresh_rows(self.current=='peony:general',min(900,self.scroll.viewport().width()))
-        if hasattr(self,'no_results'):self.no_results.setVisible(bool(query) and not any(shown.values()))
+        self.page_actions.setVisible(any(record.get('pinned') and not record['widget'].isHidden() for record in self._rendered_rows))
+        if hasattr(self,'no_results'):self.no_results.setVisible(bool(query) and not any(not record.get('pinned') and not record['widget'].isHidden() for record in self._rendered_rows))
 
     def render_overview(self,result):
         if not result.get('components'):

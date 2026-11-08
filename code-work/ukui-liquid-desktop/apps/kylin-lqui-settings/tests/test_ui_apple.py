@@ -98,7 +98,8 @@ class CompactUi(unittest.TestCase):
             self.assertLessEqual(canvas.width(),self.window.scroll.viewport().width())
             for entry in self.window.fields.values():
                 control=entry['control']
-                if control.isVisible():self.assertLessEqual(control.mapTo(canvas,QtCore.QPoint(control.width(),0)).x(),canvas.width()+2,(key,entry['field']['name']))
+                surface=self.window.page_actions if self.window.page_actions.isAncestorOf(control) else canvas
+                if control.isVisible():self.assertLessEqual(control.mapTo(surface,QtCore.QPoint(control.width(),0)).x(),surface.width()+2,(key,entry['field']['name']))
     def test_preview_bounds_cache_and_invalid_data(self):
         value=next(f['value'] for f in self.fixture.pages['fences:wallpaper']['fields'] if f['kind']=='preview');preview=WallpaperPreview(value);self.assertEqual(preview.decode_count,1);preview.set_data(value);self.assertEqual(preview.decode_count,1)
         preview.set_data('x'*(3*1024*1024));self.assertTrue(preview.canvas.image.isNull());self.assertIn('不可用',preview.status.text());preview.set_data('x'*(3*1024*1024));self.assertIn('不可用',preview.status.text())

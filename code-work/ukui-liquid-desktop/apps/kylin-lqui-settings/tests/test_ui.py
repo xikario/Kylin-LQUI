@@ -51,6 +51,32 @@ class UiTest(unittest.TestCase):
         self.assertIn(('ai','Set',['general','2',json.dumps({'value':False},ensure_ascii=False)]),self.fixture.calls)
         self.window.fields['5']['control'].click();QtTest.QTest.qWait(20)
         self.assertIn(('ai','Activate',['general','5']),self.fixture.calls)
+    def test_page_actions_stay_at_top_while_scrolling_and_searching(self):
+        fields=[{'id':str(i),'name':'row_'+str(i),'kind':'text','label':'选项 '+str(i),'value':'内容'} for i in range(30)]
+        fields.extend([{'id':'saved','name':'settingsNote','kind':'note','label':'settingsNote','value':'已应用并保存。'},
+            {'id':'reset','name':'resetDefaults','kind':'action','label':'恢复默认'},
+            {'id':'clear','name':'clearConversation','kind':'action','label':'清空聊天记录并开始新对话…'},
+            {'id':'apply','name':'applySettings','kind':'action','label':'应用'}])
+        self.fixture.page={'ok':True,'fields':fields};self.window.render_fields(fields);self.window.resize(720,480);QtTest.QTest.qWait(50)
+        self.window.filter_search('');button=self.window.fields['apply']['control']
+        self.assertTrue(self.window.page_actions.isAncestorOf(button));self.assertTrue(self.window.page_actions.isAncestorOf(self.window.fields['saved']['control']))
+        before=button.mapTo(self.window,QtCore.QPoint());bar=self.window.scroll.verticalScrollBar();self.assertGreater(bar.maximum(),0)
+        bar.setValue(bar.maximum());QtTest.QTest.qWait(20);self.assertEqual(before,button.mapTo(self.window,QtCore.QPoint()))
+        self.assertLess(before.y()+button.height(),self.window.scroll.mapTo(self.window,QtCore.QPoint()).y())
+        self.window.capture_view_state();self.window.search.setText('找不到的选项');QtTest.QTest.qWait(20)
+        self.assertTrue(button.isVisible());self.assertTrue(self.window.no_results.isVisible())
+        button.click();QtTest.QTest.qWait(30);self.assertEqual(sum(call==('ai','Activate',['general','apply']) for call in self.fixture.calls),1)
+        target=os.environ.get('LQUI_PINNED_ACTIONS_ARTIFACT')
+        if target:self.window.search.clear();QtTest.QTest.qWait(20);bar.setValue(bar.maximum());self.window.grab().save(target)
+        self.window.open_page('overview');QtTest.QTest.qWait(30);self.assertTrue(self.window.page_actions.isHidden())
+    def test_contextual_picker_and_model_refresh_stay_with_fields(self):
+        fields=[{'id':'refresh','kind':'action','label':'刷新','name':'refreshModels'},
+            {'id':'choose','kind':'action','label':'选择图片','name':'chooseWallpaper'},
+            {'id':'value','kind':'text','label':'目录','value':'/'},
+            {'id':'apply','kind':'action','label':'应用'}]
+        self.window.render_fields(fields);QtTest.QTest.qWait(20)
+        for fid in ('refresh','choose'):self.assertTrue(self.window.scroll.isAncestorOf(self.window.fields[fid]['control']))
+        self.assertTrue(self.window.page_actions.isAncestorOf(self.window.fields['apply']['control']))
     def test_poll_does_not_destroy_editor(self):
         edit=self.window.fields['3']['control'];edit.setFocus();edit.selectAll();QtTest.QTest.keyClicks(edit,'English')
         self.window.receive_page(self.fixture.page)

@@ -45,6 +45,15 @@
 #include "ResidentStartup.h"
 
 namespace {
+class ElidedLabel final:public QLabel {
+public:
+    explicit ElidedLabel(QWidget *parent):QLabel(parent){setMinimumWidth(0);setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);}
+protected:
+    void paintEvent(QPaintEvent *)override {
+        QPainter painter(this);painter.setPen(palette().color(QPalette::WindowText));
+        painter.drawText(contentsRect(),Qt::AlignLeft|Qt::AlignVCenter,fontMetrics().elidedText(text(),Qt::ElideRight,contentsRect().width()));
+    }
+};
 constexpr int kFloatDistance=34;     // "float" glides in from just off its resting place
 constexpr int kEdgeWidth=36,kEdgeHeight=36;
 constexpr int kDismissStepTokens=32000;
@@ -163,9 +172,10 @@ Drawer::~Drawer(){quitting=true;delete preferences.data();backend->disconnect(th
 
 void Drawer::buildInterface() {
     auto *outer=new QVBoxLayout(this);outer->setContentsMargins(18,14,16,14);outer->setSpacing(8);
+    outer->setSizeConstraint(QLayout::SetNoConstraint);
     auto *header=new QHBoxLayout;header->setSpacing(4);
     auto *title=new QLabel("AI小站",this);title->setObjectName("drawerTitle");
-    statusLabel=new QLabel(this);statusLabel->setObjectName("cliStatus");
+    statusLabel=new ElidedLabel(this);statusLabel->setObjectName("cliStatus");
     header->addWidget(title);header->addSpacing(6);header->addWidget(statusLabel,1);
     contextButton=new QPushButton(this);contextButton->setObjectName("contextButton");contextButton->setCursor(Qt::PointingHandCursor);
     contextButton->setToolTip("当前上下文用量 · 点击压缩");header->addWidget(contextButton);
@@ -182,7 +192,7 @@ void Drawer::buildInterface() {
     connect(gear,&QPushButton::clicked,this,&Drawer::Preferences);connect(collapse,&QPushButton::clicked,this,&Drawer::Hide);
     replyModeRow=new QWidget(this);
     auto *modeLayout=new QHBoxLayout(replyModeRow);modeLayout->setContentsMargins(0,0,0,0);
-    replyModeLabel=new QLabel(replyModeRow);replyModeLabel->setObjectName("replyModeLabel");
+    replyModeLabel=new ElidedLabel(replyModeRow);replyModeLabel->setObjectName("replyModeLabel");
     quickReplyButton=new QPushButton("快问快答",replyModeRow);quickReplyButton->setObjectName("quickReplyMode");
     quickReplyButton->setCheckable(true);quickReplyButton->setCursor(Qt::PointingHandCursor);
     quickReplyButton->setToolTip("快问快答使用 Luna low 和独立对话；普通思考使用原模型设置。启动时的默认模式可在设置中选择。");
@@ -309,7 +319,7 @@ void Drawer::addApproval(const QJsonValue &id,const QString &title,const QString
     layout->addLayout(buttons);notices->addWidget(card);
     if(!opened)reveal(false);unread=!opened;edge->refresh();
 }
-void Drawer::setStatus(const QString &text){statusLabel->setText(text);if(edge)edge->refresh();}
+void Drawer::setStatus(const QString &text){statusLabel->setText(text);statusLabel->setToolTip(text);updateReplyMode();if(edge)edge->refresh();}
 void Drawer::loadDraft() {
     input->clear();
     QFile draft(history.folder()+"/draft.json");
@@ -401,6 +411,7 @@ void Drawer::refreshColors() {
         "QLabel#drawerTitle{font-size:17px;font-weight:600;} QLabel#cliStatus{color:%2;font-size:11px;padding-top:3px;}"
         "QPushButton{background:transparent;border:0;border-radius:9px;padding:4px 8px;color:%1;}"
         "QPushButton:hover{background:rgba(130,190,170,35);} QPushButton:pressed,QPushButton:checked{background:rgba(130,190,170,65);}"
+        "QPushButton:disabled{color:%2;background:transparent;}"
         "QPushButton:focus{border:1px solid %3;} QPushButton#earlierMessages{color:%2;font-size:12px;}"
         "QPushButton#contextButton{color:%2;font-size:11px;padding:3px 8px;border-radius:10px;}"
         "QFrame#notice{background:%4;border:1px solid %5;border-radius:14px;}"
@@ -420,7 +431,7 @@ void Drawer::refreshColors() {
 }
 void Drawer::paintEvent(QPaintEvent *) {
     QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.setCompositionMode(QPainter::CompositionMode_Source);p.fillRect(rect(),Qt::transparent);p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-    if(!material.isNull())p.drawImage(QPoint(),material);
+    if(!material.isNull())p.drawImage(rect(),material);
     else{QPainterPath path;path.addRoundedRect(QRectF(rect()),24,24);p.fillPath(path,QColor("#27323a"));}
     p.setPen(QPen(QColor(255,255,255,65),1));p.setBrush(Qt::NoBrush);const qreal radius=settings.followLauncherMaterial?26:23;p.drawRoundedRect(QRectF(rect()).adjusted(.8,.8,-.8,-.8),radius,radius);
 }
@@ -514,6 +525,7 @@ void Drawer::closeEvent(QCloseEvent *event){if(quitting)event->accept();else{eve
 
 void Drawer::beginCapture() {
     if(capturing)return;hideTimer.stop();motion.stop();capturing=true;opened=false;QWidget::hide();edge->hide();
+    updateReplyMode();
     // Bounded settling wait lets KWin remove both surfaces before reading screen pixels.
     QTimer::singleShot(140,this,[this]{RegionCapture::beginWithGeometry([owner=QPointer<Drawer>(this)](QImage image,QRect selection){if(owner)owner->acceptCapture(image,selection);});});
 }
@@ -525,7 +537,7 @@ void Drawer::acceptCapture(const QImage &image,const QRect &selection) {
     connect(editor,&QDialog::finished,this,[this,editor](int result){
         const auto image=editor->resultImage();const auto action=editor->selectedAction();
         QTimer::singleShot(0,this,[this,image,action,result]{
-            capturing=false;syncPanelEntry();shown=0;reveal(true);
+            capturing=false;updateReplyMode();syncPanelEntry();shown=0;reveal(true);
             if(result!=QDialog::Accepted){setStatus("已取消截图编辑");return;}
             processCapture(image,action);
         });
@@ -551,9 +563,11 @@ void Drawer::updateReplyMode() {
     if(!replyModeRow)return;
     replyModeRow->setVisible(settings.backend=="codex");
     const QSignalBlocker block(quickReplyButton);quickReplyButton->setChecked(quickReply);
+    quickReplyButton->setEnabled(!backend->busy()&&!backend->compacting()&&!capturing);
     QString normal="普通思考";
     if(settings.model=="gpt-6-luna")normal+=" · Luna "+(settings.reasoningEffort.isEmpty()?QString("默认强度"):settings.reasoningEffort);
     replyModeLabel->setText(quickReply?QString("独立对话 · Luna low"):normal);
+    replyModeLabel->setToolTip(replyModeLabel->text());
     quickReplyButton->setText(quickReply?QString("切回普通思考"):QString("快问快答"));
 }
 bool Drawer::setQuickReply(bool enabled) {

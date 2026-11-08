@@ -42,9 +42,20 @@
 #include <QDBusPendingReply>
 #include <QJsonArray>
 #include <QSignalBlocker>
+#include <QStyleOptionButton>
 #include "ResidentStartup.h"
 
 namespace {
+class CompactHeaderButton final:public QPushButton {
+public:
+    using QPushButton::QPushButton;
+    QSize minimumSizeHint()const override{auto size=QPushButton::minimumSizeHint();size.setWidth(40);return size;}
+protected:
+    void paintEvent(QPaintEvent *)override{
+        QStyleOptionButton option;initStyleOption(&option);option.text=fontMetrics().elidedText(text(),Qt::ElideRight,qMax(0,width()-16));
+        QPainter painter(this);style()->drawControl(QStyle::CE_PushButton,&option,&painter,this);
+    }
+};
 class ElidedLabel final:public QLabel {
 public:
     explicit ElidedLabel(QWidget *parent):QLabel(parent){setMinimumWidth(0);setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);}
@@ -177,7 +188,11 @@ void Drawer::buildInterface() {
     auto *title=new QLabel("AI小站",this);title->setObjectName("drawerTitle");
     statusLabel=new ElidedLabel(this);statusLabel->setObjectName("cliStatus");
     header->addWidget(title);header->addSpacing(6);header->addWidget(statusLabel,1);
-    contextButton=new QPushButton(this);contextButton->setObjectName("contextButton");contextButton->setCursor(Qt::PointingHandCursor);
+    newConversationButton=new QPushButton("+",this);newConversationButton->setObjectName("newConversation");newConversationButton->setFixedSize(30,30);
+    newConversationButton->setAccessibleName("新对话");newConversationButton->setToolTip("新对话 · 保留旧记录，输入框草稿可继续使用");newConversationButton->setCursor(Qt::PointingHandCursor);
+    header->addWidget(newConversationButton);connect(newConversationButton,&QPushButton::clicked,this,[this]{startNewConversation();});
+    contextButton=new CompactHeaderButton(this);contextButton->setObjectName("contextButton");contextButton->setCursor(Qt::PointingHandCursor);
+    contextButton->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Fixed);
     contextButton->setToolTip("当前上下文用量 · 点击压缩");header->addWidget(contextButton);
     connect(contextButton,&QPushButton::clicked,this,[this]{
         QMenu menu(this);auto *now=menu.addAction("压缩上下文",[this]{backend->setThreadId(history.threadId);backend->compact();showCompactNotice();});
@@ -273,6 +288,7 @@ void Drawer::updateContext() {
     const int limitK=effectiveSettings().contextLimitK;
     const qint64 limit=qint64(limitK)*1000;const qint64 tokens=history.contextTokens;
     contextButton->setText("上下文 "+kilo(tokens)+" / "+QString::number(limitK)+"K");
+    contextButton->setToolTip(contextButton->text()+" · 点击压缩");
     contextButton->setStyleSheet(tokens>=limit?"color:#ffd59a;":"");
     if(tokens>=limit&&tokens>=compactDismissedAt+kDismissStepTokens&&!backend->compacting())showCompactNotice();
 }
@@ -348,6 +364,15 @@ void Drawer::clearConversation() {
     backend->stop();if(!history.clear()){setStatus("无法保留原聊天记录，未开始新对话。");return;}input->clear();persist();backend->setThreadId({});answerIndex=-1;compactDismissedAt=0;
     for(auto *card:findChildren<QFrame*>("notice"))card->deleteLater();
     view->setTyping(false);view->reset({});input->clear();input->setBusy(false);updateContext();setStatus("已清空，下一条消息开始新对话");
+}
+bool Drawer::startNewConversation() {
+    if(backend->busy()||backend->compacting()||capturing){setStatus("请等待当前任务结束，再开始新对话。");return false;}
+    if(!persist())return false;
+    QString archive,error;if(!history.startNew(&archive,&error)){setStatus(error);return false;}
+    backend->stop();backend->setThreadId({});answerIndex=-1;compactDismissedAt=0;unread=false;
+    for(auto *card:findChildren<QFrame*>("notice"))card->deleteLater();compactNotice.clear();
+    view->setTyping(false);view->reset({});input->setBusy(false);updateContext();
+    setStatus(archive.isEmpty()?QString("已开启新对话"):QString("已开启新对话 · 旧记录已归档"));input->focusInput();return true;
 }
 
 QWidget *Drawer::edgeWidget() const{return edge;}
@@ -553,6 +578,7 @@ void Drawer::processCapture(const QImage &image,const QString &action) {
 }
 Settings Drawer::effectiveSettings() const {
     Settings effective=settings;
+    if(settings.backend=="codex")effective.serviceTierForTurn=settings.normalFast?"fast":"default";
     if(quickReply&&settings.backend=="codex"){
         effective.model=settings.quickModel;effective.reasoningEffort=settings.quickReasoningEffort;
         effective.serviceTierForTurn=settings.quickFast?"fast":"default";
@@ -565,8 +591,10 @@ void Drawer::updateReplyMode() {
     replyModeRow->setVisible(settings.backend=="codex");
     const QSignalBlocker block(quickReplyButton);quickReplyButton->setChecked(quickReply);
     quickReplyButton->setEnabled(!backend->busy()&&!backend->compacting()&&!capturing);
+    if(newConversationButton)newConversationButton->setEnabled(!backend->busy()&&!backend->compacting()&&!capturing);
     QString normal="普通思考";
     if(settings.model=="gpt-6-luna")normal+=" · Luna "+(settings.reasoningEffort.isEmpty()?QString("默认强度"):settings.reasoningEffort);
+    if(settings.normalFast)normal+=" · Fast";
     QString quickName=settings.quickModel=="gpt-6-luna"?QString("Luna"):settings.quickModel;
     replyModeLabel->setText(quickReply?QString("独立对话 · %1 %2%3").arg(quickName,settings.quickReasoningEffort.isEmpty()?QString("默认强度"):settings.quickReasoningEffort,settings.quickFast?QString(" · Fast"):QString()):normal);
     replyModeLabel->setToolTip(replyModeLabel->text());

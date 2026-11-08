@@ -14,7 +14,7 @@ struct Settings {
     QString backend="codex",model,reasoningEffort,sessionMode;
     QString defaultReplyMode="normal"; // Codex startup mode; quick uses a separate conversation.
     QString quickModel="gpt-6-luna",quickReasoningEffort="low";
-    bool quickFast=false;
+    bool normalFast=false,quickFast=false;
     QString serviceTierForTurn; // Runtime override only; never changes global CLI settings.
     QJsonObject backendProfiles; // Each backend keeps its command and model selection.
     static QString backendName(const QString &id);

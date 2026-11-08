@@ -17,9 +17,10 @@ def profile_page():
         field('settingModel','choice','普通思考模型',options=['GPT-6-Luna','GPT-6.1-Sol'],value=0),
         field('refreshModels','action','刷新'),
         field('settingEffort','number','思考强度',min=0,max=5,step=1,value=4,valueLabels=['默认 medium','low','medium','high','xhigh','max']),
+        field('settingNormalFast','boolean','启用 Fast',value=False),
         field('cliModelStatus','note','状态',value='普通思考：Luna · xhigh'),
         field('cliModelReference','note','参考',value='CLI 默认：Luna'),
-        field('settingQuickModel','choice','快问快答模型',options=['GPT-6-Luna','GPT-6.1-Sol'],value=0),
+        field('settingQuickModel','choice','快问快答模型',options=['GPT-6-Luna','GPT-6.1-Sol'],value=0,help='模型和可用强度来自 Codex。'+('这段不同长度的说明用于验证两栏逐行对齐。'*3)),
         field('settingQuickEffort','number','快问思考强度',min=0,max=5,step=1,value=4,valueLabels=['默认 medium','low','medium','high','xhigh','max']),
         field('settingQuickFast','boolean','启用 Fast',value=False),
         field('quickModelStatus','note','说明',value='独立保存，下一条消息生效。'),
@@ -51,6 +52,9 @@ class ReplyProfiles(unittest.TestCase):
             self.assertLessEqual(abs(radio.mapTo(canvas,QtCore.QPoint()).x()-title.mapTo(canvas,QtCore.QPoint()).x()),2)
         left=self.window.findChild(QtWidgets.QWidget,'normalProfilePanel');right=self.window.findChild(QtWidgets.QWidget,'quickProfilePanel')
         self.assertEqual(left.y(),right.y());self.assertLess(left.x()+left.width(),right.x());self.assertLessEqual(abs(left.width()-right.width()),1)
+        self.assertEqual(left.height(),right.height())
+        for normal,quick in [('settingModel','settingQuickModel'),('settingEffort','settingQuickEffort'),('settingNormalFast','settingQuickFast')]:
+            a=self.entry(normal)['row'];b=self.entry(quick)['row'];self.assertEqual(a.mapTo(canvas,QtCore.QPoint()).y(),b.mapTo(canvas,QtCore.QPoint()).y());self.assertEqual(a.height(),b.height())
         self.assertEqual(set(self.window.fields),{f['id'] for f in self.fixture.page['fields']});self.assertEqual(self.writes(),[])
     def test_radio_click_keyboard_and_poll_use_original_index_once(self):
         selector=self.entry('settingDefaultReplyMode')['control'];selector.buttons[0].click();QtTest.QTest.qWait(30)
@@ -67,6 +71,8 @@ class ReplyProfiles(unittest.TestCase):
             if control.isVisible():self.assertLessEqual(control.mapTo(surface,QtCore.QPoint(control.width(),0)).x(),surface.width()+2)
         self.window.search.setText('独立');QtTest.QTest.qWait(30);self.window.search.clear();QtTest.QTest.qWait(30)
         self.assertEqual(self.entry('settingDefaultReplyMode')['control'].currentIndex(),1);self.assertEqual(self.writes(),[])
+        left=self.window.findChild(QtWidgets.QWidget,'normalProfilePanel');right=self.window.findChild(QtWidgets.QWidget,'quickProfilePanel');self.assertEqual(left.height(),right.height())
+        pair=self.window.findChild(QtWidgets.QWidget,'replyProfileColumns');QtTest.QTest.qWait(80);count=pair.sync_count;QtTest.QTest.qWait(80);self.assertEqual(count,pair.sync_count)
     def test_disabled_radio_option_cannot_write(self):
         field=next(f for f in self.fixture.page['fields'] if f['name']=='settingDefaultReplyMode');field['optionsEnabled']=[False,True]
         self.window.receive_page(self.fixture.page);QtTest.QTest.qWait(30);selector=self.entry('settingDefaultReplyMode')['control'];selector.buttons[0].click()

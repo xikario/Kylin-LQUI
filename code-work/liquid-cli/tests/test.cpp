@@ -106,8 +106,8 @@ private slots:
         QCOMPARE(s.defaultReplyMode,QString("normal"));s.defaultReplyMode="quick";QVERIFY(s.save());
         QCOMPARE(Settings::load(s.file).defaultReplyMode,QString("quick"));
         s.defaultReplyMode="invalid";s.normalize();QCOMPARE(s.defaultReplyMode,QString("normal"));
-        s.quickModel="fixture-fast";s.quickReasoningEffort="xhigh";s.quickFast=true;s.serviceTierForTurn="priority";QVERIFY(s.save());
-        const auto quick=Settings::load(s.file);QCOMPARE(quick.quickModel,s.quickModel);QCOMPARE(quick.quickReasoningEffort,s.quickReasoningEffort);QVERIFY(quick.quickFast);QVERIFY(quick.serviceTierForTurn.isEmpty());
+        s.quickModel="fixture-fast";s.quickReasoningEffort="xhigh";s.quickFast=true;s.normalFast=true;s.serviceTierForTurn="priority";QVERIFY(s.save());
+        const auto quick=Settings::load(s.file);QCOMPARE(quick.quickModel,s.quickModel);QCOMPARE(quick.quickReasoningEffort,s.quickReasoningEffort);QVERIFY(quick.quickFast);QVERIFY(quick.normalFast);QVERIFY(quick.serviceTierForTurn.isEmpty());
     }
     void backendProfilesAndConversationIsolation(){
         QString marker;auto s=config(&marker);s.model="codex-choice";const QString codexCommand=s.command;
@@ -753,7 +753,7 @@ private slots:
             s.width=width;d.applySettings(s);d.client()->status(message.repeated(5));QTest::qWait(80);
             QCOMPARE(d.size(),d.targetGeometry().size());QCOMPARE(d.width(),width);
             auto *status=d.findChild<QLabel*>("cliStatus");QCOMPARE(status->text(),message.repeated(5));QCOMPARE(status->toolTip(),status->text());
-            for(auto *child:QList<QWidget*>{d.chat(),d.composer(),d.findChild<QPushButton*>("collapseDrawer"),d.findChild<QPushButton*>("quickReplyMode")}){
+            for(auto *child:QList<QWidget*>{d.chat(),d.composer(),d.findChild<QPushButton*>("collapseDrawer"),d.findChild<QPushButton*>("quickReplyMode"),d.findChild<QPushButton*>("newConversation")}){
                 const QRect area(child->mapTo(&d,QPoint()),child->size());QVERIFY2(d.rect().contains(area),qPrintable(child->objectName()));
             }
         }
@@ -795,12 +795,54 @@ private slots:
         d.client()->stop();s.quickFast=true;d.applySettings(s);d.submit("resume fast",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
         p=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(p["serviceTierForTurn"].toString(),QString("priority"));QCOMPARE(d.conversation().threadId,thread);
         QVERIFY(d.setQuickReply(false));d.submit("ordinary",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
-        p=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(p["model"].toString(),QString("gpt-6-luna"));QCOMPARE(p["effort"].toString(),QString("xhigh"));QVERIFY(!p.contains("serviceTierForTurn"));
+        p=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(p["model"].toString(),QString("gpt-6-luna"));QCOMPARE(p["effort"].toString(),QString("xhigh"));QCOMPARE(p["serviceTierForTurn"].toString(),QString("default"));
         QVERIFY(d.setQuickReply(true));s.quickModel="fixture-deep";s.quickReasoningEffort="future-effort";d.applySettings(s);const int before=requests(marker,"turn/start").size();
         d.submit("unsupported fast",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);QCOMPARE(requests(marker,"turn/start").size(),before);QVERIFY(allText(d).contains("未提供 Fast"));
         s.quickFast=false;d.applySettings(s);d.submit("supported standard",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
         p=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(p["model"].toString(),QString("fixture-deep"));QCOMPARE(p["effort"].toString(),QString("future-effort"));
         s.quickReasoningEffort="xhigh";d.applySettings(s);const int valid=requests(marker,"turn/start").size();d.submit("unsupported effort",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);QCOMPARE(requests(marker,"turn/start").size(),valid);QVERIFY(allText(d).contains("不支持思考强度"));
+    }
+    void newConversationArchivesOnlyCurrentModeAndPreservesDraft(){
+        QString marker;auto s=config(&marker);s.quickModel="fixture-fast";const auto storage=folder();Drawer d(s,storage);
+        d.submit("普通历史",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);const auto normalThread=d.conversation().threadId;
+        QVERIFY(d.setQuickReply(true));QImage image(20,20,QImage::Format_RGB32);image.fill(Qt::blue);const auto imagePath=d.conversation().storeImage(image);
+        d.submit("快速历史",{imagePath});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);const auto oldThread=d.conversation().threadId;
+        d.composer()->editor()->setPlainText("留给新对话的草稿");auto *button=d.findChild<QPushButton*>("newConversation");QVERIFY(button);button->click();
+        QVERIFY(d.conversation().threadId.isEmpty());QVERIFY(d.conversation().messages().isEmpty());QVERIFY(!d.client()->running());QCOMPARE(d.composer()->text(),QString("留给新对话的草稿"));
+        const auto archiveRoot=storage+"/quick-reply/archives";const auto names=QDir(archiveRoot).entryList(QDir::Dirs|QDir::NoDotAndDotDot);QCOMPARE(names.size(),1);
+        Conversation saved(archiveRoot+"/"+names.first());QVERIFY(saved.load());QCOMPARE(saved.threadId,oldThread);QVERIFY(saved.messages().first().text.contains("快速历史"));
+        const auto copy=saved.messages().first().images.first();QVERIFY(copy!=imagePath);QVERIFY(QFile::exists(copy));
+        d.submit("新快速对话",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);QVERIFY(d.conversation().threadId!=oldThread);
+        d.clearConversation();QVERIFY(QFile::exists(copy));QVERIFY(d.setQuickReply(false));QCOMPARE(d.conversation().threadId,normalThread);QVERIFY(allText(d).contains("普通历史"));
+    }
+    void newConversationRejectsActiveTurnAndArchiveFailure(){
+        auto s=config();const auto storage=folder();Drawer d(s,storage);d.submit("SLOW",{});
+        auto *button=d.findChild<QPushButton*>("newConversation");QVERIFY(!button->isEnabled());QVERIFY(!d.startNewConversation());QVERIFY(d.client()->busy());
+        d.client()->interrupt();QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),5000);QVERIFY(button->isEnabled());
+        QFile obstruction(storage+"/archives");QVERIFY(obstruction.open(QIODevice::WriteOnly));obstruction.write("keep");obstruction.close();
+        const auto before=allText(d);const auto thread=d.conversation().threadId;QVERIFY(!d.startNewConversation());QCOMPARE(allText(d),before);QCOMPARE(d.conversation().threadId,thread);QCOMPARE(read(obstruction.fileName()),QByteArray("keep"));
+    }
+    void quickReplyPreservesExplicitSkillInstructions(){
+        QString marker;auto s=config(&marker);s.defaultReplyMode="quick";s.quickModel="fixture-fast";s.quickReasoningEffort="xhigh";
+        Drawer d(s,folder());const QString instruction="加载 AI 空间 skill（ai-space-index-query），按这个 skill 检索本地资料。";
+        d.submit(instruction,{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        const auto params=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(params["input"].toArray().first().toObject()["text"].toString(),instruction);
+        const auto thread=requests(marker,"thread/start").last()["params"].toObject();
+        for(const auto &key:QStringList{"disabledPluginIds","tools","baseInstructions","developerInstructions"}){QVERIFY(!params.contains(key));QVERIFY(!thread.contains(key));}
+    }
+    void ordinaryFastIsIndependentAndUsesNativeTier(){
+        QString marker;auto s=config(&marker);s.model="fixture-fast";s.reasoningEffort="xhigh";s.quickModel="fixture-fast";s.quickFast=true;QVERIFY(s.save());
+        Drawer d(s,folder());d.submit("ordinary standard",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        QCOMPARE(requests(marker,"turn/start").last()["params"].toObject()["serviceTierForTurn"].toString(),QString("default"));
+        LquiSettings::Bridge bridge("ai",[&](const QString &){return d.settingsBridgeRoot();},[]{return QJsonArray{QJsonObject{{"id","general"}}};});bridge.Page("general");
+        auto *fast=d.settingsBridgeRoot()->findChild<QCheckBox*>("settingNormalFast");QVERIFY(fast);QTRY_VERIFY_WITH_TIMEOUT(fast->isEnabled(),10000);
+        const auto page=QJsonDocument::fromJson(bridge.Page("general").toUtf8()).object();QString id;
+        for(const auto &v:page["fields"].toArray())if(v.toObject()["name"]=="settingNormalFast")id=v.toObject()["id"].toString();QVERIFY(!id.isEmpty());
+        bridge.Set("general",id,QString::fromUtf8(QJsonDocument(QJsonObject{{"value",true}}).toJson()));QVERIFY(Settings::load(s.file).normalFast);QVERIFY(Settings::load(s.file).quickFast);
+        d.submit("ordinary fast",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);QCOMPARE(requests(marker,"turn/start").last()["params"].toObject()["serviceTierForTurn"].toString(),QString("priority"));
+        bridge.Set("general",id,QString::fromUtf8(QJsonDocument(QJsonObject{{"value",false}}).toJson()));QVERIFY(!Settings::load(s.file).normalFast);QVERIFY(Settings::load(s.file).quickFast);
+        QVERIFY(d.setQuickReply(true));d.submit("quick still fast",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);QCOMPARE(requests(marker,"turn/start").last()["params"].toObject()["serviceTierForTurn"].toString(),QString("priority"));
+        QVERIFY(d.setQuickReply(false));d.submit("ordinary off again",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);QCOMPARE(requests(marker,"turn/start").last()["params"].toObject()["serviceTierForTurn"].toString(),QString("default"));
     }
     void quickChangesDuringConnectionOnlyAffectTheNextMessage(){
         QString marker;auto s=config(&marker);s.defaultReplyMode="quick";s.quickModel="fixture-fast";s.quickReasoningEffort="xhigh";s.quickFast=true;

@@ -177,6 +177,42 @@ class SettingRow(QtWidgets.QWidget):
         self.help.setText(text);self.help.setVisible(bool(text));self.setMinimumHeight(56 if text else 40)
 
 
+class ProfileColumns(QtWidgets.QWidget):
+    """Equal profile cards with matching row heights, recalculated on layout changes."""
+    def __init__(self):
+        super().__init__();self.setObjectName('replyProfileColumns');self.setMinimumWidth(0)
+        self.grid=QtWidgets.QGridLayout(self);self.grid.setContentsMargins(0,0,0,0);self.grid.setHorizontalSpacing(16)
+        self.grid.setColumnStretch(0,1);self.grid.setColumnStretch(1,1)
+        self.pairs={};self.groups=[];self.pending=False;self.sync_count=0
+    def add_group(self,group,column):
+        self.groups.append(group);self.grid.addWidget(group,0,column);group.installEventFilter(self);group.surface.installEventFilter(self);self.schedule()
+    def add_profile_row(self,slot,column,row):
+        self.pairs.setdefault(slot,{})[column]=row;row.installEventFilter(self);self.schedule()
+    def eventFilter(self,obj,event):
+        if event.type() in (QtCore.QEvent.LayoutRequest,QtCore.QEvent.FontChange):self.schedule()
+        return False
+    def resizeEvent(self,event):super().resizeEvent(event);self.schedule()
+    def schedule(self):
+        if self.pending:return
+        self.pending=True;QtCore.QTimer.singleShot(0,self.sync_rows)
+    def sync_rows(self):
+        self.pending=False;self.sync_count+=1;width=max(1,(self.width()-16)//2-2);changed=False
+        for pair in self.pairs.values():
+            rows=[row for row in pair.values() if not row.isHidden()]
+            if not rows:continue
+            heights=[]
+            for row in rows:
+                layout=row.layout();height=layout.totalHeightForWidth(width) if layout.hasHeightForWidth() else layout.totalSizeHint().height()
+                heights.append(max(layout.totalMinimumSize().height(),height))
+            height=max(heights)
+            for row in rows:
+                if row.minimumHeight()!=height or row.maximumHeight()!=height:row.setFixedHeight(height);changed=True
+        if changed:
+            self.grid.invalidate();self.grid.activate()
+            for group in self.groups:
+                group.box.invalidate();group.box.activate();group.grid.invalidate();group.grid.activate()
+
+
 class ActionRow(QtWidgets.QWidget):
     def __init__(self):
         super().__init__();self.flow=FlowLayout(self);self.flow.setContentsMargins(12,8,12,8)

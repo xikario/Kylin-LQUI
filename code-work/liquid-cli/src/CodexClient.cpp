@@ -207,12 +207,12 @@ void CodexClient::startTurn() {
             const auto entry=CodexOptions::model(models,model);
             if(!entry.isEmpty()&&!effort.isEmpty()){
                 bool supported=false;for(const auto &v:entry.value("supportedReasoningEfforts").toArray())supported|=v.toObject().value("reasoningEffort").toString()==effort;
-                if(!supported){endTurn("failed","所选模型不支持思考强度 "+effort+"，请在快问快答设置中调整。");return;}
+                if(!supported){endTurn("failed","所选模型不支持思考强度 "+effort+"，请在对应模式的设置中调整。");return;}
             }
             QString tier=selection.serviceTierForTurn;
             if(tier=="fast"){
                 tier=CodexOptions::fastTier(entry);
-                if(tier.isEmpty()){endTurn("failed","当前模型目录未提供 Fast，请刷新模型列表或关闭快问快答的 Fast 模式后重试。");return;}
+                if(tier.isEmpty()){endTurn("failed","当前模型目录未提供 Fast，请刷新模型列表或关闭对应模式的 Fast 后重试。");return;}
             }
             params["serviceTierForTurn"]=tier;
         }

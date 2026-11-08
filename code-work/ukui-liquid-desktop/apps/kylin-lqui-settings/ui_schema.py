@@ -169,12 +169,13 @@ def reply_profile_groups(page):
     if len(groups)!=1 or groups[0]['sourceHeadings'] or not required.issubset(by_name):return groups
     choice=by_name['settingDefaultReplyMode']
     if choice['kind']!='choice' or choice.get('options')!=['普通思考','快问快答'] or choice.get('editable'):return groups
-    ordinary={'settingModel','refreshModels','settingEffort','cliModelStatus','cliModelReference'}
+    ordinary={'settingModel','settingEffort','settingNormalFast','cliModelStatus'}
     quick={'settingQuickModel','settingQuickEffort','settingQuickFast','quickModelStatus'}
-    default={'settingDefaultReplyMode','replyModeHelp'};rows=groups[0]['rows'];buckets={'normal':[],'quick':[],'default':[],'before':[],'after':[]};started=False
+    shared={'cliModelReference','refreshModels'}
+    default={'settingDefaultReplyMode','replyModeHelp'};rows=groups[0]['rows'];buckets={'normal':[],'quick':[],'default':[],'shared':[],'before':[],'after':[]};started=False
     for row in rows:
         names={f.get('name') for f in row['fields']}
-        target='normal' if names<=ordinary else 'quick' if names<=quick else 'default' if names<=default else ''
+        target='normal' if names<=ordinary else 'quick' if names<=quick else 'default' if names<=default else 'shared' if names<=shared else ''
         if target:started=True;buckets[target].append(row)
         else:buckets['after' if started else 'before'].append(row)
     if not all(buckets[k] for k in ('normal','quick','default')):return groups
@@ -184,12 +185,13 @@ def reply_profile_groups(page):
         for field in row['fields']:
             field['_absorbed']='associated-description';field['_role']='help';selector['attachments'].append(field)
     buckets['default']=[selector]
-    # The shared catalog refresh belongs below the profile controls, not
-    # between the left model and its reasoning selector.
-    buckets['normal'].sort(key=lambda r:any(f.get('name')=='refreshModels' for f in r['fields']))
+    slots={'settingModel':0,'settingQuickModel':0,'settingEffort':1,'settingQuickEffort':1,'settingNormalFast':2,'settingQuickFast':2,'cliModelStatus':3,'quickModelStatus':3}
+    for key in ('normal','quick'):
+        for row in buckets[key]:row['profileSlot']=min(slots[f['name']] for f in row['fields'])
+        buckets[key].sort(key=lambda row:row['profileSlot'])
     choice['_radio_choices']=True
     result=[]
-    for key in ('before','default','normal','quick','after'):
+    for key in ('before','default','normal','quick','shared','after'):
         if not buckets[key]:continue
         group={**groups[0],'key':'@reply:'+key,'rows':buckets[key],'sourceHeadings':[],'title':''}
         if key in ('normal','quick'):group['profileColumn']=0 if key=='normal' else 1

@@ -20,6 +20,7 @@ public:
     bool load();
     bool save(QString *error=nullptr) const;
     bool clear();
+    bool startNew(QString *archivePath=nullptr,QString *error=nullptr);
     bool canSave() const{return writable;}
     const QVector<ChatMessage> &messages() const{return items;}
     int append(const ChatMessage &message);

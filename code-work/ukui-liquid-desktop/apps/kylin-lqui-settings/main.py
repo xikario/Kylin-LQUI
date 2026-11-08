@@ -11,7 +11,7 @@ from design import STYLE, COLORS, DESCRIPTIONS, NavigationDelegate, Switch, Mate
 
 from ui_tokens import COLORS as UI_COLORS, application_scale, build_settings_style, sidebar_width
 from ui_schema import normalize_page, structural_signature, searchable_text, field_visible, presentation_rows, navigation_pages, pinned_page_row
-from ui_components import SettingsGroup, SettingRow, ActionRow, DisclosureRow, PluginRow, WallpaperPreview, WallpaperFileRow, PathView, StatusLabel, SettingSlider, ActionButton, HelpBubble, RadioChoice, ModeChoiceRow, label
+from ui_components import SettingsGroup, SettingRow, ActionRow, DisclosureRow, PluginRow, WallpaperPreview, WallpaperFileRow, PathView, StatusLabel, SettingSlider, ActionButton, HelpBubble, RadioChoice, ModeChoiceRow, ProfileColumns, label
 import sip
 
 _OBSERVED_EVENTS=frozenset((QtCore.QEvent.MouseButtonPress,QtCore.QEvent.KeyPress,QtCore.QEvent.Wheel,QtCore.QEvent.InputMethod,QtCore.QEvent.ApplicationFontChange,QtCore.QEvent.Resize,QtCore.QEvent.FocusIn))
@@ -135,6 +135,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             row=record['widget']
             if hasattr(row,'reflow'):row.reflow((available-16)//2-2 if record.get('profile_column') else available-2)
         for group in self.groups:group.refresh_rows(self.current=='peony:general',available)
+        for pair in self.scroll.findChildren(ProfileColumns):pair.schedule()
         for entry in self.fields.values():
             if 'readout' in entry:
                 f=entry['field'];readout=entry['readout'];strings=[self.number_text(v,f) for v in (f.get('min',0),f.get('max',100),f.get('value',0))]
@@ -617,6 +618,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
             if field.get('_absorbed'):entry['container'].hide()
         for spec in self._normalized['groups']:
             group=SettingsGroup(spec.get('title',''),spec.get('columns',1))
+            if 'profileColumn' in spec and profile_pair is None:
+                profile_pair=ProfileColumns();layout.addWidget(profile_pair)
             for field in spec.get('sourceHeadings',[]):
                 entry=self.fields[field['id']];entry['container'].deleteLater();entry.update(control=group.title,container=group.title,row=group)
                 entry['header']=group.title if spec['key'].startswith('@legacy:') else None
@@ -666,16 +669,14 @@ class SettingsWindow(QtWidgets.QMainWindow):
                         entry=self.fields[attached['id']];entry['container'].deleteLater();presenter=view.title if attached['_role']=='label' else view.help;entry.update(control=presenter,container=presenter,row=view)
                 sticky=pinned_page_row(row)
                 owner=pinned if sticky else group;owner.add_row(view)
+                if 'profileColumn' in spec:profile_pair.add_profile_row(row['profileSlot'],spec['profileColumn'],view)
                 record={'widget':view,'spec':row,'group':owner,'pinned':sticky,'profile_column':'profileColumn' in spec};self._rendered_rows.append(record)
                 for e in entries:e['row']=e['control'] if row['actions'] else view
             if group.rows:
                 self.groups.append(group)
                 if 'profileColumn' in spec:
-                    if profile_pair is None:
-                        profile_pair=QtWidgets.QWidget();profile_pair.setObjectName('replyProfileColumns');profile_pair.setMinimumWidth(0)
-                        pair_box=QtWidgets.QGridLayout(profile_pair);pair_box.setContentsMargins(0,0,0,0);pair_box.setHorizontalSpacing(16);pair_box.setColumnStretch(0,1);pair_box.setColumnStretch(1,1);layout.addWidget(profile_pair)
                     group.setObjectName('normalProfilePanel' if spec['profileColumn']==0 else 'quickProfilePanel')
-                    profile_pair.layout().addWidget(group,0,spec['profileColumn'],QtCore.Qt.AlignTop)
+                    profile_pair.add_group(group,spec['profileColumn'])
                 else:layout.addWidget(group)
             else:group.setParent(widget);group.hide()
             if spec['rows'] and all(row['actions'] for row in spec['rows']) and not spec.get('title'):group.set_unframed()
@@ -872,6 +873,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             action_containers={self.fields[f['id']].get('action_container') for f in spec['fields']}-{None}
             for container in action_containers:container.setVisible(any(not self.fields[f['id']]['control'].isHidden() for f in spec['fields'] if self.fields[f['id']].get('action_container') is container))
         for group,visible in shown.items():group.setVisible(visible);group.refresh_rows(self.current=='peony:general',min(900,self.scroll.viewport().width()))
+        for pair in self.scroll.findChildren(ProfileColumns):pair.schedule()
         self.page_actions.setVisible(any(record.get('pinned') and not record['widget'].isHidden() for record in self._rendered_rows))
         if hasattr(self,'no_results'):self.no_results.setVisible(bool(query) and not any(not record.get('pinned') and not record['widget'].isHidden() for record in self._rendered_rows))
 

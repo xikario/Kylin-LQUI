@@ -9,6 +9,7 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QUuid>
+#include <QHash>
 
 Conversation::Conversation(QString folder):base(folder.isEmpty()?QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)+"/liquid-cli":std::move(folder)),root(base){}
 void Conversation::useBackend(const QString &id,bool quickReply) {
@@ -63,6 +64,35 @@ bool Conversation::clear() {
     items.clear();threadId.clear();contextTokens=0;contextWindow=0;
     QDir(root+"/images").removeRecursively();
     return true;
+}
+bool Conversation::startNew(QString *archivePath,QString *error) {
+    if(archivePath)archivePath->clear();
+    if(!writable){if(error)*error="原聊天记录无法读取，未开始新对话。";return false;}
+    if(items.isEmpty()&&threadId.isEmpty())return true;
+    const QString destination=root+"/archives/"+QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss-")+QUuid::createUuid().toString(QUuid::Id128).left(8);
+    if(!QDir().mkpath(destination)){if(error)*error="无法归档旧对话，原记录已保留。";return false;}
+    QFile::setPermissions(destination,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner);
+    auto fail=[&](const QString &message){QDir(destination).removeRecursively();if(error)*error=message;return false;};
+    Conversation archived(destination);archived.items=items;archived.threadId=threadId;archived.contextTokens=contextTokens;archived.contextWindow=contextWindow;
+    QHash<QString,QString> copied;
+    for(auto &message:archived.items)for(auto &path:message.images){
+        if(!QFileInfo::exists(path))continue;
+        if(!copied.contains(path)){
+            const QString images=destination+"/images";
+            if(!QDir().mkpath(images))return fail("无法归档附图，原对话已保留。");
+            QFile::setPermissions(images,QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner);
+            const QString target=images+"/"+QUuid::createUuid().toString(QUuid::Id128)+"-"+QFileInfo(path).fileName();
+            if(!QFile::copy(path,target))return fail("附图归档失败，未开始新对话。");
+            QFile::setPermissions(target,QFile::ReadOwner|QFile::WriteOwner);copied.insert(path,target);
+        }
+        path=copied.value(path);
+    }
+    QString detail;if(!archived.save(&detail))return fail("归档保存失败："+detail);
+    // Commit the empty conversation atomically only after its complete backup
+    // exists. Keep the composer's draft and images available for the new turn.
+    Conversation replacement(root);if(!replacement.save(&detail))return fail("新对话保存失败："+detail);
+    items.clear();threadId.clear();contextTokens=0;contextWindow=0;
+    if(archivePath)*archivePath=destination;return true;
 }
 int Conversation::append(const ChatMessage &message) {
     ChatMessage m=message;if(!m.time)m.time=QDateTime::currentMSecsSinceEpoch();

@@ -41,6 +41,7 @@ public:
     void submit(const QString &text,const QStringList &images);
     void processCapture(const QImage &image,const QString &action);
     void clearConversation();
+    bool startNewConversation();
     void prepareResident();
     QWidget *settingsBridgeRoot();
 public slots:
@@ -91,7 +92,7 @@ private:
     ChatView *view=nullptr;
     Composer *input=nullptr;
     QLabel *statusLabel=nullptr,*contextLabel=nullptr,*replyModeLabel=nullptr;
-    QPushButton *pin=nullptr,*contextButton=nullptr,*quickReplyButton=nullptr;
+    QPushButton *pin=nullptr,*contextButton=nullptr,*quickReplyButton=nullptr,*newConversationButton=nullptr;
     QWidget *replyModeRow=nullptr;
     QVBoxLayout *notices=nullptr;
     QPointer<QWidget> compactNotice;

@@ -35,6 +35,7 @@ Settings Settings::load(const QString &path) {
         s.quickModel=o.value("quickModel").toString(s.quickModel);
         s.quickReasoningEffort=o.value("quickReasoningEffort").toString(s.quickReasoningEffort);
         s.quickFast=o.value("quickFast").toBool(false);
+        s.normalFast=o.value("normalFast").toBool(false);
         s.backend=o.value("backend").toString("codex");s.sessionMode=o.value("sessionMode").toString();
         s.backendProfiles=o.value("backendProfiles").toObject();
     }
@@ -73,7 +74,7 @@ QJsonObject Settings::json() const {
         {"liquid",liquid},{"darken",darken},{"hideDelay",hideDelay},{"fontSize",fontSize},{"directory",directory},
         {"command",command},{"permissions",permissions},{"contextLimitK",contextLimitK},{"idleStopMinutes",idleStopMinutes},
         {"model",model},{"reasoningEffort",reasoningEffort},{"defaultReplyMode",defaultReplyMode},
-        {"quickModel",quickModel},{"quickReasoningEffort",quickReasoningEffort},{"quickFast",quickFast}};
+        {"quickModel",quickModel},{"quickReasoningEffort",quickReasoningEffort},{"quickFast",quickFast},{"normalFast",normalFast}};
 }
 bool Settings::save(QString *error) const {
     QDir().mkpath(QFileInfo(file).absolutePath());QSaveFile f(file);

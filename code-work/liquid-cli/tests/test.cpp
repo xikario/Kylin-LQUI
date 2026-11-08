@@ -106,6 +106,8 @@ private slots:
         QCOMPARE(s.defaultReplyMode,QString("normal"));s.defaultReplyMode="quick";QVERIFY(s.save());
         QCOMPARE(Settings::load(s.file).defaultReplyMode,QString("quick"));
         s.defaultReplyMode="invalid";s.normalize();QCOMPARE(s.defaultReplyMode,QString("normal"));
+        s.quickModel="fixture-fast";s.quickReasoningEffort="xhigh";s.quickFast=true;s.serviceTierForTurn="priority";QVERIFY(s.save());
+        const auto quick=Settings::load(s.file);QCOMPARE(quick.quickModel,s.quickModel);QCOMPARE(quick.quickReasoningEffort,s.quickReasoningEffort);QVERIFY(quick.quickFast);QVERIFY(quick.serviceTierForTurn.isEmpty());
     }
     void backendProfilesAndConversationIsolation(){
         QString marker;auto s=config(&marker);s.model="codex-choice";const QString codexCommand=s.command;
@@ -781,6 +783,52 @@ private slots:
         d.applySettings(other);QVERIFY(!d.setQuickReply(true));QVERIFY(d.findChild<QPushButton*>("quickReplyMode")->parentWidget()->isHidden());
         QVERIFY(!d.findChild<QPushButton*>("quickReplyMode")->isChecked());
         d.applySettings(s);QCOMPARE(d.conversation().folder(),storage);QCOMPARE(d.composer()->text(),QString("保留草稿"));
+    }
+    void quickModelEffortAndFastReachWireWithoutChangingNormalMode(){
+        QString marker;auto s=config(&marker);s.model="gpt-6-luna";s.reasoningEffort="xhigh";
+        s.quickModel="fixture-fast";s.quickReasoningEffort="xhigh";s.quickFast=true;s.defaultReplyMode="quick";
+        Drawer d(s,folder());d.submit("quick fast",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        auto turns=requests(marker,"turn/start");QCOMPARE(turns.size(),1);auto p=turns.last()["params"].toObject();
+        QCOMPARE(p["model"].toString(),QString("fixture-fast"));QCOMPARE(p["effort"].toString(),QString("xhigh"));QCOMPARE(p["serviceTierForTurn"].toString(),QString("priority"));QVERIFY(!p.contains("serviceTier"));
+        const auto thread=d.conversation().threadId;s.quickFast=false;d.applySettings(s);d.submit("standard",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        p=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(p["serviceTierForTurn"].toString(),QString("default"));QCOMPARE(d.conversation().threadId,thread);
+        d.client()->stop();s.quickFast=true;d.applySettings(s);d.submit("resume fast",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        p=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(p["serviceTierForTurn"].toString(),QString("priority"));QCOMPARE(d.conversation().threadId,thread);
+        QVERIFY(d.setQuickReply(false));d.submit("ordinary",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        p=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(p["model"].toString(),QString("gpt-6-luna"));QCOMPARE(p["effort"].toString(),QString("xhigh"));QVERIFY(!p.contains("serviceTierForTurn"));
+        QVERIFY(d.setQuickReply(true));s.quickModel="fixture-deep";s.quickReasoningEffort="future-effort";d.applySettings(s);const int before=requests(marker,"turn/start").size();
+        d.submit("unsupported fast",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);QCOMPARE(requests(marker,"turn/start").size(),before);QVERIFY(allText(d).contains("未提供 Fast"));
+        s.quickFast=false;d.applySettings(s);d.submit("supported standard",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        p=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(p["model"].toString(),QString("fixture-deep"));QCOMPARE(p["effort"].toString(),QString("future-effort"));
+        s.quickReasoningEffort="xhigh";d.applySettings(s);const int valid=requests(marker,"turn/start").size();d.submit("unsupported effort",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);QCOMPARE(requests(marker,"turn/start").size(),valid);QVERIFY(allText(d).contains("不支持思考强度"));
+    }
+    void quickChangesDuringConnectionOnlyAffectTheNextMessage(){
+        QString marker;auto s=config(&marker);s.defaultReplyMode="quick";s.quickModel="fixture-fast";s.quickReasoningEffort="xhigh";s.quickFast=true;
+        Drawer d(s,folder());d.submit("first",{});s.quickReasoningEffort="low";s.quickFast=false;d.applySettings(s);
+        QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);auto p=requests(marker,"turn/start").last()["params"].toObject();
+        QCOMPARE(p["effort"].toString(),QString("xhigh"));QCOMPARE(p["serviceTierForTurn"].toString(),QString("priority"));
+        d.submit("second",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);p=requests(marker,"turn/start").last()["params"].toObject();
+        QCOMPARE(p["effort"].toString(),QString("low"));QCOMPARE(p["serviceTierForTurn"].toString(),QString("default"));
+    }
+    void quickProfilePickerPersistsAndIsExposedToUnifiedSettings(){
+        auto s=config();s.model="gpt-6-luna";s.reasoningEffort="xhigh";QVERIFY(s.save());Drawer d(s,folder());
+        LquiSettings::Bridge bridge("ai",[&](const QString &){return d.settingsBridgeRoot();},[]{return QJsonArray{QJsonObject{{"id","general"}}};});
+        bridge.Page("general");QWidget *dialog=d.settingsBridgeRoot();
+        auto *model=dialog->findChild<QComboBox*>("settingQuickModel");auto *effort=dialog->findChild<QSlider*>("settingQuickEffort");auto *fast=dialog->findChild<QCheckBox*>("settingQuickFast");QVERIFY(model&&effort&&fast);
+        QTRY_VERIFY_WITH_TIMEOUT(model->isEnabled()&&model->findData("fixture-fast")>=0,10000);
+        const auto page=QJsonDocument::fromJson(bridge.Page("general").toUtf8()).object();QHash<QString,QString> ids;
+        for(const auto &v:page["fields"].toArray()){const auto f=v.toObject();ids[f["name"].toString()]=f["id"].toString();}
+        for(const auto &name:QStringList{"settingQuickModel","settingQuickEffort","settingQuickFast"})QVERIFY(!ids[name].isEmpty());
+        const auto set=[&](const QString &name,const QJsonValue &v){return QJsonDocument::fromJson(bridge.Set("general",ids[name],QString::fromUtf8(QJsonDocument(QJsonObject{{"value",v}}).toJson())).toUtf8()).object()["ok"].toBool();};
+        QVERIFY(set("settingQuickModel",model->findData("fixture-fast")));QVERIFY(fast->isEnabled());
+        QVERIFY(set("settingQuickEffort",effort->property("efforts").toStringList().indexOf("xhigh")));QVERIFY(set("settingQuickFast",true));
+        auto saved=Settings::load(s.file);QCOMPARE(saved.quickModel,QString("fixture-fast"));QCOMPARE(saved.quickReasoningEffort,QString("xhigh"));QVERIFY(saved.quickFast);QCOMPARE(saved.model,QString("gpt-6-luna"));QCOMPARE(saved.reasoningEffort,QString("xhigh"));
+        const auto artifacts=qEnvironmentVariable("LIQUID_CLI_ARTIFACT_DIR");
+        if(!artifacts.isEmpty()){dialog->show();if(auto *scroll=dialog->findChild<QScrollArea*>("cliSettingsScroll"))scroll->ensureWidgetVisible(fast);QTest::qWait(80);QDir().mkpath(artifacts);dialog->grab().save(artifacts+"/quick-model-settings.png");}
+        QVERIFY(d.setQuickReply(true));QVERIFY(d.findChild<QLabel*>("replyModeLabel")->text().contains("fixture-fast xhigh · Fast"));
+        QVERIFY(set("settingQuickFast",false));QVERIFY(!Settings::load(s.file).quickFast);
+        QVERIFY(set("settingQuickModel",model->findData("fixture-deep")));QVERIFY(!fast->isEnabled());QCOMPARE(effort->property("efforts").toStringList(),(QStringList{"","medium","high","future-effort"}));
+        QCOMPARE(Settings::load(s.file).model,QString("gpt-6-luna"));QVERIFY(!d.client()->running());
     }
     void defaultReplyModeAvailableThroughUnifiedSettings(){
         auto s=config();s.model="gpt-6-luna";s.reasoningEffort="xhigh";QVERIFY(s.save());Drawer d(s,folder());

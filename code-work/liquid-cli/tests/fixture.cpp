@@ -78,8 +78,9 @@ void handle(const QJsonObject &m) {
     }
     if(method=="model/list") {
         const bool second=!params.value("cursor").toString().isEmpty();
-        QJsonArray efforts;for(const auto &v:second?QStringList{"medium","high","future-effort"}:QStringList{"low","high"})efforts<<QJsonObject{{"reasoningEffort",v},{"description",v}};
+        QJsonArray efforts;for(const auto &v:second?QStringList{"medium","high","future-effort"}:QStringList{"low","high","xhigh"})efforts<<QJsonObject{{"reasoningEffort",v},{"description",v}};
         QJsonObject model{{"model",second?"fixture-deep":"fixture-fast"},{"displayName",second?"Deep":"Fast"},{"isDefault",!second},{"defaultReasoningEffort",second?"medium":"high"},{"supportedReasoningEfforts",efforts}};
+        if(!second)model["serviceTiers"]=QJsonArray{QJsonObject{{"id","priority"},{"name","Fast"},{"description","Faster processing"}}};
         out({{"id",id},{"result",QJsonObject{{"data",QJsonArray{model}},{"nextCursor",second?QJsonValue():QJsonValue("next-page")}}}});return;
     }
     if(method=="thread/start"){thread=QString("fixture-thread-%1").arg(getpid());out({{"id",id},{"result",QJsonObject{{"thread",QJsonObject{{"id",thread}}}}}});return;}

@@ -195,7 +195,7 @@ void Drawer::buildInterface() {
     replyModeLabel=new ElidedLabel(replyModeRow);replyModeLabel->setObjectName("replyModeLabel");
     quickReplyButton=new QPushButton("快问快答",replyModeRow);quickReplyButton->setObjectName("quickReplyMode");
     quickReplyButton->setCheckable(true);quickReplyButton->setCursor(Qt::PointingHandCursor);
-    quickReplyButton->setToolTip("快问快答使用 Luna low 和独立对话；普通思考使用原模型设置。启动时的默认模式可在设置中选择。");
+    quickReplyButton->setToolTip("快问快答使用独立对话和模型配置；普通思考使用原模型设置。两种模式及启动默认值可在设置中选择。");
     modeLayout->addWidget(replyModeLabel,1);modeLayout->addWidget(quickReplyButton);outer->addWidget(replyModeRow);
     connect(quickReplyButton,&QPushButton::clicked,this,[this](bool checked){setQuickReply(checked);});
     updateReplyMode();
@@ -554,7 +554,8 @@ void Drawer::processCapture(const QImage &image,const QString &action) {
 Settings Drawer::effectiveSettings() const {
     Settings effective=settings;
     if(quickReply&&settings.backend=="codex"){
-        effective.model="gpt-6-luna";effective.reasoningEffort="low";
+        effective.model=settings.quickModel;effective.reasoningEffort=settings.quickReasoningEffort;
+        effective.serviceTierForTurn=settings.quickFast?"fast":"default";
         effective.contextLimitK=qMin(settings.contextLimitK,64);
     }
     return effective;
@@ -566,7 +567,8 @@ void Drawer::updateReplyMode() {
     quickReplyButton->setEnabled(!backend->busy()&&!backend->compacting()&&!capturing);
     QString normal="普通思考";
     if(settings.model=="gpt-6-luna")normal+=" · Luna "+(settings.reasoningEffort.isEmpty()?QString("默认强度"):settings.reasoningEffort);
-    replyModeLabel->setText(quickReply?QString("独立对话 · Luna low"):normal);
+    QString quickName=settings.quickModel=="gpt-6-luna"?QString("Luna"):settings.quickModel;
+    replyModeLabel->setText(quickReply?QString("独立对话 · %1 %2%3").arg(quickName,settings.quickReasoningEffort.isEmpty()?QString("默认强度"):settings.quickReasoningEffort,settings.quickFast?QString(" · Fast"):QString()):normal);
     replyModeLabel->setToolTip(replyModeLabel->text());
     quickReplyButton->setText(quickReply?QString("切回普通思考"):QString("快问快答"));
 }
@@ -623,6 +625,7 @@ QString Drawer::State() const {
     state["replyMode"]=quickReply?"quick":"normal";
     state["defaultReplyMode"]=settings.defaultReplyMode;
     state["effectiveModel"]=effectiveSettings().model;state["effectiveEffort"]=effectiveSettings().reasoningEffort;
+    state["requestedServiceTier"]=effectiveSettings().serviceTierForTurn;
     if(preferences) {state["settingsX"]=preferences->x();state["settingsY"]=preferences->y();state["settingsWidth"]=preferences->width();state["settingsHeight"]=preferences->height();if(preferences->isVisible())state["settingsWindowId"]=QString::number(preferences->winId());}
     return QString::fromUtf8(QJsonDocument(state).toJson(QJsonDocument::Compact));
 }

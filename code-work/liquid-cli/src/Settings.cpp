@@ -32,6 +32,9 @@ Settings Settings::load(const QString &path) {
         s.translationLanguage=o.value("translationLanguage").toString(s.translationLanguage);
         s.model=o.value("model").toString();s.reasoningEffort=o.value("reasoningEffort").toString();
         s.defaultReplyMode=o.value("defaultReplyMode").toString("normal");
+        s.quickModel=o.value("quickModel").toString(s.quickModel);
+        s.quickReasoningEffort=o.value("quickReasoningEffort").toString(s.quickReasoningEffort);
+        s.quickFast=o.value("quickFast").toBool(false);
         s.backend=o.value("backend").toString("codex");s.sessionMode=o.value("sessionMode").toString();
         s.backendProfiles=o.value("backendProfiles").toObject();
     }
@@ -52,6 +55,8 @@ void Settings::normalize() {
     if(command.trimmed().isEmpty()||command.contains(QChar(0)))command=defaultCommand(backend);
     translationLanguage=translationLanguage.trimmed().left(80);if(translationLanguage.isEmpty())translationLanguage="简体中文";
     model=model.trimmed();reasoningEffort=reasoningEffort.trimmed();sessionMode=sessionMode.trimmed();
+    quickModel=quickModel.trimmed();if(quickModel.isEmpty())quickModel="gpt-6-luna";
+    quickReasoningEffort=quickReasoningEffort.trimmed();
 }
 QString Settings::backendName(const QString &id) {return id=="qwen"?QString("千问 Qwen Code"):id=="deepseek"?QString("DeepSeek Harness"):QString("Codex");}
 QString Settings::defaultCommand(const QString &id) {return id=="qwen"?QString("qwen"):id=="deepseek"?QString("dsh"):QString("codex");}
@@ -67,7 +72,8 @@ QJsonObject Settings::json() const {
     return {{"version",3},{"followLauncherMaterial",followLauncherMaterial},{"translationLanguage",translationLanguage},{"residentOnLogin",residentOnLogin},{"backend",backend},{"backendProfiles",profiles},{"sessionMode",sessionMode},{"width",width},{"height",height},{"animation",animation},{"animationMs",animationMs},
         {"liquid",liquid},{"darken",darken},{"hideDelay",hideDelay},{"fontSize",fontSize},{"directory",directory},
         {"command",command},{"permissions",permissions},{"contextLimitK",contextLimitK},{"idleStopMinutes",idleStopMinutes},
-        {"model",model},{"reasoningEffort",reasoningEffort},{"defaultReplyMode",defaultReplyMode}};
+        {"model",model},{"reasoningEffort",reasoningEffort},{"defaultReplyMode",defaultReplyMode},
+        {"quickModel",quickModel},{"quickReasoningEffort",quickReasoningEffort},{"quickFast",quickFast}};
 }
 bool Settings::save(QString *error) const {
     QDir().mkpath(QFileInfo(file).absolutePath());QSaveFile f(file);

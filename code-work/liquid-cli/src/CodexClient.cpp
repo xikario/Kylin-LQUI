@@ -1,4 +1,5 @@
 #include "CodexClient.h"
+#include "CodexOptions.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -35,7 +36,7 @@ CodexClient::~CodexClient(){blockSignals(true);stop();}
 
 void CodexClient::send(const QString &text,const QStringList &images) {
     if(busy())return;
-    idle.stop();queued=Send;queuedText=text;queuedImages=images;
+    idle.stop();queued=Send;queuedText=text;queuedImages=images;queuedSettings=settings;
     if(phase==Stopped)launch();else runQueued();
 }
 void CodexClient::compact() {
@@ -188,19 +189,33 @@ void CodexClient::startTurn() {
     if(!queuedText.isEmpty())input<<QJsonObject{{"type","text"},{"text",queuedText},{"text_elements",QJsonArray()}};
     for(const auto &path:queuedImages)input<<QJsonObject{{"type","localImage"},{"path",path}};
     emit status(QStringLiteral("输入中…"));
+    const Settings selection=queuedSettings;
     // Read effective defaults for every send: returning to "follow CLI" must
     // also replace overrides previously stored on the resumed thread.
-    request("config/read",{{"includeLayers",false},{"cwd",settings.directory}},[this,input,epoch](const QJsonObject &result,const QJsonObject &error){
+    request("config/read",{{"includeLayers",false},{"cwd",selection.directory}},[this,input,epoch,selection](const QJsonObject &result,const QJsonObject &error){
         if(!turnActive||epoch!=turnEpoch)return;
         if(!error.isEmpty()){endTurn("failed","无法读取 Codex 模型配置："+errorText(error));return;}
         const auto config=result.value("config").toObject();
-        QString model=settings.model.isEmpty()?config.value("model").toString():settings.model;
+        QString model=selection.model.isEmpty()?config.value("model").toString():selection.model;
         if(model.isEmpty())for(const auto &v:models)if(v.toObject().value("isDefault").toBool()){model=v.toObject().value("model").toString();break;}
-        QString effort=settings.reasoningEffort;
-        if(effort.isEmpty()&&settings.model.isEmpty())effort=config.value("model_reasoning_effort").toString();
+        QString effort=selection.reasoningEffort;
+        if(effort.isEmpty()&&selection.model.isEmpty())effort=config.value("model_reasoning_effort").toString();
         if(effort.isEmpty())for(const auto &v:models)if(v.toObject().value("model").toString()==model){effort=v.toObject().value("defaultReasoningEffort").toString();break;}
         QJsonObject params{{"threadId",thread},{"input",input}};
         if(!model.isEmpty())params["model"]=model;if(!effort.isEmpty())params["effort"]=effort;
+        if(!selection.serviceTierForTurn.isEmpty()){
+            const auto entry=CodexOptions::model(models,model);
+            if(!entry.isEmpty()&&!effort.isEmpty()){
+                bool supported=false;for(const auto &v:entry.value("supportedReasoningEfforts").toArray())supported|=v.toObject().value("reasoningEffort").toString()==effort;
+                if(!supported){endTurn("failed","所选模型不支持思考强度 "+effort+"，请在快问快答设置中调整。");return;}
+            }
+            QString tier=selection.serviceTierForTurn;
+            if(tier=="fast"){
+                tier=CodexOptions::fastTier(entry);
+                if(tier.isEmpty()){endTurn("failed","当前模型目录未提供 Fast，请刷新模型列表或关闭快问快答的 Fast 模式后重试。");return;}
+            }
+            params["serviceTierForTurn"]=tier;
+        }
         request("turn/start",params,[this,epoch](const QJsonObject &result,const QJsonObject &error){
             if(!turnActive||epoch!=turnEpoch)return;
             if(!error.isEmpty()){endTurn("failed",errorText(error));return;}

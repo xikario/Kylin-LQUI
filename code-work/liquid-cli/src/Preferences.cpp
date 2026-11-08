@@ -1,4 +1,5 @@
 #include "Drawer.h"
+#include "CodexOptions.h"
 #include "SettingsBridge.h"
 #include "ResidentStartup.h"
 #include <QCheckBox>
@@ -95,8 +96,8 @@ void Drawer::Preferences() {
     auto *backendChoice=choice("AI 后台","settingBackend",{{"Codex","codex"},{"千问 Qwen Code","qwen"},{"DeepSeek Harness","deepseek"}},settings.backend);
     auto *replyDefault=choice("默认问答模式","settingDefaultReplyMode",{{"普通思考","normal"},{"快问快答","quick"}},settings.defaultReplyMode);
     replyDefault->setAccessibleName("默认问答模式");
-    auto *replyHelp=new QLabel("下次启动生效。快问快答使用 Luna low 独立对话；普通思考沿用下面的模型与强度。",fields);
-    replyHelp->setObjectName("settingsNote");replyHelp->setWordWrap(true);form->addRow(QString(),replyHelp);
+    auto *replyHelp=new QLabel("默认模式下次启动生效。普通思考与快问快答分别保存模型配置和聊天上下文。",fields);
+    replyHelp->setObjectName("replyModeHelp");replyHelp->setWordWrap(true);form->addRow(QString(),replyHelp);
     auto *modelRow=new QWidget(fields);auto *modelLayout=new QHBoxLayout(modelRow);modelLayout->setContentsMargins(0,0,0,0);modelLayout->setSpacing(6);
     auto *model=new QComboBox(modelRow);model->setObjectName("settingModel");model->setMinimumContentsLength(12);model->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);model->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
     auto *refresh=new QPushButton("刷新",modelRow);refresh->setObjectName("refreshModels");modelLayout->addWidget(model,1);modelLayout->addWidget(refresh);form->addRow("模型版本",modelRow);
@@ -104,6 +105,12 @@ void Drawer::Preferences() {
     auto *sessionMode=choice("会话模式","settingSessionMode",{{"跟随会话配置",""}},settings.sessionMode);
     auto *modelStatus=new QLabel(fields);modelStatus->setObjectName("cliModelStatus");modelStatus->setWordWrap(true);form->addRow(QString(),modelStatus);
     auto *modelReference=new QLabel(fields);modelReference->setObjectName("cliModelReference");modelReference->setWordWrap(true);modelReference->hide();form->addRow(QString(),modelReference);
+    auto *quickModel=choice("快问快答模型","settingQuickModel",{{settings.quickModel,settings.quickModel}},settings.quickModel);
+    quickModel->setMinimumContentsLength(12);quickModel->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    quickModel->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);quickModel->setEnabled(false);
+    auto *quickEffort=number("快问思考强度","settingQuickEffort",0,0,0,"");auto *quickEffortLabel=fields->findChild<QLabel*>("settingQuickEffortValue");
+    auto *quickFast=new QCheckBox("启用 Fast",fields);quickFast->setObjectName("settingQuickFast");quickFast->setChecked(settings.quickFast);quickFast->setEnabled(false);form->addRow("快问 Fast 模式",quickFast);
+    auto *quickStatus=new QLabel(fields);quickStatus->setObjectName("quickModelStatus");quickStatus->setWordWrap(true);form->addRow(QString(),quickStatus);
     auto *width=number("窗口宽度","settingWidth",settings.width,360,1000," px",10);auto *height=number("窗口高度","settingHeight",settings.height,420,1400," px",10);
     auto *animation=choice("呼出方式","settingAnimation",{{"上浮（轻滑 + 淡入）","float"},{"向上滑入","slide"},{"无动画","none"}},settings.animation);
     auto *duration=number("动画时长","settingDuration",settings.animationMs,80,500," ms",10);
@@ -170,6 +177,38 @@ void Drawer::Preferences() {
 
     struct Catalog {QJsonArray models;QString model,effort;bool ready=false;};auto catalog=std::make_shared<Catalog>();
     auto probe=std::make_shared<QPointer<AgentClient>>();
+    const auto updateQuickOptions=[=](const QString &wanted){
+        const auto entry=CodexOptions::model(catalog->models,quickModel->currentData().toString());
+        const auto defaultEffort=entry.value("defaultReasoningEffort").toString();
+        QStringList values{QString()};for(const auto &v:entry.value("supportedReasoningEfforts").toArray())values<<v.toObject().value("reasoningEffort").toString();
+        const bool unsupported=!entry.isEmpty()&&!wanted.isEmpty()&&!values.contains(wanted);
+        if(!wanted.isEmpty()&&!values.contains(wanted))values<<wanted;
+        const QSignalBlocker blocker(quickEffort);quickEffort->setProperty("efforts",values);quickEffort->setProperty("defaultEffort",defaultEffort);
+        quickEffort->setRange(0,values.size()-1);quickEffort->setValue(qMax(0,values.indexOf(wanted)));quickEffort->setEnabled(catalog->ready&&values.size()>1);
+        auto labels=values;labels[0]=defaultEffort.isEmpty()?QString("模型默认"):QString("默认 ")+defaultEffort;
+        if(unsupported)labels[values.indexOf(wanted)]+="（不支持）";
+        quickEffort->setProperty("settingsValueLabels",labels);quickEffortLabel->setText(labels.value(quickEffort->value()));
+        const bool fastSupported=!CodexOptions::fastTier(entry).isEmpty();
+        quickFast->setEnabled(catalog->ready&&(fastSupported||quickFast->isChecked()));
+        quickStatus->setText(!catalog->ready?QString("正在读取快问模型选项…"):
+            (fastSupported?QString("独立保存，下一条快问消息生效。Fast 会增加额度消耗，不保证网络和工具等待同步缩短。"):
+            QString("独立保存，下一条快问消息生效。此模型目录未提供 Fast；如已开启，请关闭后发送。")));
+    };
+    const auto saveQuick=[=]{
+        if(!catalog->ready||draft->backend!="codex")return;
+        auto next=settings;next.quickModel=quickModel->currentData().toString();next.quickReasoningEffort=quickEffort->property("efforts").toStringList().value(quickEffort->value());next.quickFast=quickFast->isChecked();
+        draft->quickModel=next.quickModel;draft->quickReasoningEffort=next.quickReasoningEffort;draft->quickFast=next.quickFast;
+        if(settings.backend!="codex"){updateQuickOptions(next.quickReasoningEffort);quickStatus->setText("点击应用切换到 Codex 后，快问配置生效。");return;}
+        QString error;if(!next.save(&error)){quickStatus->setText("快问配置保存失败："+error);return;}
+        applySettings(next);updateQuickOptions(next.quickReasoningEffort);
+    };
+    connect(quickModel,QOverload<int>::of(&QComboBox::activated),dialog,[=]{
+        const auto entry=CodexOptions::model(catalog->models,quickModel->currentData().toString());bool supported=false;
+        for(const auto &v:entry.value("supportedReasoningEfforts").toArray())supported|=v.toObject().value("reasoningEffort").toString()==draft->quickReasoningEffort;
+        updateQuickOptions(supported?draft->quickReasoningEffort:QString());saveQuick();
+    });
+    connect(quickEffort,&QSlider::valueChanged,dialog,[=]{saveQuick();});
+    connect(quickFast,&QCheckBox::toggled,dialog,[=]{saveQuick();});
     const auto followText=[=]{return draft->backend=="codex"?QString("跟随 Codex 配置"):QString("跟随会话配置");};
     auto updateEfforts=[=](const QString &wanted){
         QString selected=model->currentData().toString();const bool follow=selected.isEmpty();if(follow)selected=catalog->model;
@@ -235,9 +274,14 @@ void Drawer::Preferences() {
         command->setText(draft->command);directory->setText(draft->directory);permissions->setCurrentIndex(qMax(0,permissions->findData(draft->permissions)));
         const bool codex=draft->backend=="codex";permissions->setVisible(codex);form->labelForField(permissions)->setVisible(codex);
         replyDefault->setVisible(codex);form->labelForField(replyDefault)->setVisible(codex);replyHelp->setVisible(codex);
+        for(auto *w:QList<QWidget*>{quickModel,quickEffort->parentWidget(),quickFast}){w->setVisible(codex);form->labelForField(w)->setVisible(codex);}
+        quickStatus->setVisible(codex);quickModel->setEnabled(false);quickEffort->setEnabled(false);quickFast->setEnabled(false);
+        if(auto *caption=qobject_cast<QLabel*>(form->labelForField(modelRow)))caption->setText(codex?"普通思考模型":"模型版本");
+        if(auto *caption=qobject_cast<QLabel*>(form->labelForField(effort->parentWidget())))caption->setText(codex?"普通思考强度":"思考强度");
         sessionMode->setVisible(!codex);form->labelForField(sessionMode)->setVisible(!codex);
         {const QSignalBlocker block(sessionMode);sessionMode->clear();sessionMode->addItem("跟随会话配置",QString());if(!draft->sessionMode.isEmpty())sessionMode->addItem(draft->sessionMode,draft->sessionMode);sessionMode->setCurrentIndex(qMax(0,sessionMode->findData(draft->sessionMode)));}
         updateEfforts(draft->reasoningEffort);
+        updateQuickOptions(draft->quickReasoningEffort);
     };
     connect(refresh,&QPushButton::clicked,dialog,[=]{
         if(command->text().trimmed().isEmpty()||!QDir(directory->text()).exists()){modelStatus->setText("请先填写有效的目录和 CLI 命令");return;}
@@ -245,6 +289,7 @@ void Drawer::Preferences() {
         collectSelection();auto config=*draft;config.directory=directory->text();config.normalize();
         auto *current=createAgentClient(config,dialog);*probe=current;
         catalog->ready=false;modelReference->hide();model->setEnabled(false);effort->setEnabled(false);refresh->setEnabled(false);modelStatus->setText("正在读取 "+config.cliName+" 配置…");
+        quickModel->setEnabled(false);quickEffort->setEnabled(false);quickFast->setEnabled(false);
         connect(current,&AgentClient::modesReady,dialog,[=](const QJsonArray &modes,const QString &currentMode){
             if(*probe!=current)return;const QSignalBlocker block(sessionMode);sessionMode->clear();sessionMode->addItem(currentMode.isEmpty()?"跟随会话配置":"跟随会话 · "+currentMode,QString());
             for(const auto &v:modes){const auto o=v.toObject();sessionMode->addItem(o.value("name").toString(o.value("id").toString()),o.value("id").toString());}
@@ -259,6 +304,12 @@ void Drawer::Preferences() {
                 if(!draft->model.isEmpty()&&model->findData(draft->model)<0)model->addItem(draft->model+"（当前配置）",draft->model);
                 model->setCurrentIndex(qMax(0,model->findData(draft->model)));}
             updateEfforts(draft->reasoningEffort);catalog->ready=true;model->setEnabled(true);refresh->setEnabled(true);
+            if(draft->backend=="codex"){
+                const QSignalBlocker blocker(quickModel);quickModel->clear();
+                for(const auto &v:models){const auto m=v.toObject();const auto id=m.value("model").toString();if(!id.isEmpty()&&!m.value("hidden").toBool()){quickModel->addItem(m.value("displayName").toString(id),id);quickModel->setItemData(quickModel->count()-1,id,Qt::ToolTipRole);}}
+                if(quickModel->findData(draft->quickModel)<0)quickModel->addItem(draft->quickModel+"（已保存）",draft->quickModel);
+                quickModel->setCurrentIndex(quickModel->findData(draft->quickModel));quickModel->setEnabled(true);updateQuickOptions(draft->quickReasoningEffort);
+            }
             updateModelStatus();
         });
         connect(current,&AgentClient::modelsFailed,dialog,[=](const QString &error){if(*probe!=current)return;modelStatus->setText("读取失败："+error.left(220));refresh->setEnabled(true);model->setEnabled(true);});
@@ -311,7 +362,10 @@ void Drawer::Preferences() {
         {"settingTranslationLanguage","截图翻译使用的目标语言。点击翻译后立即处理截图，不会发送已有草稿。"},
         {"settingResident","只保持界面常驻并预热背景；不会提前连接模型。模型后台休眠不关闭窗口进程。"},
         {"settingBackend","选择 CLI 后台；每个后台分别保留聊天和草稿，点击应用后切换。"},
-        {"settingDefaultReplyMode","选择下次启动时使用快问快答还是普通思考；即时保存，不打断当前对话。快问快答固定 Luna low，使用独立上下文。普通思考保留原模型与思考强度。"},
+        {"settingDefaultReplyMode","选择下次启动时使用快问快答还是普通思考；即时保存，不打断当前对话。两种模式分别保存模型配置和上下文。"},
+        {"settingQuickModel","快问快答独立使用的模型。模型和可用强度来自当前 Codex，修改从下一条快问消息生效。"},
+        {"settingQuickEffort","快问快答独立使用的思考强度，可选档位随模型变化；不会降低普通思考的强度。"},
+        {"settingQuickFast","仅对快问快答请求 Fast 服务档位；关闭时明确使用标准速度。Fast 可能增加额度消耗，实际可用性和速度由服务端决定。"},
         {"settingModel","读取所选 CLI 提供的模型；下一条消息生效。"},
         {"settingSessionMode","仅显示 CLI 提供的模式；授权范围由该后台决定。"},
         {"settingEffort","越向右思考越深入，通常更慢；档位随模型变化。"},

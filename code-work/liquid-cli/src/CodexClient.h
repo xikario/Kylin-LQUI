@@ -58,7 +58,7 @@ private:
     void closeApprovals();
     QJsonObject permissionOverrides() const;
     QString summary() const;
-    Settings settings;
+    Settings settings,queuedSettings;
     QProcess *process=nullptr;
     QLocalServer *server=nullptr;
     QPointer<QLocalSocket> guard;

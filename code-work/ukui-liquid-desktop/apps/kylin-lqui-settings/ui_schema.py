@@ -158,7 +158,43 @@ def normalize_page(data, module='', page='', instance=0):
     if normalized['layout'] not in ('grouped', 'plugin-list'):
         normalized['layout'] = 'grouped'
     normalized['groups'] = build_groups(normalized)
+    if module=='ai' and page=='general':normalized['groups']=reply_profile_groups(normalized)
     return normalized
+
+
+def reply_profile_groups(page):
+    """Present the two known Codex profiles without changing native field ids."""
+    groups=page['groups'];fields=page['fields'];by_name={f.get('name'):f for f in fields if f.get('_stable')}
+    required={'settingDefaultReplyMode','settingModel','settingEffort','settingQuickModel','settingQuickEffort'}
+    if len(groups)!=1 or groups[0]['sourceHeadings'] or not required.issubset(by_name):return groups
+    choice=by_name['settingDefaultReplyMode']
+    if choice['kind']!='choice' or choice.get('options')!=['普通思考','快问快答'] or choice.get('editable'):return groups
+    ordinary={'settingModel','refreshModels','settingEffort','cliModelStatus','cliModelReference'}
+    quick={'settingQuickModel','settingQuickEffort','settingQuickFast','quickModelStatus'}
+    default={'settingDefaultReplyMode','replyModeHelp'};rows=groups[0]['rows'];buckets={'normal':[],'quick':[],'default':[],'before':[],'after':[]};started=False
+    for row in rows:
+        names={f.get('name') for f in row['fields']}
+        target='normal' if names<=ordinary else 'quick' if names<=quick else 'default' if names<=default else ''
+        if target:started=True;buckets[target].append(row)
+        else:buckets['after' if started else 'before'].append(row)
+    if not all(buckets[k] for k in ('normal','quick','default')):return groups
+    selector=next(r for r in buckets['default'] if choice in r['fields'])
+    for row in buckets['default']:
+        if row is selector:continue
+        for field in row['fields']:
+            field['_absorbed']='associated-description';field['_role']='help';selector['attachments'].append(field)
+    buckets['default']=[selector]
+    # The shared catalog refresh belongs below the profile controls, not
+    # between the left model and its reasoning selector.
+    buckets['normal'].sort(key=lambda r:any(f.get('name')=='refreshModels' for f in r['fields']))
+    choice['_radio_choices']=True
+    result=[]
+    for key in ('before','default','normal','quick','after'):
+        if not buckets[key]:continue
+        group={**groups[0],'key':'@reply:'+key,'rows':buckets[key],'sourceHeadings':[],'title':''}
+        if key in ('normal','quick'):group['profileColumn']=0 if key=='normal' else 1
+        result.append(group)
+    return result
 
 
 def build_groups(page):

@@ -11,7 +11,7 @@ from design import STYLE, COLORS, DESCRIPTIONS, NavigationDelegate, Switch, Mate
 
 from ui_tokens import COLORS as UI_COLORS, application_scale, build_settings_style, sidebar_width
 from ui_schema import normalize_page, structural_signature, searchable_text, field_visible, presentation_rows, navigation_pages, pinned_page_row
-from ui_components import SettingsGroup, SettingRow, ActionRow, DisclosureRow, PluginRow, WallpaperPreview, WallpaperFileRow, PathView, StatusLabel, SettingSlider, ActionButton, HelpBubble, label
+from ui_components import SettingsGroup, SettingRow, ActionRow, DisclosureRow, PluginRow, WallpaperPreview, WallpaperFileRow, PathView, StatusLabel, SettingSlider, ActionButton, HelpBubble, RadioChoice, ModeChoiceRow, label
 import sip
 
 _OBSERVED_EVENTS=frozenset((QtCore.QEvent.MouseButtonPress,QtCore.QEvent.KeyPress,QtCore.QEvent.Wheel,QtCore.QEvent.InputMethod,QtCore.QEvent.ApplicationFontChange,QtCore.QEvent.Resize,QtCore.QEvent.FocusIn))
@@ -133,7 +133,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         available=min(900,self.scroll.viewport().width())
         for record in self._rendered_rows:
             row=record['widget']
-            if hasattr(row,'reflow'):row.reflow(available-2)
+            if hasattr(row,'reflow'):row.reflow((available-16)//2-2 if record.get('profile_column') else available-2)
         for group in self.groups:group.refresh_rows(self.current=='peony:general',available)
         for entry in self.fields.values():
             if 'readout' in entry:
@@ -561,6 +561,9 @@ class SettingsWindow(QtWidgets.QMainWindow):
             control.valueChanged.connect(changed);control.setValue(round((float(field.get('value',low))-low)/step));changed(control.value())
             control.committed.connect(lambda f=fid,e=entry,c=control,k=key:self.mutate(f,round(e['low']+c.sliderPosition()*e['step'],int(e['field'].get('decimals',0))),page_key=k,source=c))
             container=QtWidgets.QWidget();line=QtWidgets.QHBoxLayout(container);line.setContentsMargins(0,0,0,0);line.setSpacing(8);line.addWidget(control,1);line.addWidget(readout)
+        elif kind=='choice' and field.get('_radio_choices'):
+            control=RadioChoice(field.get('options',[]),field.get('optionsEnabled',[]));self.set_choice_value(control,field)
+            control.activated.connect(lambda value,f=fid,k=key,c=control:self.mutate(f,value,page_key=k,source=c))
         elif kind in ('choice','tabs'):
             control=QtWidgets.QComboBox();control.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon);control.setMinimumContentsLength(1);control.setMinimumWidth(0);control.setSizePolicy(QtWidgets.QSizePolicy.Expanding,QtWidgets.QSizePolicy.Fixed)
             control.addItems(field.get('options',[]))
@@ -607,6 +610,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         layout=QtWidgets.QVBoxLayout(widget);layout.setContentsMargins(0,0,0,0);layout.setSpacing(16)
         self.fields={};self.groups=[];self._rendered_rows=[]
         self.clear_page_actions()
+        profile_pair=None
         pinned=SettingsGroup();pinned.setObjectName('pinnedPageActions');pinned.set_unframed();self.page_actions_layout.addWidget(pinned)
         for field in self._normalized['fields']:
             entry=self._create_control(field,widget);self.fields[field['id']]=entry
@@ -651,6 +655,10 @@ class SettingsWindow(QtWidgets.QMainWindow):
                         view=DisclosureRow(entries[0]['field'].get('label') or '补充说明',content)
                     else:
                         view=QtWidgets.QWidget();box=QtWidgets.QVBoxLayout(view);box.setContentsMargins(12,8,12,8);box.addWidget(content)
+                elif isinstance(entries[0]['control'],RadioChoice):
+                    e=entries[0];view=ModeChoiceRow(e['field'].get('label') or '默认问答模式',e['container']);e['label']=view.title
+                    for attached in row['attachments']:
+                        entry=self.fields[attached['id']];entry['container'].deleteLater();entry.update(control=view.help,container=view.help,row=view)
                 else:
                     e=entries[0];f=e['field'];view=SettingRow(f.get('label') or '设置项',e['container'],boolean=f['kind']=='boolean')
                     e['label']=view.title
@@ -658,9 +666,17 @@ class SettingsWindow(QtWidgets.QMainWindow):
                         entry=self.fields[attached['id']];entry['container'].deleteLater();presenter=view.title if attached['_role']=='label' else view.help;entry.update(control=presenter,container=presenter,row=view)
                 sticky=pinned_page_row(row)
                 owner=pinned if sticky else group;owner.add_row(view)
-                record={'widget':view,'spec':row,'group':owner,'pinned':sticky};self._rendered_rows.append(record)
+                record={'widget':view,'spec':row,'group':owner,'pinned':sticky,'profile_column':'profileColumn' in spec};self._rendered_rows.append(record)
                 for e in entries:e['row']=e['control'] if row['actions'] else view
-            if group.rows:self.groups.append(group);layout.addWidget(group)
+            if group.rows:
+                self.groups.append(group)
+                if 'profileColumn' in spec:
+                    if profile_pair is None:
+                        profile_pair=QtWidgets.QWidget();profile_pair.setObjectName('replyProfileColumns');profile_pair.setMinimumWidth(0)
+                        pair_box=QtWidgets.QGridLayout(profile_pair);pair_box.setContentsMargins(0,0,0,0);pair_box.setHorizontalSpacing(16);pair_box.setColumnStretch(0,1);pair_box.setColumnStretch(1,1);layout.addWidget(profile_pair)
+                    group.setObjectName('normalProfilePanel' if spec['profileColumn']==0 else 'quickProfilePanel')
+                    profile_pair.layout().addWidget(group,0,spec['profileColumn'],QtCore.Qt.AlignTop)
+                else:layout.addWidget(group)
             else:group.setParent(widget);group.hide()
             if spec['rows'] and all(row['actions'] for row in spec['rows']) and not spec.get('title'):group.set_unframed()
         if pinned.rows:self.groups.append(pinned)
@@ -678,7 +694,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         for record in self._rendered_rows:
             view=record['widget'];spec=record['spec'];fields=[self.fields[f['id']]['field'] for f in spec['fields']]
             spec['fields']=fields;spec['attachments']=[self.fields[f['id']]['field'] for f in spec['attachments']]
-            if isinstance(view,SettingRow):
+            if isinstance(view,(SettingRow,ModeChoiceRow)):
                 f=fields[0];attached=[self.fields[f['id']]['field'] for f in spec['attachments']]
                 texts=[f.get('help','')] if f.get('help') and f['help']!=f.get('label') else []
                 texts += [str(item.get('value','')) for item in attached if item['_role']!='label']

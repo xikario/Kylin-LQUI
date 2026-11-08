@@ -23,6 +23,39 @@ class StatusLabel(QtWidgets.QLabel):
         super().setText(text);self.setVisible(bool(text))
 
 
+class RadioChoice(QtWidgets.QWidget):
+    """Exclusive native radios; emits only user activations, never refreshes."""
+    activated=QtCore.pyqtSignal(int)
+    def __init__(self,options,allowed=()):
+        super().__init__();self.options=list(options);self.buttons=[];self.group=QtWidgets.QButtonGroup(self)
+        box=QtWidgets.QHBoxLayout(self);box.setContentsMargins(0,0,0,0);box.setSpacing(16)
+        for index,text in enumerate(options):
+            cell=QtWidgets.QWidget();line=QtWidgets.QHBoxLayout(cell);line.setContentsMargins(12,8,12,8)
+            button=QtWidgets.QRadioButton(text);button.setAccessibleName('默认问答模式：'+text);button.setMinimumHeight(30)
+            button.setEnabled(index>=len(allowed) or allowed[index]);self.group.addButton(button,index);self.buttons.append(button)
+            line.addWidget(button);line.addStretch();box.addWidget(cell,1)
+        self.group.buttonClicked[int].connect(self.activated)
+        self.setFocusProxy(self.buttons[0] if self.buttons else None)
+    def count(self):return len(self.options)
+    def isEditable(self):return False
+    def findText(self,text):return self.options.index(text) if text in self.options else -1
+    def currentIndex(self):return self.group.checkedId()
+    def setCurrentIndex(self,index):
+        self.group.setExclusive(False)
+        for i,button in enumerate(self.buttons):button.setChecked(i==index)
+        self.group.setExclusive(True)
+
+
+class ModeChoiceRow(QtWidgets.QWidget):
+    def __init__(self,title,control):
+        super().__init__();self.control=control
+        box=QtWidgets.QVBoxLayout(self);box.setContentsMargins(0,8,0,0);box.setSpacing(6)
+        self.title=label(title);self.title.setContentsMargins(12,0,12,0);self.title.setProperty('section',True)
+        self.help=label('',True);self.help.setContentsMargins(12,0,12,0)
+        box.addWidget(self.title);box.addWidget(self.help);box.addWidget(control)
+    def set_help(self,text):self.help.setText(text);self.help.setVisible(bool(text))
+
+
 class ActionButton(QtWidgets.QPushButton):
     """Native button semantics with bounded, wrapping captions and Enter."""
     def __init__(self,text=''):

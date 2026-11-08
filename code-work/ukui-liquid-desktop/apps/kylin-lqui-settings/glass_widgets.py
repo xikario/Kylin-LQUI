@@ -90,19 +90,35 @@ class PageTransition(QtWidgets.QWidget):
 
 class GlassCard(QtWidgets.QFrame):
     def __init__(self,owner,radius=23):super().__init__();self.owner=owner;self.radius=radius;self.accent=False;self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setProperty('glass',True)
-    def paintEvent(self,event):
-        # The invisible warmup owns rendering until geometry has settled.
-        # Incidental layout paints must not bake a second set of card sizes.
-        if getattr(self.owner,'opening_pending',False):return
-        native=getattr(self.owner,'native_glass',None)
+    def material_origin(self):
         origin=self.mapToGlobal(QtCore.QPoint())
         if hasattr(self.owner,'material_origin'):
             origin+=self.owner.material_origin-self.owner.mapToGlobal(QtCore.QPoint())
+        return origin
+    def background_key(self):
+        if getattr(self.owner,'opening_pending',False):return None
+        native=getattr(self.owner,'native_glass',None);origin=self.material_origin()
         if native:
-            image=native.render(QtCore.QRect(origin,self.size()),self.devicePixelRatioF(),self.radius)
-            if not image.isNull():
-                painter=QtGui.QPainter(self);painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform);painter.drawImage(self.rect(),image);return
-        p=QtGui.QPainter(self);p.setRenderHints(QtGui.QPainter.Antialiasing|QtGui.QPainter.SmoothPixmapTransform);r=QtCore.QRectF(self.rect()).adjusted(.7,.7,-.7,-.7);clip=QtGui.QPainterPath();clip.addRoundedRect(r,self.radius,self.radius);p.setClipPath(clip)
+            cached=getattr(native,'cached',lambda *args:None)(QtCore.QRect(origin,self.size()),self.devicePixelRatioF(),self.radius)
+            return None if cached is None or cached.isNull() else ('native',cached.cacheKey())
+        image=getattr(self.owner,'backdrop',QtGui.QImage());start=getattr(self.owner,'backdrop_origin',QtCore.QPoint())
+        return ('fallback',image.cacheKey(),origin.x()-start.x(),origin.y()-start.y(),self.width(),self.height())
+    def paintEvent(self,event):
+        painter=QtGui.QPainter(self)
+        try:GlassCard.paint_background(self,painter)
+        finally:painter.end()
+    def paint_background(self,p,cached_only=False):
+        # The invisible warmup owns rendering until geometry has settled.
+        # Incidental layout paints must not bake a second set of card sizes.
+        if getattr(self.owner,'opening_pending',False):return False
+        native=getattr(self.owner,'native_glass',None)
+        origin=GlassCard.material_origin(self)
+        if native:
+            image=(getattr(native,'cached',lambda *args:None) if cached_only else native.render)(QtCore.QRect(origin,self.size()),self.devicePixelRatioF(),self.radius)
+            if image is not None and not image.isNull():
+                p.setRenderHint(QtGui.QPainter.SmoothPixmapTransform);p.drawImage(self.rect(),image);return True
+            if cached_only:return False
+        p.setRenderHints(QtGui.QPainter.Antialiasing|QtGui.QPainter.SmoothPixmapTransform);r=QtCore.QRectF(self.rect()).adjusted(.7,.7,-.7,-.7);clip=QtGui.QPainterPath();clip.addRoundedRect(r,self.radius,self.radius);p.setClipPath(clip)
         image=getattr(self.owner,'backdrop',QtGui.QImage())
         # Never expose live window text when capture is unavailable, a screen
         # moves, or the cached image does not cover the complete card.
@@ -124,6 +140,7 @@ class GlassCard(QtWidgets.QFrame):
         p.setBrush(QtCore.Qt.NoBrush);p.setPen(QtGui.QPen(QtGui.QBrush(rim),1.3));p.drawRoundedRect(r.adjusted(2,2,-2,-2),self.radius-2,self.radius-2)
         p.setClipping(False);p.setPen(QtGui.QPen(QtGui.QColor(230,230,230,66),1));p.setBrush(QtCore.Qt.NoBrush);p.drawRoundedRect(r,self.radius,self.radius)
         p.setPen(QtGui.QPen(QtGui.QColor(255,255,255,22),.7));p.drawRoundedRect(r.adjusted(1.5,1.5,-1.5,-1.5),self.radius-1,self.radius-1)
+        return True
     def set_active(self,value):
         if self.accent!=value:self.accent=value;self.update()
 

@@ -1,5 +1,6 @@
 import datetime,json,math,html
 from PyQt5 import QtCore,QtGui,QtWidgets
+from low_cost_effects import attach_button,install_effects
 from glass_widgets import GlassCard,CardChevron,AudioDeviceButton,glyph,blurred_capture
 
 FUSION_STYLE='''
@@ -75,7 +76,7 @@ class FusionView:
                     button=QtWidgets.QPushButton(title);button.setObjectName('session_'+action);button.clicked.connect(lambda checked=False,a=action,t=title:self.confirm_session(a,t));row.addWidget(button,i//2,i%2)
                 frame.show()
                 self.apply_snapshot()
-            self.set_position();return
+            self.set_position();install_effects(self,self.reduced_motion);return
         self.page=page;self.title.setText('蓝牙' if page=='bluetooth' else '控制中心');self.back.setVisible(page!='home')
         old=self.scroll.takeWidget()
         if old:old.deleteLater()
@@ -85,7 +86,7 @@ class FusionView:
         if page=='bluetooth':
             frame,box=self.card_widget(layout);row=QtWidgets.QHBoxLayout();self.bluetooth_toggle=QtWidgets.QCheckBox('启用蓝牙');self.bluetooth_toggle.clicked.connect(lambda value:self.action('bluetooth-enabled',{'value':value}));row.addWidget(self.bluetooth_toggle,1);scan=QtWidgets.QPushButton('查找设备');scan.clicked.connect(lambda:self.action('bluetooth-scan',{}));row.addWidget(scan);box.addLayout(row);self.bluetooth_scroll,self.bluetooth_list=self.device_list(box);self.bluetooth_signature=None
         else:self.build_home(layout)
-        self.scroll.setWidget(content);content.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False);self.apply_snapshot();self.set_position()
+        self.scroll.setWidget(content);content.setAutoFillBackground(False);self.scroll.viewport().setAutoFillBackground(False);self.apply_snapshot();self.set_position();install_effects(self,self.reduced_motion)
     def build_home(self,layout):
         self.media_art=None
         top=QtWidgets.QHBoxLayout();top.setSpacing(7);layout.addLayout(top)
@@ -166,7 +167,7 @@ class FusionView:
         for item in items:
             ident=item['id'];button=buttons.get(ident)
             if button is None:
-                button=AudioDeviceButton(ident,kind);buttons[ident]=button;view['layout'].addWidget(button)
+                button=AudioDeviceButton(ident,kind);attach_button(button,self.reduced_motion);buttons[ident]=button;view['layout'].addWidget(button)
                 button.clicked.connect(lambda checked=False,b=button:self.choose_audio_device(b.kind,b.device_id));button.show()
             button.set_device(item.get('displayName',item['name']),ident==selected,item.get('detail',''),item['name']);button.setEnabled(not busy)
     def choose_audio_device(self,kind,ident):
@@ -249,7 +250,7 @@ class FusionView:
         elif not data.get('enabled'):self.bluetooth_list.addWidget(self.label('蓝牙已关闭',True))
         elif not data.get('devices'):self.bluetooth_list.addWidget(self.label('点击“查找设备”，配对确认由系统处理。',True))
         for device in data.get('devices',[]):
-            button=QtWidgets.QPushButton(device['name'].replace('&','&&')+' · '+('断开连接' if device['connected'] else '连接' if device['paired'] else '配对并连接'));button.setEnabled(not self.is_busy('bluetooth'));button.clicked.connect(lambda checked=False,d=device:self.action('bluetooth-device',{'id':d['id']}));self.bluetooth_list.addWidget(button)
+            button=QtWidgets.QPushButton(device['name'].replace('&','&&')+' · '+('断开连接' if device['connected'] else '连接' if device['paired'] else '配对并连接'));button.setEnabled(not self.is_busy('bluetooth'));button.clicked.connect(lambda checked=False,d=device:self.action('bluetooth-device',{'id':d['id']}));self.bluetooth_list.addWidget(button);attach_button(button,self.reduced_motion)
         for i in range(self.bluetooth_list.count()):
             widget=self.bluetooth_list.itemAt(i).widget()
             if widget:widget.show()

@@ -7,6 +7,7 @@ from system_backend import SystemBackend,calendar_data,service_error
 from audio_events import AudioEvents
 from volume_feedback import VolumeFeedback
 from fusion_view import FusionView,FUSION_STYLE
+from low_cost_effects import attach_button
 from glass_widgets import GlassCard,GlassStatusLabel,ReadableTooltips,PageTransition,glyph
 
 class Signals(QtCore.QObject):finished=QtCore.pyqtSignal(object)
@@ -471,7 +472,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             for rank,network in enumerate(networks,1):
                 ident=network['id'];button=self.network_buttons.get(ident)
                 if button is None:
-                    button=QtWidgets.QPushButton();self.network_buttons[ident]=button;self.network_list.addWidget(button)
+                    button=QtWidgets.QPushButton();attach_button(button,self.reduced_motion);self.network_buttons[ident]=button;self.network_list.addWidget(button)
                     button.clicked.connect(lambda checked=False,b=button:self.connect_network(dict(b.network)))
                     button.show() # include dynamic rows in the transition snapshot
                 if self.network_list.indexOf(button)!=rank:self.network_list.insertWidget(rank,button)

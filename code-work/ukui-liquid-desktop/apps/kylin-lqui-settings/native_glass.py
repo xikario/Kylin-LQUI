@@ -34,6 +34,9 @@ class NativeGlass:
             if len(self.cache)>=32:self.cache.clear()
             self.cache[key]=output;self.render_count+=1
         return self.cache[key]
+    def cached(self,rect,dpr,radius):
+        """Return an already baked surface without capture, shader or cache work."""
+        return self.cache.get((rect.x(),rect.y(),rect.width(),rect.height(),dpr,radius))
     def close(self):
         self.cache.clear()
         if self.handle:self.library.lqui_glass_destroy(self.handle);self.handle=None

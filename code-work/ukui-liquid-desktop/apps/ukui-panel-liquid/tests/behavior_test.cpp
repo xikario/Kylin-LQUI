@@ -19,6 +19,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFrame>
+#include <QCursor>
 #include <functional>
 #include <cstdlib>
 class TaskViewButton : public QToolButton {
@@ -327,6 +328,21 @@ int main(int argc,char **argv) {
     // A root tray menu follows the clicked button, including async growth;
     // its nested menus retain their own native placement.
     click();check(popup->isVisible(),"popup reopens normally after cancelling pending requests");
+    {
+        CustomToolTip iconTip;QCursor::setPos(first.mapToGlobal(first.rect().center()));
+        QEvent enterIcon(QEvent::Enter);QApplication::sendEvent(&first,&enterIcon);iconTip.show();wait(30);
+        check(iconTip.isVisible() && popup->isVisible(),"hovering an overflow icon retains its native tooltip");
+        check(iconTip.geometry().bottom()<first.mapToGlobal(QPoint()).y(),"icon tooltip is anchored above the hovered icon");
+        check(QGuiApplication::screenAt(first.mapToGlobal(first.rect().center()))->availableGeometry().contains(iconTip.geometry()),"icon tooltip stays inside the screen");
+        QEvent leaveIcon(QEvent::Leave);QApplication::sendEvent(&first,&leaveIcon);wait(20);
+        check(!iconTip.isVisible(),"leaving an overflow icon removes its tooltip");
+        QCursor::setPos(arrow.mapToGlobal(arrow.rect().center()));iconTip.show();wait(30);
+        check(!iconTip.isVisible() && popup->isVisible(),"stale arrow tooltip remains suppressed while overflow is open");
+        QCursor::setPos(second.mapToGlobal(second.rect().center()));QApplication::sendEvent(&second,&enterIcon);iconTip.show();wait(30);
+        check(iconTip.isVisible(),"another overflow icon can show its own tooltip");
+        popup->hide();wait(220);check(!iconTip.isVisible(),"closing overflow removes its owned tooltip");
+        QCursor::setPos(panel.mapToGlobal(QPoint(1,1)));click();check(popup->isVisible(),"tooltip cleanup leaves the overflow reusable");
+    }
     const QRect buttonAnchor(first.mapToGlobal(QPoint()),first.size());
     const QPointF buttonLocal=first.rect().center(),buttonGlobal=first.mapToGlobal(buttonLocal.toPoint());
     QMouseEvent rightPress(QEvent::MouseButtonPress,buttonLocal,buttonGlobal,Qt::RightButton,Qt::RightButton,Qt::NoModifier);

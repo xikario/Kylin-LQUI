@@ -212,6 +212,15 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             overflow=next(w for w in popup['windows'] if w['name']=='liquidTrayOverflow')
             scrolls=[w for w in nodes(overflow) if w['class']=='QScrollArea']
             check(bool(scrolls) and all(w['scroll']['verticalMaximum']==0 and not w['scroll']['verticalVisible'] for w in scrolls),'ordinary hidden tray has no cropped row or scrollbar')
+            target=next(w for w in nodes(overflow) if w['class']=='StatusNotifierButton' and 'hidden-fixture-' in w.get('accessibleName',''))
+            hover=call('hover',name=target['accessibleName'],wait=1200)
+            tips=[w for w in hover['windows'] if w['class']=='CustomToolTip' and w['visible']]
+            (args.output/'tray-tooltip.json').write_text(json.dumps(hover,ensure_ascii=False,indent=2))
+            check(bool(tips),'native overflow icon shows its application tooltip')
+            check(any('hidden-fixture-' in w.get('labelText','') for tip in tips for w in nodes(tip)),'native tooltip retains the actual application name')
+            check(any(w['name']=='liquidTrayOverflow' and w['visible'] for w in hover['windows']),'tooltip does not dismiss the overflow')
+            gone=call('away',wait=400)
+            check(not any(w['class']=='CustomToolTip' and w['visible'] for w in gone['windows']),'native tooltip disappears after leaving the icon')
             capture('liquidTrayOverflow','hidden-tray.png');call('click',name='StatusNotifier_arrowBtn',wait=400)
             def history_call(method):
                 output=subprocess.check_output(['gdbus','call','--session','--dest','org.ukui.AiStationPanel','--object-path','/org/kylin/Lqui/Notifications','--method','org.kylin.Lqui.Notifications.'+method],text=True)

@@ -10,6 +10,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLayout>
+#include <QLabel>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMenu>
@@ -56,7 +57,7 @@ class LayoutProbe : public QObject {
             {"iconNull",qobject_cast<QAbstractButton*>(w)?qobject_cast<QAbstractButton*>(w)->icon().isNull():true},
             {"iconWidth",qobject_cast<QAbstractButton*>(w)?qobject_cast<QAbstractButton*>(w)->iconSize().width():0},
             {"dockGroupActive",w->property("liquidDockGroupActive").toBool()},{"dockWindows",w->property("liquidDockWindows").toInt()},{"collapsed",w->property("liquidDockCollapsed").toBool()},{"dockScale",w->property("liquidDockScale").toDouble()},{"dockIconSize",w->property("liquidDockIconSize").toInt()},
-            {"accessibleName",w->accessibleName()},{"tooltip",w->toolTip()},{"iconName",qobject_cast<QAbstractButton*>(w)?qobject_cast<QAbstractButton*>(w)->icon().name():QString()},{"title",w->windowTitle()},{"style",w->style()->objectName()},
+            {"accessibleName",w->accessibleName()},{"tooltip",w->toolTip()},{"labelText",qobject_cast<QLabel*>(w)?qobject_cast<QLabel*>(w)->text():QString()},{"iconName",qobject_cast<QAbstractButton*>(w)?qobject_cast<QAbstractButton*>(w)->icon().name():QString()},{"title",w->windowTitle()},{"style",w->style()->objectName()},
             {"enabled",w->isEnabled()},
             {"layoutMinimum",w->layout()?w->layout()->minimumSize().width():-1},
             {"children",children}};

@@ -16,6 +16,7 @@
 #include <QDynamicPropertyChangeEvent>
 #include <QElapsedTimer>
 #include <QMenu>
+#include <QCursor>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QDrag>
@@ -170,7 +171,7 @@ public:
         m_maxColumns=qBound(3,settings.value("tray/maxColumns",3).toInt(),8);
         qApp->installEventFilter(this);
     }
-    ~TrayOverflow() override{if(qApp)qApp->removeEventFilter(this);}
+    ~TrayOverflow() override{clearHoverTip();if(qApp)qApp->removeEventFilter(this);}
     void setMaxColumns(int value) {
         value=qBound(3,value,8);
         if(value==m_maxColumns)return;
@@ -298,6 +299,10 @@ protected:
             && static_cast<QKeyEvent *>(event)->key()==Qt::Key_Escape)cancelOpen();
         auto *button=qobject_cast<QWidget *>(object);
         if(button && button->inherits("StatusNotifierButton")) {
+            if(event->type()==QEvent::Enter && m_popup->isVisible() && !m_popup->isClosing() && m_buttons.contains(button)) {
+                if(m_hoverButton!=button)clearHoverTip();
+                m_hoverButton=button;
+            } else if(m_hoverButton==button && (event->type()==QEvent::Leave || event->type()==QEvent::Hide || event->type()==QEvent::MouseButtonPress))clearHoverTip();
             if(event->type()==QEvent::MouseButtonPress) {
                 auto *mouse=static_cast<QMouseEvent *>(event);
                 m_pressed.clear();m_suppressRelease=false;
@@ -351,7 +356,7 @@ protected:
             }
         }
         if(object==m_popup) {
-            if(event->type()==QEvent::Hide && m_arrow){cancelOpen();m_lastHide.start();syncArrow(false);}
+            if(event->type()==QEvent::Hide && m_arrow){clearHoverTip();cancelOpen();m_lastHide.start();syncArrow(false);}
             // A click on the arrow while open collapses with motion. Other
             // outside clicks keep Qt's instant close and replay to the target.
             if(event->type()==QEvent::MouseButtonPress && m_arrow) {
@@ -389,10 +394,24 @@ protected:
             }
             if(event->type()==QEvent::Move)resync();
         }
-        // Arrow hover would re-show the OEM tip over the open popup.
+        // Suppress only the arrow's stale tip. Icons inside the popup retain
+        // their native application tooltip, positioned beside the real icon.
         if(event->type()==QEvent::Show && object->inherits("CustomToolTip")
-            && m_popup->isVisible() && !m_popup->isClosing())
-            QTimer::singleShot(0,this,[this]{dropNativeTips();});
+            && m_popup->isVisible() && !m_popup->isClosing()) {
+            QPointer<QWidget> tip=qobject_cast<QWidget *>(object),owner=m_hoverButton;
+            QTimer::singleShot(0,this,[this,tip,owner]{
+                if(!tip)return;
+                if(!owner || owner!=m_hoverButton || !owner->isVisible() || !m_popup->isVisible() || m_popup->isClosing()
+                    || !QRect(owner->mapToGlobal(QPoint()),owner->size()).contains(QCursor::pos())){tip->hide();return;}
+                m_hoverTip=tip;
+                const QRect anchor(owner->mapToGlobal(QPoint()),owner->size());
+                auto *screen=QGuiApplication::screenAt(anchor.center());if(!screen)return;
+                const auto area=screen->availableGeometry();
+                const int x=qBound(area.left(),anchor.center().x()-tip->width()/2,qMax(area.left(),area.right()-tip->width()+1));
+                int y=anchor.top()-tip->height()-6;if(y<area.top())y=anchor.bottom()+6;
+                y=qBound(area.top(),y,qMax(area.top(),area.bottom()-tip->height()+1));tip->move(x,y);
+            });
+        }
         if(event->type()==QEvent::Hide && object->isWidgetType() && static_cast<QWidget *>(object)->isHidden()
             && static_cast<QWidget *>(object)->parentWidget()==m_content)resync();
         if(m_home && (object==m_home || object==m_home->window())) {
@@ -407,6 +426,7 @@ private:
     static constexpr int tipSettleMs=50;
     static QString configFile(){return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)+"/ukui/liquid-panel.ini";}
     static const char *dragMime(){return "application/x-ukui-liquid-tray-button";}
+    void clearHoverTip(){if(m_hoverTip)m_hoverTip->hide();m_hoverTip.clear();m_hoverButton.clear();}
     void cancelOpen(){m_openPending.stop();syncArrow(false);}
     void open(){
         if(!m_home || !m_home->isVisible() || !m_arrow || !m_arrow->isVisible() || m_laidOut.isEmpty()) {cancelOpen();return;}
@@ -442,6 +462,7 @@ private:
     }
     void startDrag(QWidget *button) {
         if(m_dragSource)return;
+        clearHoverTip();
         QPointer<TrayOverflow> guard(this);m_dragSource=button;m_suppressRelease=true;
         QPointer<QDrag> drag=new QDrag(button);auto *mime=new QMimeData;mime->setData(dragMime(),QByteArray("move"));drag->setMimeData(mime);
         if(auto *tool=qobject_cast<QAbstractButton *>(button)) {
@@ -512,6 +533,7 @@ private:
     QTimer m_menuSettle;
     QStringList m_savedOrder;
     QPointer<QWidget> m_pressed,m_dragSource,m_menuButton;
+    QPointer<QWidget> m_hoverButton,m_hoverTip;
     QPoint m_pressPosition;
     bool m_suppressRelease=false;
     bool m_pendingFromMouse=false;

@@ -103,6 +103,9 @@ private slots:
         QVERIFY(!(QFile::permissions(s.file)&QFile::ReadOther));
         QCOMPARE(Settings::load(root.path()+"/missing.json").contextLimitK,256);
         s.contextLimitK=2000;s.normalize();QCOMPARE(s.contextLimitK,765);
+        QCOMPARE(s.defaultReplyMode,QString("normal"));s.defaultReplyMode="quick";QVERIFY(s.save());
+        QCOMPARE(Settings::load(s.file).defaultReplyMode,QString("quick"));
+        s.defaultReplyMode="invalid";s.normalize();QCOMPARE(s.defaultReplyMode,QString("normal"));
     }
     void backendProfilesAndConversationIsolation(){
         QString marker;auto s=config(&marker);s.model="codex-choice";const QString codexCommand=s.command;
@@ -693,6 +696,112 @@ private slots:
         QCOMPARE(d.configuration().model,QString("fixture-deep"));QCOMPARE(Settings::load(s.file).reasoningEffort,QString("future-effort"));
         QVERIFY(!d.client()->running());QVERIFY(requests(marker,"thread/start").isEmpty());
         dialog->close();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+    }
+    void quickReplyKeepsNormalDefaultsAndSeparatesConversations(){
+        QString marker;auto s=config(&marker);s.model="gpt-6-luna";s.reasoningEffort="xhigh";s.contextLimitK=340;
+        QVERIFY(s.save());const auto settingsBefore=read(s.file);const auto storage=folder();
+        QString normalThread,quickThread,normalImage,quickImage;
+        {
+            Drawer d(s,storage);d.Show();
+            auto *toggle=d.findChild<QPushButton*>("quickReplyMode");QVERIFY(toggle);QVERIFY(!toggle->isChecked());
+            d.submit("普通问题",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+            normalThread=d.conversation().threadId;
+            auto params=requests(marker,"turn/start").last()["params"].toObject();
+            QCOMPARE(params["model"].toString(),QString("gpt-6-luna"));QCOMPARE(params["effort"].toString(),QString("xhigh"));
+            d.composer()->editor()->setPlainText("普通草稿");QImage image(20,20,QImage::Format_RGB32);image.fill(Qt::green);
+            normalImage=d.conversation().storeImage(image);QVERIFY(!normalImage.isEmpty());d.composer()->addImage(normalImage);
+            const auto artifacts=qEnvironmentVariable("LIQUID_CLI_ARTIFACT_DIR");
+            if(!artifacts.isEmpty()){QDir().mkpath(artifacts);QTest::qWait(80);d.grab().save(artifacts+"/reply-normal.png");}
+            toggle->click();QVERIFY(toggle->isChecked());QVERIFY(!d.client()->running());
+            QVERIFY(d.conversation().messages().isEmpty());QVERIFY(d.composer()->text().isEmpty());QVERIFY(d.composer()->images().isEmpty());
+            QCOMPARE(d.conversation().folder(),storage+"/quick-reply");
+            QCOMPARE(d.configuration().reasoningEffort,QString("xhigh"));QCOMPARE(read(s.file),settingsBefore);
+            QVERIFY(d.findChild<QPushButton*>("contextButton")->text().contains("64K"));
+            auto changed=s;changed.fontSize=12;d.applySettings(changed);
+            d.submit("快速问题",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+            quickThread=d.conversation().threadId;QVERIFY(quickThread!=normalThread);
+            params=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(params["model"].toString(),QString("gpt-6-luna"));QCOMPARE(params["effort"].toString(),QString("low"));
+            QVERIFY(!allText(d).contains("普通问题"));d.composer()->editor()->setPlainText("快速草稿");
+            quickImage=d.conversation().storeImage(image);d.composer()->addImage(quickImage);
+            if(!artifacts.isEmpty()){QTest::qWait(80);d.grab().save(artifacts+"/reply-quick.png");}
+            toggle->click();QVERIFY(!toggle->isChecked());QCOMPARE(d.conversation().threadId,normalThread);
+            QCOMPARE(d.composer()->text(),QString("普通草稿"));QCOMPARE(d.composer()->images(),QStringList{normalImage});
+            QVERIFY(allText(d).contains("普通问题"));QVERIFY(!allText(d).contains("快速问题"));
+            d.submit("普通追问",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+            params=requests(marker,"turn/start").last()["params"].toObject();QCOMPARE(params["effort"].toString(),QString("xhigh"));
+            QCOMPARE(d.conversation().threadId,normalThread);QVERIFY(d.setQuickReply(true));
+            QCOMPARE(d.conversation().threadId,quickThread);QCOMPARE(d.composer()->text(),QString("快速草稿"));QCOMPARE(d.composer()->images(),QStringList{quickImage});
+        }
+        Drawer restored(s,storage);QCOMPARE(restored.conversation().threadId,normalThread);
+        QVERIFY(!restored.findChild<QPushButton*>("quickReplyMode")->isChecked());
+        QCOMPARE(read(s.file),settingsBefore);QVERIFY(restored.setQuickReply(true));QCOMPARE(restored.conversation().threadId,quickThread);
+        QCOMPARE(restored.composer()->text(),QString("快速草稿"));
+        restored.clearConversation();QVERIFY(!QFile::exists(quickImage));QVERIFY(QFile::exists(normalImage));
+        QVERIFY(restored.setQuickReply(false));QCOMPARE(restored.conversation().threadId,normalThread);
+        QVERIFY(allText(restored).contains("普通追问"));
+    }
+    void quickReplyRejectsBusyAndCompactingSwitches(){
+        auto s=config();s.model="gpt-6-luna";s.reasoningEffort="xhigh";Drawer d(s,folder());
+        auto *toggle=d.findChild<QPushButton*>("quickReplyMode");
+        d.submit("SLOW",{});toggle->click();QVERIFY(!toggle->isChecked());QVERIFY(d.client()->busy());
+        d.client()->interrupt();QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),5000);
+        QVERIFY(d.setQuickReply(true));d.submit("quick",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+        d.client()->compact();QVERIFY(!d.setQuickReply(false));QVERIFY(toggle->isChecked());
+        QTRY_VERIFY_WITH_TIMEOUT(!d.client()->compacting(),10000);QVERIFY(d.setQuickReply(false));
+    }
+    void quickReplyProtectsCorruptHistoryAndUnsavedDraft(){
+        auto s=config();const auto storage=folder();Drawer d(s,storage);d.composer()->editor()->setPlainText("保留草稿");
+        QDir().mkpath(storage+"/quick-reply");QFile corrupt(storage+"/quick-reply/conversation.json");
+        QVERIFY(corrupt.open(QIODevice::WriteOnly));corrupt.write("broken");corrupt.close();
+        QVERIFY(!d.setQuickReply(true));QCOMPARE(read(corrupt.fileName()),QByteArray("broken"));QCOMPARE(d.composer()->text(),QString("保留草稿"));
+        QVERIFY(corrupt.remove());QDir().mkpath(storage+"/draft.json");
+        QVERIFY(!d.setQuickReply(true));QCOMPARE(d.composer()->text(),QString("保留草稿"));QCOMPARE(d.conversation().folder(),storage);
+        QDir(storage+"/draft.json").removeRecursively();QVERIFY(d.setQuickReply(true));
+        auto other=s;other.backend="qwen";other.command=quote(qEnvironmentVariable("LIQUID_ACP_FIXTURE"))+" "+quote(storage+"/qwen-log");
+        d.applySettings(other);QVERIFY(!d.setQuickReply(true));QVERIFY(d.findChild<QPushButton*>("quickReplyMode")->parentWidget()->isHidden());
+        QVERIFY(!d.findChild<QPushButton*>("quickReplyMode")->isChecked());
+        d.applySettings(s);QCOMPARE(d.conversation().folder(),storage);QCOMPARE(d.composer()->text(),QString("保留草稿"));
+    }
+    void defaultReplyModeAvailableThroughUnifiedSettings(){
+        auto s=config();s.model="gpt-6-luna";s.reasoningEffort="xhigh";QVERIFY(s.save());Drawer d(s,folder());
+        LquiSettings::Bridge bridge("ai",[&](const QString &){return d.settingsBridgeRoot();},[]{return QJsonArray{QJsonObject{{"id","general"}}};});
+        const auto page=QJsonDocument::fromJson(bridge.Page("general").toUtf8()).object();QString id;
+        for(const auto &v:page["fields"].toArray()){
+            const auto f=v.toObject();if(f["name"]!="settingDefaultReplyMode")continue;
+            id=f["id"].toString();QCOMPARE(f["options"].toArray(),(QJsonArray{"普通思考","快问快答"}));QCOMPARE(f["value"].toInt(),0);
+        }
+        QVERIFY(!id.isEmpty());bridge.Set("general",id,QString::fromUtf8(QJsonDocument(QJsonObject{{"value",1}}).toJson()));
+        QCOMPARE(Settings::load(s.file).defaultReplyMode,QString("quick"));QCOMPARE(Settings::load(s.file).reasoningEffort,QString("xhigh"));
+        QVERIFY(!d.findChild<QPushButton*>("quickReplyMode")->isChecked());
+        bridge.Discard("general");QCOMPARE(Settings::load(s.file).defaultReplyMode,QString("quick"));
+    }
+    void defaultReplyModeSavesWithoutChangingActiveConversation(){
+        QString marker;auto s=config(&marker);s.model="gpt-6-luna";s.reasoningEffort="xhigh";QVERIFY(s.save());const auto storage=folder();
+        {
+            Drawer d(s,storage);d.Show();d.composer()->editor()->setPlainText("普通草稿");d.Preferences();
+            QDialog *dialog=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="cliPreferences")dialog=qobject_cast<QDialog*>(w);QVERIFY(dialog);
+            auto *choice=dialog->findChild<QComboBox*>("settingDefaultReplyMode");QVERIFY(choice);QCOMPARE(choice->count(),2);
+            QCOMPARE(choice->currentData().toString(),QString("normal"));
+            choice->setCurrentIndex(choice->findData("quick"));QMetaObject::invokeMethod(choice,"activated",Q_ARG(int,choice->currentIndex()));
+            QCOMPARE(Settings::load(s.file).defaultReplyMode,QString("quick"));QCOMPARE(d.configuration().reasoningEffort,QString("xhigh"));
+            QCOMPARE(d.composer()->text(),QString("普通草稿"));QVERIFY(!d.findChild<QPushButton*>("quickReplyMode")->isChecked());
+            auto *font=dialog->findChild<QSlider*>("settingFont");font->setValue(font->value()+1);
+            QCOMPARE(Settings::load(s.file).defaultReplyMode,QString("quick"));
+            const auto artifacts=qEnvironmentVariable("LIQUID_CLI_ARTIFACT_DIR");
+            if(!artifacts.isEmpty()){QDir().mkpath(artifacts);QTest::qWait(80);dialog->grab().save(artifacts+"/reply-default-settings.png");}
+            dialog->close();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
+        }
+        {
+            Drawer d(Settings::load(s.file),storage);QVERIFY(d.findChild<QPushButton*>("quickReplyMode")->isChecked());
+            QCOMPARE(d.conversation().folder(),storage+"/quick-reply");QVERIFY(d.composer()->text().isEmpty());
+            d.submit("默认快问",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);
+            QCOMPARE(requests(marker,"turn/start").last()["params"].toObject()["effort"].toString(),QString("low"));
+            QVERIFY(d.setQuickReply(false));QCOMPARE(d.composer()->text(),QString("普通草稿"));
+            QCOMPARE(Settings::load(s.file).defaultReplyMode,QString("quick"));
+        }
+        auto normal=Settings::load(s.file);normal.defaultReplyMode="normal";QVERIFY(normal.save());
+        Drawer normalLaunch(Settings::load(s.file),storage);QVERIFY(!normalLaunch.findChild<QPushButton*>("quickReplyMode")->isChecked());
+        QCOMPARE(normalLaunch.composer()->text(),QString("普通草稿"));
     }
     void liveModelAndEffortSelection(){
         QString marker;auto s=config(&marker);Drawer d(s,folder());d.submit("first",{});QTRY_VERIFY_WITH_TIMEOUT(!d.client()->busy(),10000);

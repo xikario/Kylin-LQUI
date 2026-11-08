@@ -93,6 +93,10 @@ void Drawer::Preferences() {
     };
     auto draft=std::make_shared<Settings>(settings);
     auto *backendChoice=choice("AI 后台","settingBackend",{{"Codex","codex"},{"千问 Qwen Code","qwen"},{"DeepSeek Harness","deepseek"}},settings.backend);
+    auto *replyDefault=choice("默认问答模式","settingDefaultReplyMode",{{"普通思考","normal"},{"快问快答","quick"}},settings.defaultReplyMode);
+    replyDefault->setAccessibleName("默认问答模式");
+    auto *replyHelp=new QLabel("下次启动生效。快问快答使用 Luna low 独立对话；普通思考沿用下面的模型与强度。",fields);
+    replyHelp->setObjectName("settingsNote");replyHelp->setWordWrap(true);form->addRow(QString(),replyHelp);
     auto *modelRow=new QWidget(fields);auto *modelLayout=new QHBoxLayout(modelRow);modelLayout->setContentsMargins(0,0,0,0);modelLayout->setSpacing(6);
     auto *model=new QComboBox(modelRow);model->setObjectName("settingModel");model->setMinimumContentsLength(12);model->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);model->setSizePolicy(QSizePolicy::Expanding,QSizePolicy::Fixed);
     auto *refresh=new QPushButton("刷新",modelRow);refresh->setObjectName("refreshModels");modelLayout->addWidget(model,1);modelLayout->addWidget(refresh);form->addRow("模型版本",modelRow);
@@ -127,13 +131,13 @@ void Drawer::Preferences() {
         auto next=settings;
         next.width=width->value();next.height=height->value();next.animation=animation->currentData().toString();next.animationMs=duration->value();
         next.followLauncherMaterial=sharedMaterial->isChecked();next.hideDelay=delay->value();next.liquid=liquid->value();next.darken=darken->value();next.fontSize=font->value();
-        next.translationLanguage=*appliedTranslation;next.contextLimitK=limit->value();next.idleStopMinutes=idle->value();next.residentOnLogin=resident->isChecked();next.normalize();return next;
+        next.translationLanguage=*appliedTranslation;next.contextLimitK=limit->value();next.idleStopMinutes=idle->value();next.residentOnLogin=resident->isChecked();next.defaultReplyMode=replyDefault->currentData().toString();next.normalize();return next;
     };
     const auto immediateEqual=[](const Settings &a,const Settings &b){
         return a.width==b.width&&a.height==b.height&&a.animation==b.animation&&a.animationMs==b.animationMs&&
             a.followLauncherMaterial==b.followLauncherMaterial&&a.hideDelay==b.hideDelay&&a.liquid==b.liquid&&a.darken==b.darken&&
             a.fontSize==b.fontSize&&a.translationLanguage==b.translationLanguage&&a.contextLimitK==b.contextLimitK&&
-            a.idleStopMinutes==b.idleStopMinutes&&a.residentOnLogin==b.residentOnLogin;
+            a.idleStopMinutes==b.idleStopMinutes&&a.residentOnLogin==b.residentOnLogin&&a.defaultReplyMode==b.defaultReplyMode;
     };
     const auto commitImmediate=[=](bool persist){
         if(*applyingImmediate)return;
@@ -194,7 +198,8 @@ void Drawer::Preferences() {
         if(name.isEmpty())name="自动选择模型";
         QString strength=effort->property("efforts").toStringList().value(effort->value());
         if(strength.isEmpty())strength=effort->property("defaultEffort").toString();
-        modelStatus->setText((draft->backend==settings.backend?QString("下一条消息："):QString("切换后使用："))+name+" · "+(strength.isEmpty()?QString("自动强度"):strength)+(draft->backend==settings.backend?QString():"（待应用）"));
+        const QString scope=draft->backend=="codex"?QString("普通思考："):(draft->backend==settings.backend?QString("下一条消息："):QString("切换后使用："));
+        modelStatus->setText(scope+name+" · "+(strength.isEmpty()?QString("自动强度"):strength)+(draft->backend==settings.backend?QString():"（待应用）"));
         modelReference->setText((draft->backend=="codex"?QString("CLI 默认（仅供参考）："):QString("会话原配置（仅供参考）："))+
             (catalog->model.isEmpty()?QString("自动"):catalog->model)+(catalog->effort.isEmpty()?QString():" · "+catalog->effort));
         modelReference->show();
@@ -218,6 +223,7 @@ void Drawer::Preferences() {
     for(auto *slider:QList<QSlider*>{width,height,duration,delay,liquid,darken,font,limit,idle})
         connect(slider,&QSlider::valueChanged,dialog,[=]{applyImmediate();});
     connect(animation,QOverload<int>::of(&QComboBox::activated),dialog,[=]{applyImmediate();});
+    connect(replyDefault,QOverload<int>::of(&QComboBox::activated),dialog,[=]{applyImmediate();});
     connect(sharedMaterial,&QCheckBox::toggled,dialog,[=]{applyImmediate();});
     connect(translation,&QLineEdit::editingFinished,dialog,[=]{*appliedTranslation=translation->text();applyImmediate();});
     connect(resident,&QCheckBox::toggled,dialog,[=]{applyImmediate();});
@@ -228,6 +234,7 @@ void Drawer::Preferences() {
         {const QSignalBlocker block(model);model->clear();model->addItem(followText(),QString());if(!draft->model.isEmpty())model->addItem(draft->model,draft->model);model->setCurrentIndex(qMax(0,model->findData(draft->model)));}
         command->setText(draft->command);directory->setText(draft->directory);permissions->setCurrentIndex(qMax(0,permissions->findData(draft->permissions)));
         const bool codex=draft->backend=="codex";permissions->setVisible(codex);form->labelForField(permissions)->setVisible(codex);
+        replyDefault->setVisible(codex);form->labelForField(replyDefault)->setVisible(codex);replyHelp->setVisible(codex);
         sessionMode->setVisible(!codex);form->labelForField(sessionMode)->setVisible(!codex);
         {const QSignalBlocker block(sessionMode);sessionMode->clear();sessionMode->addItem("跟随会话配置",QString());if(!draft->sessionMode.isEmpty())sessionMode->addItem(draft->sessionMode,draft->sessionMode);sessionMode->setCurrentIndex(qMax(0,sessionMode->findData(draft->sessionMode)));}
         updateEfforts(draft->reasoningEffort);
@@ -276,7 +283,8 @@ void Drawer::Preferences() {
     connect(clear,&QPushButton::clicked,dialog,[this,dialog,note]{
         const bool hidden=!dialog->isVisible();
         if(hidden){dialog->show();dialog->raise();dialog->activateWindow();}
-        const auto answer=LiquidDialog::question(dialog,"清空对话","清空 "+settings.cliName+" 的聊天记录和附图，并开始新对话？\n此操作无法撤销。");
+        const QString mode=settings.backend=="codex"?(quickReply?QString(" · 快问快答"):QString(" · 普通思考")):QString();
+        const auto answer=LiquidDialog::question(dialog,"清空对话","清空 "+settings.cliName+mode+" 的聊天记录和附图，并开始新对话？\n此操作无法撤销。");
         if(hidden)dialog->hide();
         if(answer!=QMessageBox::Yes)return;
         clearConversation();note->setText("已清空。下一条消息会开始新的对话。");
@@ -287,7 +295,7 @@ void Drawer::Preferences() {
         if(draft->backend!=settings.backend&&backend->busy()){note->setText("请先停止当前回复再切换后台。");return;}
         collectSelection();auto next=*draft;next.width=width->value();next.height=height->value();next.animation=animation->currentData().toString();next.animationMs=duration->value();
         next.followLauncherMaterial=sharedMaterial->isChecked();next.residentOnLogin=resident->isChecked();next.hideDelay=delay->value();next.liquid=liquid->value();next.darken=darken->value();next.fontSize=font->value();
-        next.translationLanguage=translation->text();next.directory=directory->text();next.command=command->text();next.permissions=permissions->currentData().toString();next.contextLimitK=limit->value();next.idleStopMinutes=idle->value();next.normalize();
+        next.translationLanguage=translation->text();next.directory=directory->text();next.command=command->text();next.permissions=permissions->currentData().toString();next.contextLimitK=limit->value();next.idleStopMinutes=idle->value();next.defaultReplyMode=replyDefault->currentData().toString();next.normalize();
         if(backend->busy()&&(next.backend!=settings.backend||next.command!=settings.command||next.directory!=settings.directory||next.permissions!=settings.permissions)){note->setText("请先停止当前回复，再更改后台、命令、目录或权限。");return;}
         QString error;if(!ResidentStartup::save(resident->isChecked(),&error)){note->setText("启动项保存失败："+error);return;}if(!next.save(&error)){note->setText("保存失败："+error);return;}
         previewTimer->stop();saveTimer->stop();*immediateDirty=false;*savedResident=resident->isChecked();*appliedTranslation=next.translationLanguage;
@@ -303,6 +311,7 @@ void Drawer::Preferences() {
         {"settingTranslationLanguage","截图翻译使用的目标语言。点击翻译后立即处理截图，不会发送已有草稿。"},
         {"settingResident","只保持界面常驻并预热背景；不会提前连接模型。模型后台休眠不关闭窗口进程。"},
         {"settingBackend","选择 CLI 后台；每个后台分别保留聊天和草稿，点击应用后切换。"},
+        {"settingDefaultReplyMode","选择下次启动时使用快问快答还是普通思考；即时保存，不打断当前对话。快问快答固定 Luna low，使用独立上下文。普通思考保留原模型与思考强度。"},
         {"settingModel","读取所选 CLI 提供的模型；下一条消息生效。"},
         {"settingSessionMode","仅显示 CLI 提供的模式；授权范围由该后台决定。"},
         {"settingEffort","越向右思考越深入，通常更慢；档位随模型变化。"},

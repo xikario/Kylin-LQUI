@@ -12,6 +12,7 @@ struct Settings {
     // permissions: config (follow ~/.codex/config.toml), ask, workspace, full.
     QString animation="float", directory, command, cliName="Codex", permissions="config";
     QString backend="codex",model,reasoningEffort,sessionMode;
+    QString defaultReplyMode="normal"; // Codex startup mode; quick uses a separate conversation.
     QJsonObject backendProfiles; // Each backend keeps its command and model selection.
     static QString backendName(const QString &id);
     static QString defaultCommand(const QString &id);

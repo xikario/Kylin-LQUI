@@ -35,6 +35,7 @@ public:
     bool expanded() const{return opened;}
     qreal progress() const{return shown;}
     void applySettings(Settings value);
+    bool setQuickReply(bool enabled);
     void beginCapture();
     void acceptCapture(const QImage &image,const QRect &selection=QRect());
     void submit(const QString &text,const QStringList &images);
@@ -79,16 +80,19 @@ private:
     void showCompactNotice();
     void addApproval(const QJsonValue &id,const QString &title,const QString &detail);
     void attachImage(const QImage &image);
-    void persist();
+    bool persist();
     void loadDraft();
+    Settings effectiveSettings() const;
+    void updateReplyMode();
     Settings settings;
     Conversation history;
     AgentClient *backend=nullptr;
     Edge *edge=nullptr;
     ChatView *view=nullptr;
     Composer *input=nullptr;
-    QLabel *statusLabel=nullptr,*contextLabel=nullptr;
-    QPushButton *pin=nullptr,*contextButton=nullptr;
+    QLabel *statusLabel=nullptr,*contextLabel=nullptr,*replyModeLabel=nullptr;
+    QPushButton *pin=nullptr,*contextButton=nullptr,*quickReplyButton=nullptr;
+    QWidget *replyModeRow=nullptr;
     QVBoxLayout *notices=nullptr;
     QPointer<QWidget> compactNotice;
     QTimer hideTimer,wallpaperTimer;
@@ -104,4 +108,6 @@ private:
     qint64 compactDismissedAt=0;
     qreal shown=0;
     bool opened=false,pinned=false,engaged=false,capturing=false,quitting=false,unread=false;
+    // Temporary switch is independent of the configured startup default.
+    bool quickReply=false;
 };

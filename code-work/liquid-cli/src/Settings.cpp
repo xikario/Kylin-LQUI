@@ -31,12 +31,14 @@ Settings Settings::load(const QString &path) {
         s.residentOnLogin=o.value("residentOnLogin").toBool(s.residentOnLogin);
         s.translationLanguage=o.value("translationLanguage").toString(s.translationLanguage);
         s.model=o.value("model").toString();s.reasoningEffort=o.value("reasoningEffort").toString();
+        s.defaultReplyMode=o.value("defaultReplyMode").toString("normal");
         s.backend=o.value("backend").toString("codex");s.sessionMode=o.value("sessionMode").toString();
         s.backendProfiles=o.value("backendProfiles").toObject();
     }
     s.normalize();return s;
 }
 void Settings::normalize() {
+    if(defaultReplyMode!="quick")defaultReplyMode="normal";
     if(backend!="qwen"&&backend!="deepseek")backend="codex";
     cliName=backendName(backend);
     width=qBound(360,width,1000);height=qBound(420,height,1400);animationMs=qBound(80,animationMs,500);
@@ -65,7 +67,7 @@ QJsonObject Settings::json() const {
     return {{"version",3},{"followLauncherMaterial",followLauncherMaterial},{"translationLanguage",translationLanguage},{"residentOnLogin",residentOnLogin},{"backend",backend},{"backendProfiles",profiles},{"sessionMode",sessionMode},{"width",width},{"height",height},{"animation",animation},{"animationMs",animationMs},
         {"liquid",liquid},{"darken",darken},{"hideDelay",hideDelay},{"fontSize",fontSize},{"directory",directory},
         {"command",command},{"permissions",permissions},{"contextLimitK",contextLimitK},{"idleStopMinutes",idleStopMinutes},
-        {"model",model},{"reasoningEffort",reasoningEffort}};
+        {"model",model},{"reasoningEffort",reasoningEffort},{"defaultReplyMode",defaultReplyMode}};
 }
 bool Settings::save(QString *error) const {
     QDir().mkpath(QFileInfo(file).absolutePath());QSaveFile f(file);

@@ -12,11 +12,11 @@ struct ChatMessage {
     qint64 time=0;
 };
 
-// One conversation per backend. Codex retains the original storage location.
+// One conversation per backend/mode. Normal Codex retains its original path.
 class Conversation {
 public:
     explicit Conversation(QString folder={});
-    void useBackend(const QString &id);
+    void useBackend(const QString &id,bool quickReply=false);
     bool load();
     bool save(QString *error=nullptr) const;
     bool clear();

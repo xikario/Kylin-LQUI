@@ -41,6 +41,7 @@
 #include <QDBusPendingCallWatcher>
 #include <QDBusPendingReply>
 #include <QJsonArray>
+#include <QSignalBlocker>
 #include "ResidentStartup.h"
 
 namespace {
@@ -122,7 +123,8 @@ Drawer::Drawer(Settings config,QString conversationFolder):QWidget(nullptr,Qt::T
     setObjectName("liquidCliDrawer");setWindowTitle("AI小站");setWindowIcon(icon("app"));
     setAttribute(Qt::WA_TranslucentBackground);setAttribute(Qt::WA_ShowWithoutActivating);
     setFont(QFont("Noto Sans CJK SC",10));
-    history.useBackend(settings.backend);history.load();backend=createAgentClient(settings,this);backend->setThreadId(history.threadId);
+    quickReply=settings.backend=="codex"&&settings.defaultReplyMode=="quick";
+    history.useBackend(settings.backend,quickReply);history.load();backend=createAgentClient(effectiveSettings(),this);backend->setThreadId(history.threadId);
     buildInterface();connectClient();
     loadDraft();input->setBackendName(settings.cliName);
     view->setTextPoint(settings.fontSize);view->reset(history.messages());
@@ -178,6 +180,15 @@ void Drawer::buildInterface() {
     header->addWidget(pin);header->addWidget(gear);header->addWidget(collapse);outer->addLayout(header);
     connect(pin,&QPushButton::toggled,this,[this](bool on){pinned=on;if(on)hideTimer.stop();else scheduleHide();});
     connect(gear,&QPushButton::clicked,this,&Drawer::Preferences);connect(collapse,&QPushButton::clicked,this,&Drawer::Hide);
+    replyModeRow=new QWidget(this);
+    auto *modeLayout=new QHBoxLayout(replyModeRow);modeLayout->setContentsMargins(0,0,0,0);
+    replyModeLabel=new QLabel(replyModeRow);replyModeLabel->setObjectName("replyModeLabel");
+    quickReplyButton=new QPushButton("快问快答",replyModeRow);quickReplyButton->setObjectName("quickReplyMode");
+    quickReplyButton->setCheckable(true);quickReplyButton->setCursor(Qt::PointingHandCursor);
+    quickReplyButton->setToolTip("快问快答使用 Luna low 和独立对话；普通思考使用原模型设置。启动时的默认模式可在设置中选择。");
+    modeLayout->addWidget(replyModeLabel,1);modeLayout->addWidget(quickReplyButton);outer->addWidget(replyModeRow);
+    connect(quickReplyButton,&QPushButton::clicked,this,[this](bool checked){setQuickReply(checked);});
+    updateReplyMode();
     view=new ChatView(this);outer->addWidget(view,1);
     notices=new QVBoxLayout;notices->setSpacing(6);outer->addLayout(notices);
     input=new Composer(this);outer->addWidget(input);
@@ -249,8 +260,9 @@ void Drawer::attachImage(const QImage &image) {
     input->addImage(path);input->setHint("图片已附上 · 补充说明后按 Enter 发送，不会自动发送");
 }
 void Drawer::updateContext() {
-    const qint64 limit=qint64(settings.contextLimitK)*1000;const qint64 tokens=history.contextTokens;
-    contextButton->setText("上下文 "+kilo(tokens)+" / "+QString::number(settings.contextLimitK)+"K");
+    const int limitK=effectiveSettings().contextLimitK;
+    const qint64 limit=qint64(limitK)*1000;const qint64 tokens=history.contextTokens;
+    contextButton->setText("上下文 "+kilo(tokens)+" / "+QString::number(limitK)+"K");
     contextButton->setStyleSheet(tokens>=limit?"color:#ffd59a;":"");
     if(tokens>=limit&&tokens>=compactDismissedAt+kDismissStepTokens&&!backend->compacting())showCompactNotice();
 }
@@ -265,7 +277,7 @@ void Drawer::showCompactNotice() {
     auto refresh=[this,text,now,later]{
         const bool running=backend->compacting();
         text->setText(running?QStringLiteral("正在压缩上下文…"):
-            QString("上下文已用 %1，超过 %2K。压缩后保留要点，回复会更快；聊天记录不受影响。").arg(kilo(history.contextTokens)).arg(settings.contextLimitK));
+            QString("上下文已用 %1，超过 %2K。可将较早内容整理成摘要，聊天记录仍保留。").arg(kilo(history.contextTokens)).arg(effectiveSettings().contextLimitK));
         now->setEnabled(!running&&backend->supportsCompaction());later->setVisible(!running);
         if(!running&&!backend->supportsCompaction())text->setText(QString("上下文已用 %1。当前后台未提供压缩入口，可在设置里开始新对话。").arg(kilo(history.contextTokens)));
     };
@@ -306,12 +318,21 @@ void Drawer::loadDraft() {
         for(const auto &value:saved.value("images").toArray()){const QString path=value.toString();if(QFileInfo(path).isFile()&&QFileInfo(path).absolutePath()==history.folder()+"/images")input->addImage(path);}
     }
 }
-void Drawer::persist() {
-    QString error;if(!history.save(&error)&&statusLabel)statusLabel->setText("聊天记录保存失败："+error);
-    if(!input)return;
+bool Drawer::persist() {
+    QString error;if(!history.save(&error)){if(statusLabel)statusLabel->setText("聊天记录保存失败："+error);return false;}
+    if(!input)return true;
     const QString path=history.folder()+"/draft.json";
-    if(input->editor()->toPlainText().isEmpty()&&input->images().isEmpty()){QFile::remove(path);return;}
-    QSaveFile draft(path);if(draft.open(QIODevice::WriteOnly)){draft.setPermissions(QFile::ReadOwner|QFile::WriteOwner);draft.write(QJsonDocument(QJsonObject{{"text",input->editor()->toPlainText()},{"images",QJsonArray::fromStringList(input->images())}}).toJson(QJsonDocument::Compact));draft.commit();}
+    if(input->editor()->toPlainText().isEmpty()&&input->images().isEmpty()){
+        if(!QFileInfo::exists(path)||QFile::remove(path))return true;
+        setStatus("草稿无法保存，未切换对话。");return false;
+    }
+    const auto data=QJsonDocument(QJsonObject{{"text",input->editor()->toPlainText()},{"images",QJsonArray::fromStringList(input->images())}}).toJson(QJsonDocument::Compact);
+    QSaveFile draft(path);
+    if(draft.open(QIODevice::WriteOnly)){
+        draft.setPermissions(QFile::ReadOwner|QFile::WriteOwner);
+        if(draft.write(data)==data.size()&&draft.commit())return true;
+    }
+    setStatus("草稿无法保存："+draft.errorString());return false;
 }
 void Drawer::clearConversation() {
     backend->stop();if(!history.clear()){setStatus("无法保留原聊天记录，未开始新对话。");return;}input->clear();persist();backend->setThreadId({});answerIndex=-1;compactDismissedAt=0;
@@ -518,6 +539,40 @@ void Drawer::processCapture(const QImage &image,const QString &action) {
     QString error;const QString path=history.storeImage(image,&error);if(path.isEmpty()){setStatus(error);return;}
     sendMessage(CaptureEditor::actionPrompt(action,settings.translationLanguage),{path},false);
 }
+Settings Drawer::effectiveSettings() const {
+    Settings effective=settings;
+    if(quickReply&&settings.backend=="codex"){
+        effective.model="gpt-6-luna";effective.reasoningEffort="low";
+        effective.contextLimitK=qMin(settings.contextLimitK,64);
+    }
+    return effective;
+}
+void Drawer::updateReplyMode() {
+    if(!replyModeRow)return;
+    replyModeRow->setVisible(settings.backend=="codex");
+    const QSignalBlocker block(quickReplyButton);quickReplyButton->setChecked(quickReply);
+    QString normal="普通思考";
+    if(settings.model=="gpt-6-luna")normal+=" · Luna "+(settings.reasoningEffort.isEmpty()?QString("默认强度"):settings.reasoningEffort);
+    replyModeLabel->setText(quickReply?QString("独立对话 · Luna low"):normal);
+    quickReplyButton->setText(quickReply?QString("切回普通思考"):QString("快问快答"));
+}
+bool Drawer::setQuickReply(bool enabled) {
+    if(enabled==quickReply){updateReplyMode();return true;}
+    if(settings.backend!="codex"||backend->busy()||backend->compacting()||capturing){
+        updateReplyMode();setStatus("请等待当前任务结束，再切换问答模式。");return false;
+    }
+    Conversation next=history;next.useBackend(settings.backend,enabled);next.load();
+    if(!next.canSave()){updateReplyMode();setStatus("目标对话读取失败，已保留当前对话及原文件。");return false;}
+    if(!persist()){updateReplyMode();return false;}
+    backend->disconnect(this);backend->stop();delete backend;
+    for(auto *card:findChildren<QFrame*>("notice"))delete card;
+    compactNotice.clear();answerIndex=-1;compactDismissedAt=0;unread=false;
+    quickReply=enabled;history=std::move(next);
+    backend=createAgentClient(effectiveSettings(),this);backend->setThreadId(history.threadId);connectClient();
+    view->setTyping(false);view->reset(history.messages());input->setBusy(false);loadDraft();
+    updateReplyMode();updateContext();setStatus(quickReply?QString("快问快答 · 独立上下文"):QString("已返回普通对话"));
+    return true;
+}
 void Drawer::applySettings(Settings value) {
     if(backend->busy()&&(settings.backend!=value.backend||settings.command!=value.command||settings.directory!=value.directory||settings.permissions!=value.permissions)) {
         setStatus("请先停止当前回复，再更改后台、命令、目录或权限。");return;
@@ -525,18 +580,20 @@ void Drawer::applySettings(Settings value) {
     value.normalize();const bool geometryChanged=settings.width!=value.width||settings.height!=value.height;
     const bool materialChanged=geometryChanged||settings.liquid!=value.liquid||settings.darken!=value.darken||settings.followLauncherMaterial!=value.followLauncherMaterial;
     const bool switched=settings.backend!=value.backend;
-    if(switched&&backend->busy()){setStatus("请先停止当前回复再切换后台");return;}
+    if(switched&&(backend->busy()||backend->compacting())){setStatus("请先停止当前回复再切换后台");return;}
     if(switched) {
-        persist();backend->disconnect(this);backend->stop();delete backend;
+        if(!persist())return;
+        backend->disconnect(this);backend->stop();delete backend;
         for(auto *card:findChildren<QFrame*>("notice"))delete card;
         compactNotice.clear();answerIndex=-1;compactDismissedAt=0;unread=false;
-        settings=value;history.useBackend(settings.backend);history.load();backend=createAgentClient(settings,this);backend->setThreadId(history.threadId);connectClient();
+        quickReply=false;settings=value;history.useBackend(settings.backend);history.load();backend=createAgentClient(effectiveSettings(),this);backend->setThreadId(history.threadId);connectClient();
         view->setTyping(false);view->reset(history.messages());input->setBusy(false);loadDraft();
         setStatus(settings.cliName+" · "+(history.messages().isEmpty()?QString("随时开始"):QString("对话已保留")));
     } else {
         if(!backend->busy()&&(settings.command!=value.command||settings.directory!=value.directory||settings.permissions!=value.permissions))backend->stop();
-        settings=value;backend->configure(settings);
+        settings=value;backend->configure(effectiveSettings());
     }
+    updateReplyMode();
     input->setBackendName(settings.cliName);positionEdge();view->setTextPoint(settings.fontSize);QFont font=input->editor()->font();font.setPointSize(settings.fontSize);input->editor()->setFont(font);updateContext();
     if(materialChanged)materialKey.clear();
     if(opened){motion.stop();place(1);refreshGlass();}
@@ -549,6 +606,9 @@ QString Drawer::State() const {
         {"x",x()},{"y",y()},{"width",width()},{"height",height()},{"edgeX",edge->x()},{"edgeY",edge->y()},
         {"panelHosted",panelHosted},{"edgeVisible",edge->isVisible()},{"mouseGrabbed",QWidget::mouseGrabber()!=nullptr},
         {"settingsVisible",preferences&&preferences->isVisible()},{"draftCharacters",input->editor()->toPlainText().size()},{"draftImages",input->images().size()}};
+    state["replyMode"]=quickReply?"quick":"normal";
+    state["defaultReplyMode"]=settings.defaultReplyMode;
+    state["effectiveModel"]=effectiveSettings().model;state["effectiveEffort"]=effectiveSettings().reasoningEffort;
     if(preferences) {state["settingsX"]=preferences->x();state["settingsY"]=preferences->y();state["settingsWidth"]=preferences->width();state["settingsHeight"]=preferences->height();if(preferences->isVisible())state["settingsWindowId"]=QString::number(preferences->winId());}
     return QString::fromUtf8(QJsonDocument(state).toJson(QJsonDocument::Compact));
 }

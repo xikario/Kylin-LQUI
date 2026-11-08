@@ -668,6 +668,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
                     for attached in row['attachments']:
                         entry=self.fields[attached['id']];entry['container'].deleteLater();presenter=view.title if attached['_role']=='label' else view.help;entry.update(control=presenter,container=presenter,row=view)
                 sticky=pinned_page_row(row)
+                if 'profileColumn' in spec and isinstance(view.layout(),QtWidgets.QVBoxLayout):view.layout().addStretch(1)
                 owner=pinned if sticky else group;owner.add_row(view)
                 if 'profileColumn' in spec:profile_pair.add_profile_row(row['profileSlot'],spec['profileColumn'],view)
                 record={'widget':view,'spec':row,'group':owner,'pinned':sticky,'profile_column':'profileColumn' in spec};self._rendered_rows.append(record)

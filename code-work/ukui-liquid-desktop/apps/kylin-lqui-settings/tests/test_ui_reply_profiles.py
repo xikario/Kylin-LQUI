@@ -55,6 +55,7 @@ class ReplyProfiles(unittest.TestCase):
         self.assertEqual(left.height(),right.height())
         for normal,quick in [('settingModel','settingQuickModel'),('settingEffort','settingQuickEffort'),('settingNormalFast','settingQuickFast')]:
             a=self.entry(normal)['row'];b=self.entry(quick)['row'];self.assertEqual(a.mapTo(canvas,QtCore.QPoint()).y(),b.mapTo(canvas,QtCore.QPoint()).y());self.assertEqual(a.height(),b.height())
+            a=self.entry(normal)['control'];b=self.entry(quick)['control'];self.assertEqual(a.mapTo(canvas,QtCore.QPoint()).y(),b.mapTo(canvas,QtCore.QPoint()).y())
         self.assertEqual(set(self.window.fields),{f['id'] for f in self.fixture.page['fields']});self.assertEqual(self.writes(),[])
     def test_radio_click_keyboard_and_poll_use_original_index_once(self):
         selector=self.entry('settingDefaultReplyMode')['control'];selector.buttons[0].click();QtTest.QTest.qWait(30)

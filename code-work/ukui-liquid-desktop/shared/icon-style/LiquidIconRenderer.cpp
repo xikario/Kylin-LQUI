@@ -4,16 +4,24 @@
 #include <QPainterPath>
 #include <QtMath>
 
+void LiquidIconRenderer::drawInteraction(QPainter &p, const QRectF &rect,
+    const QColor &accent, bool hovered, bool selected)
+{
+    if (!hovered && !selected) return;
+    p.save();
+    QColor border=selected?accent:QColor(Qt::white);border.setAlpha(selected?205:105);
+    p.setPen(QPen(border,selected?1.5:1.));
+    p.setBrush(QColor(255,255,255,hovered?18:8));
+    p.drawRoundedRect(rect.adjusted(.75,.75,-.75,-.75),rect.width()*.235,rect.width()*.235);
+    p.restore();
+}
+
 void LiquidIconRenderer::drawPlate(QPainter &p, const QRectF &rect,
     const QColor &accent, qreal strength, qreal dpr, bool hovered, bool selected)
 {
     if (LquiIcon::uniform()) {
         // The adapted artwork is already a tile; do not wrap it in another box.
-        if (hovered || selected) {
-            p.save();QColor border=selected?accent:QColor(Qt::white);border.setAlpha(selected?205:105);
-            p.setPen(QPen(border,selected?1.5:1.));p.setBrush(QColor(255,255,255,hovered?18:8));
-            p.drawRoundedRect(rect.adjusted(.75,.75,-.75,-.75),rect.width()*.235,rect.width()*.235);p.restore();
-        }
+        drawInteraction(p,rect,accent,hovered,selected);
         return;
     }
     strength = qBound(0., strength, 1.);
@@ -60,13 +68,7 @@ void LiquidIconRenderer::drawPlate(QPainter &p, const QRectF &rect,
     }
     p.save();
     p.drawPixmap(rect.topLeft()-QPointF(pad,pad),material);
-    if (hovered || selected) {
-        QColor border = selected ? accent : QColor(Qt::white);
-        border.setAlpha(selected ? 205 : 105);
-        p.setPen(QPen(border, selected ? 1.5 : 1.));
-        p.setBrush(QColor(255,255,255,hovered ? 18 : 8));
-        p.drawRoundedRect(rect.adjusted(.75,.75,-.75,-.75),rect.width()*.235,rect.width()*.235);
-    }
+    drawInteraction(p,rect,accent,hovered,selected);
     p.restore();
 }
 

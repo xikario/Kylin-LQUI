@@ -11,5 +11,7 @@ class LiquidIconRenderer {
 public:
     static void drawPlate(QPainter &p, const QRectF &rect, const QColor &accent,
                           qreal strength, qreal dpr, bool hovered, bool selected);
+    static void drawInteraction(QPainter &p, const QRectF &rect, const QColor &accent,
+                                bool hovered, bool selected);
     static void drawIcon(QPainter &p, const QRectF &rect, const QIcon &icon, qreal dpr);
 };

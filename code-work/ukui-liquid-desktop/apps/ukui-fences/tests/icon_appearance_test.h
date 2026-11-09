@@ -9,6 +9,61 @@
 #include <QPushButton>
 #include <QSlider>
 
+static void checkMatchingIconHover(const DesktopItem &item)
+{
+    QWidget surface;
+    auto palette=surface.palette();palette.setColor(QPalette::Window,QColor("#334a62"));
+    surface.setPalette(palette);surface.setAutoFillBackground(true);surface.resize(520,260);
+    DesktopItem textured=item;QPixmap artwork(64,64);artwork.fill(QColor("#20c070"));
+    {QPainter pattern(&artwork);pattern.setPen(QPen(QColor("#2040b0"),4));
+     for(int n=8;n<64;n+=12){pattern.drawLine(n,4,n,60);pattern.drawLine(4,n,60,n);}}
+    textured.icon=QIcon(artwork);
+    DesktopIcon desktop(textured,&surface),fence(textured,&surface);
+    desktop.move(70,35);fence.move(290,35);
+    surface.show();desktop.show();fence.show();settle(40);
+    const auto sendState=[](DesktopIcon &icon,QEvent::Type type){QEvent event(type);QApplication::sendEvent(&icon,&event);};
+    for(auto fenceStyle:{IconVisualStyle::Native,IconVisualStyle::LiquidPlate})for(qreal scale:{.75,1.,1.75}) {
+        desktop.setVisualScale(scale);fence.setVisualScale(scale);
+        desktop.setIconAppearance(IconVisualStyle::LiquidPlate,IconSurface::Desktop,QColor("#7199df"),.62);
+        fence.setIconAppearance(fenceStyle,IconSurface::Fence,QColor("#7199df"),.40);
+        desktop.setSelected(false);fence.setSelected(false);
+        sendState(desktop,QEvent::Leave);sendState(fence,QEvent::Leave);
+        const QImage desktopIdle=desktop.grab().toImage(),fenceIdle=fence.grab().toImage();
+        sendState(desktop,QEvent::Enter);sendState(fence,QEvent::Enter);
+        const QImage desktopHover=desktop.grab().toImage(),fenceHover=fence.grab().toImage();
+        const qreal d=desktop.devicePixelRatioF();
+        // Compare the artwork/upper frame only: native and plated styles retain
+        // their existing caption spacing. Neither may use the entire grid cell.
+        const int height=qFloor(qMin(desktop.contentIconRect().bottom(),fence.contentIconRect().bottom())*d);
+        const QRect top(0,0,desktopHover.width(),height);
+        check(desktopHover.copy(top)==fenceHover.copy(top),
+              "fence hover matches the desktop outline for native and plated artwork at every icon scale");
+        int changes=0,outside=0;
+        for(int y=0;y<height;++y)for(int x=0;x<fenceHover.width();++x)
+            if(fenceHover.pixel(x,y)!=fenceIdle.pixel(x,y)) {
+                ++changes;
+                if(!fence.plateRect().adjusted(-1.5,-1.5,1.5,1.5).contains(QPointF(x/d,y/d)))++outside;
+            }
+        check(changes>0&&outside==0,"hover has visible feedback confined to the icon rather than the full cell");
+        // The rounded artwork has transparent corners; the hover fill is
+        // expected to show through those. Check its opaque patterned centre.
+        const qreal inset=fence.contentIconRect().width()*.25;
+        const QRectF core=fence.contentIconRect().adjusted(inset,inset,-inset,-inset);
+        const QRect pixels(qRound(core.x()*d),qRound(core.y()*d),qRound(core.width()*d),qRound(core.height()*d));
+        check(fenceIdle.copy(pixels)==fenceHover.copy(pixels),"hover does not magnify or recolor the icon artwork");
+        if(fenceStyle==IconVisualStyle::Native&&qFuzzyCompare(scale,1.)) {
+            QDir().mkpath("artifacts");surface.grab().save(QString("artifacts/icon-hover-match-%1.png").arg(d));
+        }
+        desktop.setSelected(true);fence.setSelected(true);
+        check(desktop.grab().toImage().copy(top)==fence.grab().toImage().copy(top),
+              "selected fence hover retains the same compact desktop outline");
+        desktop.setSelected(false);fence.setSelected(false);
+        sendState(desktop,QEvent::Leave);sendState(fence,QEvent::Leave);
+        check(desktop.grab().toImage()==desktopIdle&&fence.grab().toImage()==fenceIdle,
+              "leaving both icon surfaces restores their idle pixels");
+    }
+}
+
 static int runIconAppearanceTest(const QString &root)
 {
     QSettings s; s.setValue("smartSpace/autoStart",false);s.setValue("systemMonitor/autoStart",false);s.sync();
@@ -47,6 +102,7 @@ static int runIconAppearanceTest(const QString &root)
     icon.render(&gallery,QPoint(530,15),QRegion(),QWidget::DrawChildren);icon.setCut(true);icon.render(&gallery,QPoint(620,15),QRegion(),QWidget::DrawChildren);
     gallery.end();QDir().mkpath("artifacts");sheet.save(QString("artifacts/liquid-icons-%1.png").arg(d));
     icon.hide();
+    checkMatchingIconHover(item);
     {
         DesktopCanvas canvas;canvas.showAndActivate();settle(150);
         canvas.configureIconAppearance(&icon,IconSurface::Desktop);

@@ -731,15 +731,14 @@ void DesktopIcon::paintEvent(QPaintEvent *)
 
     const int w = width(), h = height();
 
-    // ── 悬浮缩放特效（参考特效文件 group-hover:scale-105）──
+    // Hover keeps the same artwork size on the desktop and inside fences.
+    // Click scaling remains independent from the shared compact outline.
     qreal drawScale = 1.0;
     if (m_clickAnim) {
         // 点击时先缩小再恢复（scale-90 效果）
         const qreal t = m_clickAnimProgress;
         drawScale = (t < 0.4) ? (1.0 - 0.1 * (t / 0.4))
                                : (0.9 + 0.1 * ((t - 0.4) / 0.6));
-    } else if (m_hovered && m_iconSurface!=IconSurface::Desktop) {
-        drawScale = 1.05;
     }
 
     if (qAbs(drawScale - 1.0) > 0.001) {
@@ -747,20 +746,6 @@ void DesktopIcon::paintEvent(QPaintEvent *)
         p.translate(pivot);
         p.scale(drawScale, drawScale);
         p.translate(-pivot);
-    }
-
-    // Desktop selection belongs to the artwork and caption, not a dark
-    // rectangle covering the complete grid cell and the empty label area.
-    if ((m_selected || m_hovered) && m_iconSurface!=IconSurface::Desktop) {
-        QColor bg = m_selected
-            ? QColor(160, 160, 160, 100)
-            : QColor(255, 255, 255, 30);
-        if (m_visualStyle==IconVisualStyle::LiquidPlate) { bg=m_liquidAccent; bg.setAlpha(m_selected?32:10); }
-        p.setBrush(bg);
-        p.setPen(m_visualStyle==IconVisualStyle::LiquidPlate ? QPen(Qt::NoPen) : m_selected
-            ? QPen(QColor(180, 180, 180, 200), 1)
-            : QPen(QColor(255, 255, 255, 40), 1));
-        p.drawRoundedRect(1, 1, w - 2, h - 2, 8, 8);
     }
 
     const bool liquid=m_visualStyle==IconVisualStyle::LiquidPlate;
@@ -771,6 +756,7 @@ void DesktopIcon::paintEvent(QPaintEvent *)
     } else {
         if(liquid) LiquidIconRenderer::drawPlate(p,plateRect(),m_liquidAccent,m_liquidStrength,
                                                devicePixelRatioF(),m_hovered,m_selected);
+        else LiquidIconRenderer::drawInteraction(p,plateRect(),m_liquidAccent,m_hovered,m_selected);
         LiquidIconRenderer::drawIcon(p,contentIconRect(),m_item.icon,devicePixelRatioF());
     }
 
@@ -814,7 +800,7 @@ void DesktopIcon::paintEvent(QPaintEvent *)
     if (m_renameEdit)
         return;
 
-    if(m_selected && m_iconSurface==IconSurface::Desktop) {
+    if(m_selected) {
         const QRect label=fm.boundingRect(textRect,flags,m_item.displayName).intersected(textRect).adjusted(-2,-1,2,1);
         p.setPen(Qt::NoPen);p.setBrush(QColor(42,100,178,185));p.drawRoundedRect(label,3,3);
     }

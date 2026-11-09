@@ -2,7 +2,7 @@
 
 ## 范围
 
-这是独立代码副本，未安装到当前运行的桌面。保留原有内容、文字、图标、颜色规则和布局，只在控制中心中加入两项轻量反馈：
+初始评估在独立代码副本中完成，随后已合入统一设置/快捷设置并通过版本化安装部署。下文保留该轮隔离对照的测量口径，不代表所有机器的资源表现。实现保留原有内容、文字、图标、颜色规则和布局，加入两项轻量反馈：
 
 1. 固定玻璃卡片内部滚动列表的上下边缘渐隐。
 2. 按钮按压时的局部轮廓微缩与高光，文字和图标保持原来的绘制。
@@ -58,4 +58,4 @@ QT_QPA_PLATFORM=xcb QT_SCALE_FACTOR=1.5 QT_SCREEN_SCALE_FACTORS=1 \
 /usr/bin/python3 code-work/ukui-liquid-desktop/apps/kylin-lqui-settings/tests/test_packaging.py
 ```
 
-完整控制中心/画面测试还需将 `LQUI_NATIVE_GLASS_LIBRARY` 指向主项目已构建的 `liblqui-glass-bridge.so`。本机证据保存在 `maintenance/lowcost-effects-20261108/`，包括硬件采样、最终对照 JSON、测试日志及未安装的源码副本。
+完整控制中心/画面测试还需将 `LQUI_NATIVE_GLASS_LIBRARY` 指向主项目已构建的 `liblqui-glass-bridge.so`。本机证据保存在工作区外的 `maintenance/lowcost-effects-20261108/`，包括硬件采样、最终对照 JSON、测试日志、初始评估副本及后续部署记录；不随公开源码上传。

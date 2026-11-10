@@ -17,6 +17,7 @@
 #include <QHideEvent>
 #include <QProcess>
 #include <QFileSystemWatcher>
+#include <QFile>
 #include <QFileInfo>
 #include <QDir>
 #include <QStandardPaths>
@@ -40,6 +41,7 @@
 #include <QTextBoundaryFinder>
 #include <QTextDocument>
 #include <algorithm>
+#include <sys/stat.h>
 
 namespace {
 constexpr int CollapsedHeight=270, ExpandedHeight=464;
@@ -51,6 +53,27 @@ const QString CompletedSetting=QStringLiteral("desklets/calendar/completed");
 QString calendarScript(){
     const QString installed=QCoreApplication::applicationDirPath()+"/calendar_snapshot.py";
     return QFileInfo::exists(installed)?installed:QString::fromUtf8(UKUI_FENCES_CALENDAR_READER_PATH);
+}
+QStringList databaseFiles(const QString &path){
+    return {path,path+"-wal",path+"-journal"};
+}
+QByteArray databaseRevision(const QString &path){
+    QByteArray revision;
+    // Include SQLite's write-ahead log and rollback journal so writes and
+    // commits can be detected even when the main file stays unchanged.
+    for(const auto &file:databaseFiles(path)){
+        struct stat info{};
+        if(::stat(QFile::encodeName(file).constData(),&info)==0){
+            for(const auto value:{qint64(info.st_dev),qint64(info.st_ino),qint64(info.st_size),
+                                  qint64(info.st_mtim.tv_sec),qint64(info.st_mtim.tv_nsec),
+                                  qint64(info.st_ctim.tv_sec),qint64(info.st_ctim.tv_nsec)}){
+                revision+=QByteArray::number(value);
+                revision+=',';
+            }
+        }
+        revision+=';';
+    }
+    return revision;
 }
 QDate itemDate(const QJsonObject &item,const QString &key="date"){
     return QDate::fromString(item.value(key).toString(),Qt::ISODate);
@@ -111,7 +134,6 @@ CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"ca
     m_summary=button("今日待办","calendarSummary");
     m_summary->setIconSize(SummaryIconSize);
     QFont summaryFont=m_summary->font();summaryFont.setPixelSize(10);m_summary->setFont(summaryFont);
-    m_summary->setAccessibleName("今日待办");
     m_summary->setStyleSheet(
         "QPushButton{color:#cbd7e6;text-align:left;padding:0 3px;background:transparent;"
         "border:1px solid transparent;border-radius:5px;}"
@@ -127,7 +149,7 @@ CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"ca
     connect(m_monthButton,&QPushButton::clicked,this,&CalendarDesklet::showMonthMenu);
     connect(m_collapse,&QPushButton::clicked,this,[this]{setAgendaCollapsed(!m_agendaCollapsed,true);});
     connect(m_summary,&QPushButton::clicked,this,[this]{
-        if(m_agendaCollapsed){m_allDates=true;updateList();m_list->scrollToTop();}
+        if(m_agendaCollapsed){m_allDates=false;updateList();m_list->scrollToTop();}
         setAgendaCollapsed(!m_agendaCollapsed,true);
     });
     m_previous->setToolTip("上个月");m_next->setToolTip("下个月");m_all->setToolTip("显示本月及今天附近的系统待办");
@@ -143,27 +165,36 @@ CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"ca
     connect(m_list,&QListWidget::currentItemChanged,this,[this]{updateActions();update();});
     connect(m_list,&QListWidget::itemActivated,this,[this](QListWidgetItem *item){const QDate d=item->data(Qt::UserRole).toDate();if(d.isValid())openSystemCalendar(d);});
     m_debounce.setSingleShot(true);m_debounce.setInterval(180);connect(&m_debounce,&QTimer::timeout,this,&CalendarDesklet::reload);
-    auto changed=[this](const QString &){rewatch();m_debounce.start();};
+    auto changed=[this](const QString &){rewatch();if(!m_debounce.isActive())m_debounce.start();};
     connect(m_watcher,&QFileSystemWatcher::fileChanged,this,changed);
     // Only react to database creation/replacement, not unrelated config writes.
-    connect(m_watcher,&QFileSystemWatcher::directoryChanged,this,[this](const QString &){
+    connect(m_watcher,&QFileSystemWatcher::directoryChanged,this,[this,changed](const QString &directory){
         const QStringList files=m_watcher->files();
-        for(const QString &p:{m_database,m_database+"-wal"})if(QFileInfo::exists(p)!=files.contains(p)){rewatch();m_debounce.start();break;}
+        for(const auto &file:databaseFiles(m_database)){
+            if(QFileInfo::exists(file)!=files.contains(file)){changed(directory);break;}
+        }
     });
     m_timeout.setSingleShot(true);m_timeout.setInterval(3000);connect(&m_timeout,&QTimer::timeout,m_reader,&QProcess::kill);
     connect(m_reader,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this](int exit,QProcess::ExitStatus status){
         m_timeout.stop();QJsonParseError error;const auto document=QJsonDocument::fromJson(m_reader->readAllStandardOutput(),&error);
         if(exit==0 && status==QProcess::NormalExit && error.error==QJsonParseError::NoError && document.isObject()){
+            // A change during the read must still be seen by the next check.
+            m_loadedRevision=m_requestedRevision;m_readFailures=0;
             m_items=document.object()["items"].toArray();m_warning=document.object()["warning"].toString();
             m_dates=document.object()["dates"].toObject();m_calendarWarning=document.object()["calendarWarning"].toString();
-        }else m_warning="系统待办读取失败，保留上次内容";
+        }else{
+            ++m_readFailures;m_lastReadFailure.start();
+            m_warning="系统待办读取失败，保留上次内容";
+        }
         rewatch();updateList();updateSummary();if(isVisible())update();
         if(m_again){m_again=false;m_debounce.start();}
     });
-    connect(m_reader,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){if(e==QProcess::FailedToStart){m_timeout.stop();m_warning="无法启动日历读取程序";updateList();updateSummary();update();}});
-    m_dayTimer.setInterval(60000);connect(&m_dayTimer,&QTimer::timeout,this,[this]{
-        const QDate now=QDate::currentDate();if(now!=m_today){bool followed=m_selected==m_today;m_today=now;if(followed){m_selected=now;m_month=QDate(now.year(),now.month(),1);}reload();updateDateButtons();updateList();updateSummary();update();}
+    connect(m_reader,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){
+        if(e!=QProcess::FailedToStart)return;
+        m_timeout.stop();m_again=false;++m_readFailures;m_lastReadFailure.start();
+        m_warning="无法启动日历读取程序";updateList();updateSummary();update();
     });
+    m_refreshTimer.setInterval(1000);connect(&m_refreshTimer,&QTimer::timeout,this,&CalendarDesklet::refreshIfNeeded);
     QSettings settings;
     const QStringList completed=settings.value(CompletedSetting).toStringList();
     for(const auto &key:completed)m_completed.insert(key);
@@ -180,11 +211,34 @@ CalendarDesklet::~CalendarDesklet(){
     }
 }
 void CalendarDesklet::rewatch(){
-    QStringList wanted;for(const QString &p:{QFileInfo(m_database).absolutePath(),m_database,m_database+"-wal"})if(QFileInfo::exists(p))wanted<<p;
-    const auto existing=m_watcher->files()+m_watcher->directories();for(const QString &p:wanted)if(!existing.contains(p))m_watcher->addPath(p);
+    auto paths=databaseFiles(m_database);
+    paths.prepend(QFileInfo(m_database).absolutePath());
+    const auto existing=m_watcher->files()+m_watcher->directories();
+    for(const auto &path:paths)if(!existing.contains(path) && QFileInfo::exists(path))m_watcher->addPath(path);
+}
+void CalendarDesklet::refreshIfNeeded(){
+    const QDate now=QDate::currentDate();
+    if(now!=m_today){
+        const bool followed=m_selected==m_today;
+        m_today=now;
+        if(followed){m_selected=now;m_month=QDate(now.year(),now.month(),1);}
+        updateDateButtons();updateList();updateSummary();update();
+        reload();
+        return;
+    }
+    if(m_reader->state()!=QProcess::NotRunning || m_debounce.isActive())return;
+    const auto revision=databaseRevision(m_database);
+    if(revision==m_loadedRevision && !m_readFailures)return;
+    // Retry a busy SQLite read quickly. Back off after repeated failures only
+    // while the same revision remains, so a new commit is picked up promptly.
+    if(m_readFailures>=3 && revision==m_requestedRevision && m_lastReadFailure.elapsed()<5000)return;
+    reload();
 }
 void CalendarDesklet::reload(){
     if(m_reader->state()!=QProcess::NotRunning){m_again=true;return;}
+    const auto revision=databaseRevision(m_database);
+    if(revision!=m_requestedRevision)m_readFailures=0;
+    m_requestedRevision=revision;
     const QDate begin=qMin(m_month,QDate::currentDate().addDays(-30));
     const QDate end=qMax(m_month.addMonths(1).addDays(-1),QDate::currentDate().addDays(90));
     // Lunar metadata stays bounded for distant navigation; the reader always
@@ -195,7 +249,13 @@ void CalendarDesklet::reload(){
         "--end",(distant?m_month.addMonths(1).addDays(-1):end).toString(Qt::ISODate),
         "--agenda-today",QDate::currentDate().toString(Qt::ISODate)});m_timeout.start();
 }
-void CalendarDesklet::selectDate(QDate d){if(!d.isValid())return;const bool month=d.month()!=m_month.month() || d.year()!=m_month.year();m_selected=d;m_month=QDate(d.year(),d.month(),1);m_allDates=false;if(month)reload();updateDateButtons();updateList();updateSummaryToolTip();update();}
+void CalendarDesklet::selectDate(QDate d){
+    if(!d.isValid())return;
+    const bool month=d.month()!=m_month.month() || d.year()!=m_month.year();
+    m_selected=d;m_month=QDate(d.year(),d.month(),1);m_allDates=false;
+    updateDateButtons();updateList();updateSummary();update();
+    if(month)reload();else refreshIfNeeded();
+}
 QRect CalendarDesklet::gridRect() const{return QRect(width()*.34,60,width()-int(width()*.34)-16,164);}
 QRect CalendarDesklet::dateCell(int day) const{
     const QRect grid=gridRect();const int offset=m_month.dayOfWeek()-1,index=offset+day-1,weeks=(offset+m_month.daysInMonth()+6)/7;
@@ -301,18 +361,20 @@ void CalendarDesklet::updateList(){
 }
 void CalendarDesklet::updateSummary(){
     QStringList lines;
-    bool anyToday=false;
+    bool anyOnDate=false;
     for(const auto &value:m_items){
         const auto item=value.toObject();
-        if(!covers(item,m_today))continue;
-        anyToday=true;
+        if(!covers(item,m_selected))continue;
+        anyOnDate=true;
         if(m_completed.contains(item.value("completionKey").toString()))continue;
         const QString title=item.value("title").toString().simplified();
         lines.append(shortLine(item.value("time").toString()+" "+(title.isEmpty()?"未命名":title),10));
         if(lines.size()==2)break;
     }
     const bool pending=!lines.isEmpty();
-    if(!pending)lines.append(anyToday?"今日已完成":m_warning.isEmpty()?"今日无待办":"待办请展开");
+    const QString day=m_selected==m_today?"今日":m_selected.toString("d日");
+    if(!pending)lines.append(anyOnDate?day+"已完成":m_warning.isEmpty()?day+"无待办":"待办请展开");
+    m_summary->setAccessibleName(day+"待办");
     m_summary->setText(lines.join('\n'));
     m_summary->setAccessibleDescription(m_summary->text());
     m_summary->setIcon(summaryIcon(pending,devicePixelRatioF()));
@@ -327,7 +389,9 @@ QString CalendarDesklet::agendaStatus() const{
     return {};
 }
 void CalendarDesklet::updateSummaryToolTip(){
-    QString tip=m_agendaCollapsed?"展开待办 · 选择事项后可完成、编辑或删除":"收起待办";
+    QString tip=m_agendaCollapsed
+        ?"展开 "+m_selected.toString("M月d日")+"待办 · 选择事项后可完成、编辑或删除"
+        :"收起待办";
     const QString status=agendaStatus();
     if(!status.isEmpty())tip+="\n"+status;
     m_summary->setToolTip(tip);
@@ -504,8 +568,11 @@ void CalendarDesklet::mouseMoveEvent(QMouseEvent *e){
     }
     if(toolTip()!=tip)setToolTip(tip);
 }
-void CalendarDesklet::showEvent(QShowEvent *e){LiquidDesklet::showEvent(e);m_dayTimer.start();reload();}
-void CalendarDesklet::hideEvent(QHideEvent *e){m_dayTimer.stop();LiquidDesklet::hideEvent(e);}
+void CalendarDesklet::showEvent(QShowEvent *e){
+    LiquidDesklet::showEvent(e);m_refreshTimer.start();
+    if(QDate::currentDate()!=m_today)refreshIfNeeded();else reload();
+}
+void CalendarDesklet::hideEvent(QHideEvent *e){m_refreshTimer.stop();LiquidDesklet::hideEvent(e);}
 void CalendarDesklet::openSystemCalendar(QDate d){
     auto msg=QDBusMessage::createMethodCall("org.ukui.calendar.Notifications","/org/ukui/calendar/Notifications","org.ukui.calendar.Notifications","OpenSchedule");msg<<d.day()<<d.month()<<d.year();
     auto *w=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(msg,1500),this);

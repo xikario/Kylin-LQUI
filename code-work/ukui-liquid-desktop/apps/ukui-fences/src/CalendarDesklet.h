@@ -1,6 +1,7 @@
 #pragma once
 #include "DesktopWidgets.h"
 #include <QDate>
+#include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
@@ -28,6 +29,7 @@ protected:
     void extendMenu(QMenu &) override;
 private:
     void reload();
+    void refreshIfNeeded();
     void showYearMenu();
     void showMonthMenu();
     void updateDateButtons();
@@ -61,6 +63,9 @@ private:
     QProcess *m_writer=nullptr;
     QProcess *m_holidaySync=nullptr;
     QFileSystemWatcher *m_watcher;
-    QTimer m_debounce,m_dayTimer,m_timeout;
+    QTimer m_debounce,m_refreshTimer,m_timeout;
+    QByteArray m_requestedRevision,m_loadedRevision;
+    QElapsedTimer m_lastReadFailure;
+    int m_readFailures=0;
     bool m_allDates=true,m_again=false;
 };

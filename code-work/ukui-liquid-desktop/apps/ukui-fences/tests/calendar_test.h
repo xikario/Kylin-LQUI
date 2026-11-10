@@ -7,6 +7,8 @@
 #include <QDialogButtonBox>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QFileSystemWatcher>
+#include <QSignalBlocker>
 static int runCalendarTest(const QString &root){
     QSettings settings;settings.setValue("smartSpace/autoStart",false);settings.setValue("systemMonitor/autoStart",false);settings.setValue("desklets/calendar/agendaCollapsed",false);settings.sync();
     const QString database=root+"/config/.kylin_calendar_Schedule2.db";QDir().mkpath(root+"/config");
@@ -78,10 +80,50 @@ static int runCalendarTest(const QString &root){
         check(preview.size()==2 && preview[0].startsWith("17:30 ") && preview[1].startsWith("18:00 ") &&
               preview[0].size()<=10 && preview[1].size()<=10,"two today lines include time and stay within ten characters each");
         calendar->grab().save(output+"/collapsed.png");
+
+        const auto tomorrow=QDate::currentDate().addDays(1);
+        auto clickDate=[&](QDate date){
+            const QDate first(date.year(),date.month(),1);
+            const QDate current=calendar->selectedDate();
+            if(current.year()!=date.year() || current.month()!=date.month())calendar->selectDate(first);
+            const int offset=first.dayOfWeek()-1, index=offset+date.day()-1;
+            const int weeks=(offset+date.daysInMonth()+6)/7;
+            const int gridLeft=int(calendar->width()*.34), gridWidth=calendar->width()-gridLeft-16;
+            const QPointF center(gridLeft+(index%7+.5)*gridWidth/7,60+(index/7+.5)*164/weeks);
+            QMouseEvent event(QEvent::MouseButtonPress,center,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+            QApplication::sendEvent(calendar,&event);
+        };
+        clickDate(tomorrow);
+        check(calendar->selectedDate()==tomorrow && summary->text()==tomorrow.toString("d日无待办"),
+              "clicking a date changes the compact summary even with the drawer closed");
+        auto *watcher=calendar->findChild<QFileSystemWatcher *>();
+        if(!watcher)return 1;
+        {
+            // Drop filesystem notifications to exercise the visible-card
+            // fallback, as opposed to the normal watcher test above.
+            const QSignalBlocker missedSignals(watcher);
+            const QString iso=tomorrow.toString(Qt::ISODate);
+            check(sql(QString("INSERT INTO Schedule VALUES('tomorrow','%1','%1','9','45','跨日待办','不重复',0,0,'','');").arg(iso)),
+                  "external calendar commits a task for the selected date");
+            QElapsedTimer sync;sync.start();
+            while(sync.elapsed()<3000 && summary->text()!="09:45 跨日待办")settle(30);
+            check(summary->text()=="09:45 跨日待办" && calendar->height()==270 && sync.elapsed()<3000,
+                  "external task reaches the collapsed selected-date preview within three seconds without a watcher signal");
+            qInfo()<<"Calendar missed-notification refresh in"<<sync.elapsed()<<"ms";
+        }
+        calendar->findChild<QPushButton *>("calendarToday")->click();
+        check(summary->text().split('\n')==preview,"Today brings back today's preview");
+        clickDate(tomorrow);
+        check(summary->text()=="09:45 跨日待办","clicking back to the date immediately shows its loaded task");
+        calendar->grab().save(output+"/selected-date.png");
         drawerBuilds=calendar->materialBuilds();
         summary->click();awaitHeight(520);
         check(calendar->materialBuilds()-drawerBuilds<=1,"expand rebuilds glass at most once");
-        check(calendar->height()==520 && list->isVisible(),"reminder expands the full list at the saved height");
+        check(calendar->height()==520 && list->isVisible() && list->count()==1 && list->item(0)->text().contains("跨日待办"),
+              "reminder expands the selected day's task list at the saved height");
+        check(sql("DELETE FROM Schedule WHERE id='tomorrow';"),"selected-date fixture removed");
+        for(int w=0;w<3000 && calendar->scheduleCount()!=2;w+=50)settle(50);
+        calendar->findChild<QPushButton *>("calendarAll")->click();
 
         const QString oldDate=QDate::currentDate().addDays(-62).toString(Qt::ISODate);
         check(sql(QString("INSERT INTO Schedule VALUES('old','%1','%1','12','0','历史待办','不重复',0,0,'','');").arg(oldDate)),"older one-off fixture written");

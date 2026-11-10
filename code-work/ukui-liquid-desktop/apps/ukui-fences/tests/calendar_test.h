@@ -4,8 +4,11 @@
 #include "CalendarDesklet.h"
 #include <QListWidget>
 #include <QProcess>
+#include <QDialogButtonBox>
+#include <QMessageBox>
+#include <QPlainTextEdit>
 static int runCalendarTest(const QString &root){
-    QSettings settings;settings.setValue("smartSpace/autoStart",false);settings.setValue("systemMonitor/autoStart",false);settings.sync();
+    QSettings settings;settings.setValue("smartSpace/autoStart",false);settings.setValue("systemMonitor/autoStart",false);settings.setValue("desklets/calendar/agendaCollapsed",false);settings.sync();
     const QString database=root+"/config/.kylin_calendar_Schedule2.db";QDir().mkpath(root+"/config");
     auto sql=[&](const QString &statement){return QProcess::execute("/usr/bin/python3",{"-c","import sqlite3,sys; c=sqlite3.connect(sys.argv[1]);c.executescript(sys.argv[2]);c.commit();c.close()",database,statement})==0;};
     check(sql("CREATE TABLE Schedule(id,start_date,end_date,start_hour,start_minute,descript,repeat,isAllDay,isLunar,beginrepeat,endrepeat);"),"isolated native calendar database created");
@@ -57,20 +60,71 @@ static int runCalendarTest(const QString &root){
         calendar->selectDate(QDate::currentDate());settle(500);
         for(auto *widget:canvas.findChildren<LiquidDesklet *>())widget->grab().save(output+"/"+widget->objectName()+".png");
         auto *collapse=calendar->findChild<QPushButton *>("calendarCollapse");
-        calendar->resize(calendar->width(),450);settle(400);const QPoint expandedPos=calendar->pos();
+        calendar->resize(calendar->width(),520);settle(400);const QPoint expandedPos=calendar->pos();
         auto awaitHeight=[&](int target){for(int w=0;w<2000 && (calendar->height()!=target || calendar->drawerRunning());w+=20)settle(20);settle(200);};
         int drawerBuilds=calendar->materialBuilds();
         collapse->click();settle(140);calendar->grab().save(output+"/collapsing.png");
-        check(calendar->drawerRunning() && calendar->height()>270 && calendar->height()<450,"collapse animates like a fence drawer");
-        awaitHeight(270);
+        check(calendar->drawerRunning() && calendar->height()>313 && calendar->height()<520,"collapse animates like a fence drawer");
+        awaitHeight(313);
         check(calendar->materialBuilds()-drawerBuilds<=1,"collapse rebuilds glass at most once");
-        check(calendar->height()==270 && !list->isVisible() && !calendar->findChild<QPushButton *>("calendarAll")->isVisible(),"collapse hides agenda and shrinks card");
-        check(calendar->pos()==expandedPos && calendar->minimumHeight()==270,"collapse preserves position");
+        check(calendar->height()==313 && !list->isVisible() && !calendar->findChild<QPushButton *>("calendarAll")->isVisible(),"collapse hides agenda and shrinks card");
+        check(calendar->pos()==expandedPos && calendar->minimumHeight()==313,"collapse preserves position");
+        auto *summary=calendar->findChild<QPushButton *>("calendarSummary");
+        check(summary && summary->isVisible(),"today reminder stays visible when the agenda is collapsed");
+        if(!summary)return 1;
+        const auto preview=summary->text().split('\n');
+        check(preview.size()==2 && preview[0].startsWith("17:30 ") && preview[1].startsWith("18:00 ") &&
+              preview[0].size()<=10 && preview[1].size()<=10,"two today lines include time and stay within ten characters each");
         calendar->grab().save(output+"/collapsed.png");
         drawerBuilds=calendar->materialBuilds();
-        collapse->click();awaitHeight(450);
+        summary->click();awaitHeight(520);
         check(calendar->materialBuilds()-drawerBuilds<=1,"expand rebuilds glass at most once");
-        check(calendar->height()==450 && list->isVisible(),"expand restores custom expanded height and tasks");
+        check(calendar->height()==520 && list->isVisible(),"reminder expands the full list at the saved height");
+
+        const QString oldDate=QDate::currentDate().addDays(-62).toString(Qt::ISODate);
+        check(sql(QString("INSERT INTO Schedule VALUES('old','%1','%1','12','0','历史待办','不重复',0,0,'','');").arg(oldDate)),"older one-off fixture written");
+        auto selectTask=[&](const QString &name){
+            for(int i=0;i<list->count();++i)if(list->item(i)->text().contains(name)){list->setCurrentRow(i);return true;}
+            return false;
+        };
+        for(int w=0;w<3000 && calendar->scheduleCount()!=3;w+=50)settle(50);
+        auto *complete=calendar->findChild<QPushButton *>("calendarComplete");
+        auto *edit=calendar->findChild<QPushButton *>("calendarEdit");
+        auto *remove=calendar->findChild<QPushButton *>("calendarDelete");
+        check(complete && edit && remove,"expanded agenda exposes the three task actions");
+        if(!complete || !edit || !remove)return 1;
+        check(selectTask("历史待办") && complete->isEnabled(),"old pending tasks can be selected from the expanded list");
+        complete->click();
+        check(list->currentItem() && list->currentItem()->text().contains("已完成") && complete->text()=="恢复","old task can be marked complete");
+        complete->click();
+        check(list->currentItem() && !list->currentItem()->text().contains("已完成"),"completed task can be reopened");
+        complete->click();
+        calendar->grab().save(output+"/expanded-actions.png");
+
+        check(selectTask("系统待办测试"),"original task selected for edit");
+        edit->click();settle(180);
+        auto *editor=calendar->findChild<QDialog *>("calendarEditDialog");
+        check(editor && editor->isVisible(),"editing opens the inline task form");
+        if(!editor)return 1;
+        editor->findChild<QPlainTextEdit *>("calendarEditTitle")->setPlainText("编辑后的待办完整内容");
+        editor->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        for(int w=0;w<3000 && !selectTask("编辑后的待办完整内容");w+=50)settle(50);
+        check(selectTask("编辑后的待办完整内容"),"saving edits refreshes the source task in the agenda");
+        check(selectTask("新增待办"),"second task selected for deletion");
+        auto deleteChoice=[&](QMessageBox::StandardButton choice){
+            remove->click();settle(180);
+            auto *confirm=calendar->findChild<QDialog *>("calendarDeleteDialog");
+            if(!confirm)return false;
+            for(auto *button:confirm->findChildren<QPushButton *>())if(button->property("messageChoice").toInt()==int(choice)){
+                button->click();return true;
+            }
+            return false;
+        };
+        check(deleteChoice(QMessageBox::No),"delete confirmation can be cancelled");settle(450);
+        check(calendar->scheduleCount()==3,"cancel leaves the native task untouched");
+        check(deleteChoice(QMessageBox::Yes),"delete requires explicit confirmation");
+        for(int w=0;w<3000 && calendar->scheduleCount()!=2;w+=50)settle(50);
+        check(calendar->scheduleCount()==2 && !selectTask("新增待办"),"confirmed deletion removes only the selected task");
         auto choose=[&](const QString &buttonName,const QString &menuName,int value){
             QTimer::singleShot(160,calendar,[&,menuName,value]{
                 auto *menu=qobject_cast<QMenu *>(QApplication::activePopupWidget());
@@ -142,11 +196,15 @@ static int runCalendarTest(const QString &root){
         check(avoids,"desktop icons avoid calendar geometry");
         calendar->grab().save(output+"/calendar.png");
         canvas.setCalendarWidgetVisible(false);check(!calendar->isVisible(),"calendar can be hidden through desktop widget menu action");canvas.setCalendarWidgetVisible(true);
-        collapse->click();awaitHeight(270);LiquidDesklet::setAutoStart("calendar",true);calendar->savePlacement();
+        collapse->click();awaitHeight(313);LiquidDesklet::setAutoStart("calendar",true);calendar->savePlacement();
     }
     {DesktopCanvas canvas;canvas.show();settle(1900);auto *calendar=canvas.findChild<CalendarDesklet *>();check(calendar && calendar->isVisible() && calendar->pos()==QPoint(0,0) && calendar->scheduleCount()==2,"calendar restarts with its placement and system tasks");
-        check(calendar && calendar->height()==270 && !calendar->findChild<QListWidget *>("calendarAgenda")->isVisible(),"collapsed state survives restart");
-        if(calendar){calendar->findChild<QPushButton *>("calendarCollapse")->click();for(int w=0;w<2000 && (calendar->height()!=450 || calendar->drawerRunning());w+=20)settle(20);check(calendar->height()==450,"expanded custom height survives restart");}
+        check(calendar && calendar->height()==313 && !calendar->findChild<QListWidget *>("calendarAgenda")->isVisible(),"collapsed state survives restart");
+        if(calendar){calendar->findChild<QPushButton *>("calendarCollapse")->click();for(int w=0;w<2000 && (calendar->height()!=520 || calendar->drawerRunning());w+=20)settle(20);check(calendar->height()==520,"expanded custom height survives restart");
+            auto *items=calendar->findChild<QListWidget *>("calendarAgenda");
+            bool completed=false;
+            for(int i=0;items && i<items->count();++i)if(items->item(i)->text().contains("历史待办"))completed=items->item(i)->text().contains("已完成");
+            check(completed,"completion persists after the desktop card restarts");}
     }
     return failures?1:0;
 }

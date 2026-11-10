@@ -3,6 +3,7 @@
 #include <QDate>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSet>
 class QProcess;
 class QFileSystemWatcher;
 class QListWidget;
@@ -32,6 +33,13 @@ private:
     void updateDateButtons();
     void rewatch();
     void updateList();
+    void updateSummary();
+    void updateActions();
+    QJsonObject selectedItem() const;
+    void toggleComplete();
+    void editSelected();
+    void deleteSelected();
+    void writeItem(const QString &action,const QJsonObject &item,QJsonObject changes={});
     void paintAgendaHeader(QPainter &);
     void openSystemCalendar(QDate date);
     QRect gridRect() const;
@@ -40,12 +48,15 @@ private:
     QJsonObject m_dates;
     QDate m_selected,m_month,m_today;
     QJsonArray m_items;
+    QSet<QString> m_completed;
     QListWidget *m_list=nullptr;
     QPushButton *m_previous=nullptr,*m_next=nullptr,*m_todayButton=nullptr,*m_all=nullptr,*m_open=nullptr;
     QPushButton *m_yearButton=nullptr,*m_monthButton=nullptr,*m_collapse=nullptr;
+    QPushButton *m_summary=nullptr,*m_complete=nullptr,*m_edit=nullptr,*m_delete=nullptr;
     bool m_agendaCollapsed=false;
-    int m_expandedHeight=390;
+    int m_expandedHeight=464;
     QProcess *m_reader;
+    QProcess *m_writer=nullptr;
     QProcess *m_holidaySync=nullptr;
     QFileSystemWatcher *m_watcher;
     QTimer m_debounce,m_dayTimer,m_timeout;

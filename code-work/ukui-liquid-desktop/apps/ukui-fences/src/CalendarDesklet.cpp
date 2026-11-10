@@ -31,8 +31,53 @@
 #include <QWheelEvent>
 #include <QKeyEvent>
 #include <QLocale>
+#include <QDateEdit>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QLabel>
+#include <QPlainTextEdit>
+#include <QSignalBlocker>
+#include <QTextBoundaryFinder>
+#include <QTextDocument>
+#include <algorithm>
 
 namespace {
+constexpr int SummaryTop=229, SummaryHeight=44, AgendaTop=279, FooterHeight=34;
+constexpr int CollapsedHeight=AgendaTop+FooterHeight, ExpandedHeight=464;
+constexpr int ItemRole=Qt::UserRole+1, CompletedRole=Qt::UserRole+2;
+const QString CompletedSetting=QStringLiteral("desklets/calendar/completed");
+
+QString calendarScript(){
+    const QString installed=QCoreApplication::applicationDirPath()+"/calendar_snapshot.py";
+    return QFileInfo::exists(installed)?installed:QString::fromUtf8(UKUI_FENCES_CALENDAR_READER_PATH);
+}
+QDate itemDate(const QJsonObject &item,const QString &key="date"){
+    return QDate::fromString(item.value(key).toString(),Qt::ISODate);
+}
+bool covers(const QJsonObject &item,const QDate &date){
+    return itemDate(item)<=date && itemDate(item,"endDate")>=date;
+}
+QString shortLine(const QString &line,int limit){
+    QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme,line);
+    int keep=0;
+    for(int i=0;i<limit;++i){
+        const int end=finder.toNextBoundary();
+        if(end<0 || end==line.size())return line;
+        if(i+1<limit)keep=end;
+    }
+    return line.left(keep)+QStringLiteral("…");
+}
+QIcon summaryIcon(bool pending,qreal dpr){
+    const QSize size(24,24);
+    QPixmap mark(size*dpr);mark.setDevicePixelRatio(dpr);mark.fill(Qt::transparent);
+    QPainter p(&mark);p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(Qt::NoPen);p.setBrush(pending?QColor("#ffcf78"):QColor("#a1b7c7"));
+    p.drawEllipse(QRectF(1,1,22,22));
+    p.setPen(QPen(QColor("#292014"),2.2,Qt::SolidLine,Qt::RoundCap));
+    p.drawLine(QPointF(12,6),QPointF(12,12));
+    p.drawPoint(QPointF(12,16.5));p.end();
+    return QIcon(mark);
+}
 int pickDateValue(QWidget *,QPushButton *anchor,const QString &name,int current,int minimum,int maximum,const QString &suffix){
     return LiquidWheelPicker::pick(anchor,name,current,minimum,maximum,[suffix](int n){return QString::number(n)+" "+suffix;});
 }
@@ -49,14 +94,15 @@ public:
         QFont f=option.font;f.setPixelSize(10);p->setFont(f);p->setPen(QColor("#b8cbd6"));
         const QRect line=option.rect.adjusted(7,3,-7,-25);
         p->drawText(line,Qt::AlignLeft|Qt::AlignVCenter,QFontMetrics(f).elidedText(lines.value(0),Qt::ElideRight,line.width()));
-        f.setPixelSize(12);p->setFont(f);p->setPen(QColor("#f4f7ff"));
+        const bool done=index.data(CompletedRole).toBool();
+        f.setPixelSize(12);f.setStrikeOut(done);p->setFont(f);p->setPen(done?QColor("#a1b5c1"):QColor("#f4f7ff"));
         const QRect title=option.rect.adjusted(7,22,-7,-3);
         p->drawText(title,Qt::AlignLeft|Qt::AlignVCenter,QFontMetrics(f).elidedText(lines.mid(1).join(" "),Qt::ElideRight,title.width()));p->restore();
     }
 };
 }
 
-CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"calendar","日历 · 系统待办",QSize(400,270)),
+CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"calendar","日历 · 系统待办",QSize(400,CollapsedHeight)),
     m_selected(QDate::currentDate()),m_month(m_selected.year(),m_selected.month(),1),m_today(m_selected),
     m_reader(new QProcess(this)),m_watcher(new QFileSystemWatcher(this)) {
     m_database=QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)+"/.kylin_calendar_Schedule2.db";
@@ -64,10 +110,27 @@ CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"ca
     m_all=button("全部","calendarAll");m_open=button("系统日历","calendarOpen");
     m_yearButton=button("","calendarYear");m_monthButton=button("","calendarMonth");
     m_collapse=button("−","calendarCollapse");
+    m_summary=button("今日待办","calendarSummary");
+    m_summary->setIconSize(QSize(24,24));
+    QFont summaryFont=m_summary->font();summaryFont.setPixelSize(13);summaryFont.setBold(true);m_summary->setFont(summaryFont);
+    m_summary->setAccessibleName("今日待办");
+    m_summary->setStyleSheet(
+        "QPushButton{color:#ffe9c2;text-align:left;padding:0 12px;background:rgba(243,181,82,27);"
+        "border:1px solid rgba(255,205,130,100);border-radius:10px;}"
+        "QPushButton:hover,QPushButton:focus{background:rgba(243,181,82,45);border-color:rgba(255,205,130,180);}"
+        "QPushButton:pressed{background:rgba(243,181,82,62);}");
+    m_complete=button("完成","calendarComplete");m_edit=button("编辑","calendarEdit");m_delete=button("删除","calendarDelete");
+    connect(m_complete,&QPushButton::clicked,this,&CalendarDesklet::toggleComplete);
+    connect(m_edit,&QPushButton::clicked,this,&CalendarDesklet::editSelected);
+    connect(m_delete,&QPushButton::clicked,this,&CalendarDesklet::deleteSelected);
     m_yearButton->setToolTip("选择年份");m_monthButton->setToolTip("选择月份");
     connect(m_yearButton,&QPushButton::clicked,this,&CalendarDesklet::showYearMenu);
     connect(m_monthButton,&QPushButton::clicked,this,&CalendarDesklet::showMonthMenu);
     connect(m_collapse,&QPushButton::clicked,this,[this]{setAgendaCollapsed(!m_agendaCollapsed,true);});
+    connect(m_summary,&QPushButton::clicked,this,[this]{
+        if(m_agendaCollapsed){m_allDates=true;updateList();m_list->scrollToTop();}
+        setAgendaCollapsed(!m_agendaCollapsed,true);
+    });
     m_previous->setToolTip("上个月");m_next->setToolTip("下个月");m_all->setToolTip("显示本月及今天附近的系统待办");
     m_list=new QListWidget(this);m_list->setObjectName("calendarAgenda");m_list->setFrameShape(QFrame::NoFrame);
     m_list->setItemDelegate(new AgendaDelegate(m_list));
@@ -76,9 +139,10 @@ CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"ca
     connect(m_previous,&QPushButton::clicked,this,[this]{selectDate(m_month.addMonths(-1));});
     connect(m_next,&QPushButton::clicked,this,[this]{selectDate(m_month.addMonths(1));});
     connect(m_todayButton,&QPushButton::clicked,this,[this]{selectDate(QDate::currentDate());});
-    connect(m_all,&QPushButton::clicked,this,[this]{m_allDates=true;updateList();update();});
+    connect(m_all,&QPushButton::clicked,this,[this]{m_allDates=true;updateList();m_list->scrollToTop();update();});
     connect(m_open,&QPushButton::clicked,this,[this]{openSystemCalendar(m_selected);});
-    connect(m_list,&QListWidget::itemClicked,this,[this](QListWidgetItem *item){const QDate d=item->data(Qt::UserRole).toDate();if(d.isValid())openSystemCalendar(d);});
+    connect(m_list,&QListWidget::currentItemChanged,this,[this]{updateActions();update();});
+    connect(m_list,&QListWidget::itemActivated,this,[this](QListWidgetItem *item){const QDate d=item->data(Qt::UserRole).toDate();if(d.isValid())openSystemCalendar(d);});
     m_debounce.setSingleShot(true);m_debounce.setInterval(180);connect(&m_debounce,&QTimer::timeout,this,&CalendarDesklet::reload);
     auto changed=[this](const QString &){rewatch();m_debounce.start();};
     connect(m_watcher,&QFileSystemWatcher::fileChanged,this,changed);
@@ -94,20 +158,28 @@ CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"ca
             m_items=document.object()["items"].toArray();m_warning=document.object()["warning"].toString();
             m_dates=document.object()["dates"].toObject();m_calendarWarning=document.object()["calendarWarning"].toString();
         }else m_warning="系统待办读取失败，保留上次内容";
-        rewatch();updateList();if(isVisible())update();
+        rewatch();updateList();updateSummary();if(isVisible())update();
         if(m_again){m_again=false;m_debounce.start();}
     });
-    connect(m_reader,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){if(e==QProcess::FailedToStart){m_timeout.stop();m_warning="无法启动日历读取程序";updateList();update();}});
+    connect(m_reader,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){if(e==QProcess::FailedToStart){m_timeout.stop();m_warning="无法启动日历读取程序";updateList();updateSummary();update();}});
     m_dayTimer.setInterval(60000);connect(&m_dayTimer,&QTimer::timeout,this,[this]{
-        const QDate now=QDate::currentDate();if(now!=m_today){bool followed=m_selected==m_today;m_today=now;if(followed){m_selected=now;m_month=QDate(now.year(),now.month(),1);}reload();updateDateButtons();updateList();update();}
+        const QDate now=QDate::currentDate();if(now!=m_today){bool followed=m_selected==m_today;m_today=now;if(followed){m_selected=now;m_month=QDate(now.year(),now.month(),1);}reload();updateDateButtons();updateList();updateSummary();update();}
     });
     QSettings settings;
-    const bool collapsed=settings.value("desklets/calendar/agendaCollapsed",false).toBool();
-    m_expandedHeight=qBound(390,(collapsed?settings.value("desklets/calendar/expandedHeight",390).toInt():height()),700);
+    const QStringList completed=settings.value(CompletedSetting).toStringList();
+    for(const auto &key:completed)m_completed.insert(key);
+    const bool collapsed=settings.value("desklets/calendar/agendaCollapsed",true).toBool();
+    m_expandedHeight=qBound(ExpandedHeight,(collapsed?settings.value("desklets/calendar/expandedHeight",ExpandedHeight).toInt():height()),700);
     m_agendaCollapsed=collapsed;setAgendaCollapsed(collapsed);
-    updateDateButtons();rewatch();arrangeControls();reload();
+    updateDateButtons();updateSummary();updateActions();rewatch();arrangeControls();reload();
 }
-CalendarDesklet::~CalendarDesklet(){if(m_holidaySync){disconnect(m_holidaySync,nullptr,this,nullptr);m_holidaySync->kill();m_holidaySync->waitForFinished(500);}if(!m_agendaCollapsed)QSettings().setValue("desklets/calendar/expandedHeight",height());if(m_reader->state()!=QProcess::NotRunning){m_reader->kill();m_reader->waitForFinished(500);}}
+CalendarDesklet::~CalendarDesklet(){
+    if(!m_agendaCollapsed)QSettings().setValue("desklets/calendar/expandedHeight",height());
+    for(auto *process:{m_holidaySync,m_reader,m_writer}){
+        if(!process || process->state()==QProcess::NotRunning)continue;
+        disconnect(process,nullptr,this,nullptr);process->kill();process->waitForFinished(500);
+    }
+}
 void CalendarDesklet::rewatch(){
     QStringList wanted;for(const QString &p:{QFileInfo(m_database).absolutePath(),m_database,m_database+"-wal"})if(QFileInfo::exists(p))wanted<<p;
     const auto existing=m_watcher->files()+m_watcher->directories();for(const QString &p:wanted)if(!existing.contains(p))m_watcher->addPath(p);
@@ -116,11 +188,13 @@ void CalendarDesklet::reload(){
     if(m_reader->state()!=QProcess::NotRunning){m_again=true;return;}
     const QDate begin=qMin(m_month,QDate::currentDate().addDays(-30));
     const QDate end=qMax(m_month.addMonths(1).addDays(-1),QDate::currentDate().addDays(90));
-    // Limit expansion for distant navigation; today's tasks are available via Today.
+    // Lunar metadata stays bounded for distant navigation; the reader always
+    // includes today's agenda independently of the month being browsed.
     const bool distant=begin.daysTo(end)>400;
-    QString script=QCoreApplication::applicationDirPath()+"/calendar_snapshot.py";
-    if(!QFileInfo::exists(script))script=QString::fromUtf8(UKUI_FENCES_CALENDAR_READER_PATH);
-    m_reader->start("/usr/bin/python3",{script,"--database",m_database,"--begin",(distant?m_month:begin).toString(Qt::ISODate),"--end",(distant?m_month.addMonths(1).addDays(-1):end).toString(Qt::ISODate)});m_timeout.start();
+    m_reader->start("/usr/bin/python3",{calendarScript(),"--database",m_database,
+        "--begin",(distant?m_month:begin).toString(Qt::ISODate),
+        "--end",(distant?m_month.addMonths(1).addDays(-1):end).toString(Qt::ISODate),
+        "--agenda-today",QDate::currentDate().toString(Qt::ISODate)});m_timeout.start();
 }
 void CalendarDesklet::selectDate(QDate d){if(!d.isValid())return;const bool month=d.month()!=m_month.month() || d.year()!=m_month.year();m_selected=d;m_month=QDate(d.year(),d.month(),1);m_allDates=false;if(month)reload();updateDateButtons();updateList();update();}
 QRect CalendarDesklet::gridRect() const{return QRect(width()*.34,60,width()-int(width()*.34)-16,164);}
@@ -136,36 +210,41 @@ void CalendarDesklet::arrangeControls(){
     m_yearButton->setGeometry(width()/2-92,16,96,25);m_monthButton->setGeometry(width()/2+10,16,66,25);
     m_collapse->setGeometry(width()-44,16,28,25);
     m_todayButton->setGeometry(32,196,66,26);
-    m_all->setGeometry(width()-160,236,48,24);m_open->setGeometry(width()-105,236,89,24);
-    m_list->setGeometry(12,266,width()-24,qMax(0,height()-294));
+    m_summary->setGeometry(16,SummaryTop,width()-32,SummaryHeight);
+    m_all->setGeometry(width()-160,AgendaTop+6,48,24);m_open->setGeometry(width()-105,AgendaTop+6,89,24);
+    const int listTop=AgendaTop+37, actionsTop=height()-60;
+    m_list->setGeometry(12,listTop,width()-24,qMax(0,actionsTop-listTop-3));
+    m_complete->setGeometry(width()-204,actionsTop,66,24);
+    m_edit->setGeometry(width()-130,actionsTop,52,24);
+    m_delete->setGeometry(width()-70,actionsTop,54,24);
 }
 void CalendarDesklet::updateDateButtons(){
     m_yearButton->setText(QString::number(m_month.year())+" 年 ▾");
     m_monthButton->setText(QString::number(m_month.month())+" 月 ▾");
 }
 void CalendarDesklet::setAgendaCollapsed(bool collapsed, bool animate){
-    constexpr int shutHeight=270;
-    if(collapsed && !m_agendaCollapsed && !drawerRunning())m_expandedHeight=qBound(390,height(),700);
+    if(collapsed && !m_agendaCollapsed && !drawerRunning())m_expandedHeight=qBound(ExpandedHeight,height(),700);
     m_agendaCollapsed=collapsed;
     m_collapse->setText(collapsed?"＋":"−");
     m_collapse->setToolTip(collapsed?"展开系统待办":"收起系统待办");m_collapse->setAccessibleName(m_collapse->toolTip());
     QSettings settings;settings.setValue("desklets/calendar/agendaCollapsed",collapsed);
     settings.setValue("desklets/calendar/expandedHeight",m_expandedHeight);settings.sync();
-    const QWidgetList agenda={m_list,m_all,m_open};
+    m_summary->setToolTip(collapsed?"展开待办 · 选择事项后可完成、编辑或删除":"收起待办");
+    const QWidgetList agenda={m_list,m_all,m_open,m_complete,m_edit,m_delete};
     auto settle=[this,collapsed,agenda]{
         // Keep a separate expanded height so repeated toggles and restarts restore it.
-        setMinimumHeight(collapsed?shutHeight:390);setMaximumHeight(collapsed?shutHeight:700);
+        setMinimumHeight(collapsed?CollapsedHeight:ExpandedHeight);setMaximumHeight(collapsed?CollapsedHeight:700);
         for(QWidget *w:agenda)w->setVisible(!collapsed);
         savePlacement();
     };
     if(!animate || !isVisible()){
-        setMinimumHeight(collapsed?shutHeight:390);setMaximumHeight(collapsed?shutHeight:700);
-        resize(width(),collapsed?shutHeight:m_expandedHeight);
+        setMinimumHeight(collapsed?CollapsedHeight:ExpandedHeight);setMaximumHeight(collapsed?CollapsedHeight:700);
+        resize(width(),collapsed?CollapsedHeight:m_expandedHeight);
         move(x(),qBound(0,y(),qMax(0,m_canvas->height()-height())));
         settle();arrangeControls();update();return;
     }
     // The agenda slides like a fence drawer under the month grid.
-    runDrawer(!collapsed,shutHeight,m_expandedHeight,228,34,agenda,settle);
+    runDrawer(!collapsed,CollapsedHeight,m_expandedHeight,AgendaTop,FooterHeight,agenda,settle);
 }
 void CalendarDesklet::showMonthMenu(){
     const int month=pickDateValue(this,m_monthButton,"calendarMonth",m_month.month(),1,12,"月");
@@ -180,14 +259,178 @@ void CalendarDesklet::showYearMenu(){
     selectDate(QDate(month.year(),month.month(),qMin(m_selected.day(),month.daysInMonth())));
 }
 void CalendarDesklet::updateList(){
-    if(!m_list)return;const int scroll=m_list->verticalScrollBar()->value();m_list->clear();
-    for(const auto &value:m_items){const auto o=value.toObject();const QDate date=QDate::fromString(o["date"].toString(),Qt::ISODate),end=QDate::fromString(o["endDate"].toString(),Qt::ISODate);
-        if(!m_allDates && (date>m_selected || end<m_selected))continue;
-        QString prefix=date.toString("MM-dd")+"  "+o["time"].toString();if(end<QDate::currentDate())prefix+=" · 已过日期";
-        auto *item=new QListWidgetItem(prefix+"\n"+o["title"].toString(),m_list);item->setData(Qt::UserRole,m_allDates?date:m_selected);item->setToolTip(o["title"].toString()+"\n点击在系统日历查看/编辑");
+    if(!m_list)return;
+    const QString selected=selectedItem().value("id").toString();
+    const int scroll=m_list->verticalScrollBar()->value();
+    const QSignalBlocker block(m_list);
+    m_list->clear();
+    QVector<QJsonObject> visible;
+    for(const auto &value:m_items){
+        const auto item=value.toObject();
+        if(m_allDates || covers(item,m_selected))visible.append(item);
     }
-    if(m_list->count()==0){auto *item=new QListWidgetItem(m_warning.isEmpty()?"这一天没有系统待办":m_warning,m_list);item->setFlags(Qt::NoItemFlags);}
+    auto group=[this](const QJsonObject &item){
+        if(m_completed.contains(item.value("completionKey").toString()))return 3;
+        if(covers(item,m_today))return 0;
+        return itemDate(item,"endDate")<m_today?1:2;
+    };
+    std::stable_sort(visible.begin(),visible.end(),[&](const QJsonObject &a,const QJsonObject &b){
+        const int ga=group(a),gb=group(b);
+        if(ga!=gb)return ga<gb;
+        if(ga==1 || ga==3)return itemDate(a)>itemDate(b);
+        return false;
+    });
+    for(const auto &o:visible){
+        const QDate date=itemDate(o);
+        const bool done=group(o)==3;
+        QString prefix=date.toString("MM-dd")+"  "+o.value("time").toString();
+        if(done)prefix+=" · 已完成";
+        else if(itemDate(o,"endDate")<m_today)prefix+=" · 已过日期";
+        auto *item=new QListWidgetItem(prefix+"\n"+o.value("title").toString(),m_list);
+        item->setData(Qt::UserRole,m_allDates?date:m_selected);
+        item->setData(ItemRole,o);item->setData(CompletedRole,done);
+        item->setToolTip(Qt::convertFromPlainText(o.value("title").toString()+"\n单击选中 · 双击在系统日历查看"));
+        if(o.value("id").toString()==selected)m_list->setCurrentItem(item);
+    }
+    if(m_list->count()==0){
+        auto *item=new QListWidgetItem(m_warning.isEmpty()?(m_allDates?"暂无系统待办":"这一天没有系统待办"):m_warning,m_list);
+        item->setFlags(Qt::NoItemFlags);
+    }
     m_list->verticalScrollBar()->setValue(scroll);
+    updateActions();
+}
+void CalendarDesklet::updateSummary(){
+    QStringList lines;
+    bool anyToday=false;
+    for(const auto &value:m_items){
+        const auto item=value.toObject();
+        if(!covers(item,m_today))continue;
+        anyToday=true;
+        if(m_completed.contains(item.value("completionKey").toString()))continue;
+        const QString title=item.value("title").toString().simplified();
+        lines.append(shortLine(item.value("time").toString()+" "+(title.isEmpty()?"未命名":title),10));
+        if(lines.size()==2)break;
+    }
+    const bool pending=!lines.isEmpty();
+    if(!pending)lines.append(anyToday?"今日已完成":m_warning.isEmpty()?"今日无待办":"待办请展开");
+    m_summary->setText(lines.join('\n'));
+    m_summary->setAccessibleDescription(m_summary->text());
+    m_summary->setIcon(summaryIcon(pending,devicePixelRatioF()));
+}
+QJsonObject CalendarDesklet::selectedItem() const{
+    auto *item=m_list?m_list->currentItem():nullptr;
+    return item?item->data(ItemRole).toJsonObject():QJsonObject{};
+}
+void CalendarDesklet::updateActions(){
+    const auto item=selectedItem();
+    const QString key=item.value("completionKey").toString();
+    const bool enabled=!m_writer && !key.isEmpty();
+    const bool series=item.value("series").toBool();
+    m_complete->setText(m_completed.contains(key)?"恢复":"完成");
+    m_complete->setToolTip("完成状态保存在桌面待办");
+    m_edit->setToolTip(series?"编辑整组重复事项":"编辑所选事项");
+    m_delete->setToolTip(series?"删除整组重复事项":"从系统日历删除所选事项");
+    m_complete->setEnabled(enabled);m_edit->setEnabled(enabled);m_delete->setEnabled(enabled);
+}
+void CalendarDesklet::toggleComplete(){
+    const QString key=selectedItem().value("completionKey").toString();
+    if(key.isEmpty() || m_writer)return;
+    if(!m_completed.remove(key))m_completed.insert(key);
+    QStringList completed=m_completed.values();completed.sort();
+    QSettings settings;settings.setValue(CompletedSetting,completed);settings.sync();
+    if(settings.status()!=QSettings::NoError){
+        if(!m_completed.remove(key))m_completed.insert(key);
+        LiquidDialog::warning(this,"待办","暂时无法保存完成状态，请稍后重试。");
+        return;
+    }
+    updateList();updateSummary();update();
+}
+void CalendarDesklet::editSelected(){
+    const auto item=selectedItem();
+    if(item.isEmpty() || m_writer)return;
+    const auto clock=item.value("editableTime").toObject();
+    const bool series=item.value("series").toBool(),allDay=item.value("allDay").toBool();
+    auto *dialog=new LiquidDialog::Dialog(this);
+    dialog->setObjectName("calendarEditDialog");dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(series?"编辑重复待办":"编辑待办");dialog->setMinimumWidth(390);
+    auto *form=new QFormLayout(dialog);form->setContentsMargins(20,16,20,16);
+    auto *title=new QPlainTextEdit(item.value("title").toString(),dialog);
+    title->setObjectName("calendarEditTitle");title->setFixedHeight(82);
+    form->addRow("事项",title);
+    QDateEdit *date=nullptr;
+    QTimeEdit *start=nullptr,*end=nullptr;
+    if(!clock.isEmpty()){
+        date=new QDateEdit(QDate::fromString(clock.value("date").toString(),Qt::ISODate),dialog);
+        date->setObjectName("calendarEditDate");date->setDisplayFormat("yyyy-MM-dd");date->setCalendarPopup(true);
+        form->addRow("日期",date);
+        if(!allDay){
+            start=new QTimeEdit(QTime::fromString(clock.value("start").toString(),"HH:mm"),dialog);
+            end=new QTimeEdit(QTime::fromString(clock.value("end").toString(),"HH:mm"),dialog);
+            start->setObjectName("calendarEditStart");end->setObjectName("calendarEditEnd");
+            start->setDisplayFormat("HH:mm");end->setDisplayFormat("HH:mm");
+            form->addRow("开始",start);form->addRow("结束",end);
+        }
+    }else{
+        auto *note=new QLabel(series?"内容会更新整组重复事项。时间和重复规则请在系统日历调整。":"此事项的日期和时间请在系统日历调整。",dialog);
+        note->setWordWrap(true);form->addRow(note);
+    }
+    auto *error=new QLabel(dialog);error->setWordWrap(true);error->hide();form->addRow(error);
+    auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText("保存");buttons->button(QDialogButtonBox::Cancel)->setText("取消");
+    form->addRow(buttons);
+    connect(buttons,&QDialogButtonBox::rejected,dialog,&QDialog::reject);
+    connect(buttons,&QDialogButtonBox::accepted,dialog,[=]{
+        QString message;
+        if(title->toPlainText().trimmed().isEmpty())message="请填写事项内容。";
+        else if(start && end->time()<start->time())message="结束时间不能早于开始时间。";
+        if(!message.isEmpty()){error->setText(message);error->show();return;}
+        dialog->accept();
+    });
+    connect(dialog,&QDialog::accepted,this,[=]{
+        QJsonObject changes{{"title",title->toPlainText().trimmed()}};
+        if(date)changes["date"]=date->date().toString(Qt::ISODate);
+        if(start){changes["start"]=start->time().toString("HH:mm");changes["end"]=end->time().toString("HH:mm");}
+        writeItem("edit",item,changes);
+    });
+    title->setFocus();dialog->open();
+}
+void CalendarDesklet::deleteSelected(){
+    const auto item=selectedItem();
+    if(item.isEmpty() || m_writer)return;
+    const bool series=item.value("series").toBool();
+    const QString title=shortLine(item.value("title").toString().simplified(),100);
+    auto *dialog=LiquidDialog::createMessage(this,series?"删除整组重复待办？":"删除待办？",
+        item.value("date").toString()+" "+item.value("time").toString()+"\n"+title+"\n\n"+
+        (series?"这会从系统日历删除整组重复事项。":"这会从系统日历删除该事项。"),
+        QMessageBox::Warning,QMessageBox::Yes|QMessageBox::No,QMessageBox::No);
+    dialog->setObjectName("calendarDeleteDialog");dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog,&QDialog::finished,this,[this,item](int result){if(result==QMessageBox::Yes)writeItem("delete",item);});
+    dialog->open();
+}
+void CalendarDesklet::writeItem(const QString &action,const QJsonObject &item,QJsonObject changes){
+    if(m_writer)return;
+    changes["action"]=action;changes["id"]=item.value("sourceId");changes["version"]=item.value("version");
+    const QByteArray payload=QJsonDocument(changes).toJson(QJsonDocument::Compact);
+    auto *process=new QProcess(this);m_writer=process;updateActions();
+    auto *timeout=new QTimer(process);timeout->setSingleShot(true);
+    connect(timeout,&QTimer::timeout,process,&QProcess::kill);
+    auto finish=[this,process,timeout](bool ok){
+        if(m_writer!=process)return;
+        timeout->stop();m_writer=nullptr;
+        const auto reply=QJsonDocument::fromJson(process->readAllStandardOutput());
+        if(!ok || !reply.isObject()){
+            const QString detail=reply.object().value("error").toString();
+            auto *notice=LiquidDialog::createMessage(this,"待办保存失败",
+                detail.isEmpty()?"暂时无法保存，请稍后重试。":detail,QMessageBox::Warning);
+            notice->setAttribute(Qt::WA_DeleteOnClose);notice->open();
+        }
+        process->deleteLater();updateActions();rewatch();reload();
+    };
+    connect(process,&QProcess::started,this,[process,payload]{process->write(payload);process->closeWriteChannel();});
+    connect(process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[finish](int code,QProcess::ExitStatus status){finish(code==0 && status==QProcess::NormalExit);});
+    connect(process,&QProcess::errorOccurred,this,[finish](QProcess::ProcessError error){if(error==QProcess::FailedToStart)finish(false);});
+    process->start("/usr/bin/python3",{calendarScript(),"--database",m_database,"--mutate"});
+    timeout->start(3000);
 }
 void CalendarDesklet::paintContent(QPainter &p){
     if(!m_list)return;const QColor ink=inkColor(),muted=mutedColor(),accent("#9ae8db");
@@ -211,19 +454,20 @@ void CalendarDesklet::paintContent(QPainter &p){
             const bool off=info["off"].toBool();
             text(p,QRectF(cell.right()-9,cell.top(),10,11),off?"休":"班",8,off?QColor("#ffb6a9"):QColor("#f3d39a"));
         }
-        bool marked=false;for(const auto &v:m_items){auto o=v.toObject();if(date>=QDate::fromString(o["date"].toString(),Qt::ISODate) && date<=QDate::fromString(o["endDate"].toString(),Qt::ISODate)){marked=true;break;}}
+        bool marked=false;for(const auto &v:m_items){const auto o=v.toObject();if(covers(o,date) && !m_completed.contains(o.value("completionKey").toString())){marked=true;break;}}
         if(marked){p.setPen(Qt::NoPen);p.setBrush(accent);p.drawEllipse(QPointF(cell.left()+3,cell.top()+8),1.4,1.4);}
     }
     if(!m_agendaCollapsed && !drawerCapturing())paintAgendaHeader(p);
-    QString footer=m_agendaCollapsed?"休：放假  班：调休上班":"休：放假  班：调休上班 · 点击事项查看";
+    QString footer="休：放假  班：调休上班";
     if(!selected.isEmpty() && !selected["scheduleKnown"].toBool())footer=QString::number(m_selected.year())+" 年放假调休数据尚未收录";
     if(!m_calendarWarning.isEmpty())footer=m_calendarWarning;
     if(!m_warning.isEmpty())footer=m_warning;
     text(p,QRectF(16,height()-25,width()-32,18),footer,10,muted,false,Qt::AlignLeft|Qt::AlignVCenter);
 }
 void CalendarDesklet::paintAgendaHeader(QPainter &p){
-    p.setPen(QColor(230,245,250,35));p.drawLine(16,230,width()-16,230);
-    text(p,QRectF(18,236,width()-184,24),m_allDates?QString("系统待办 · %1 项").arg(m_items.size()):m_selected.toString("M月d日 · 待办"),12,inkColor(),true,Qt::AlignLeft|Qt::AlignVCenter);
+    p.setPen(QColor(230,245,250,35));p.drawLine(16,AgendaTop,width()-16,AgendaTop);
+    text(p,QRectF(18,AgendaTop+6,width()-184,24),m_allDates?QString("系统待办 · %1 项").arg(m_items.size()):m_selected.toString("M月d日 · 待办"),12,inkColor(),true,Qt::AlignLeft|Qt::AlignVCenter);
+    text(p,QRectF(18,height()-60,width()-232,24),m_writer?"正在保存…":"选择事项后操作",10,mutedColor(),false,Qt::AlignLeft|Qt::AlignVCenter);
 }
 void CalendarDesklet::paintDrawerContent(QPainter &p){paintAgendaHeader(p);}
 void CalendarDesklet::mousePressEvent(QMouseEvent *e){if(e->button()==Qt::LeftButton){for(int d=1;d<=m_month.daysInMonth();++d)if(dateCell(d).contains(e->pos())){selectDate(QDate(m_month.year(),m_month.month(),d));e->accept();return;}}LiquidDesklet::mousePressEvent(e);}

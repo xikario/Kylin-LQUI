@@ -525,9 +525,9 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
         }
     } else if(id=="calendar") {
         auto *c=card(layout,"待办与节假日");
-        auto *collapsed=new QCheckBox("折叠待办列表",page);collapsed->setChecked(QSettings().value("desklets/calendar/agendaCollapsed",false).toBool());c->addWidget(collapsed);
+        auto *collapsed=new QCheckBox("折叠待办列表",page);collapsed->setChecked(QSettings().value("desklets/calendar/agendaCollapsed",true).toBool());c->addWidget(collapsed);
         connect(collapsed,&QCheckBox::toggled,page,[this](bool on){if(m_canvas->m_calendarWidget)m_canvas->m_calendarWidget->setAgendaCollapsed(on,true);else QSettings().setValue("desklets/calendar/agendaCollapsed",on);});
-        hint(c,"农历和已发布的中国节假日按本地数据展示，系统待办只读。同步需要启用日历组件。");
+        hint(c,"点击日历下方的「！」可管理系统待办。完成状态保存在桌面；农历和已发布的节假日可手动同步。");
         auto *b=button(c,"同步最新农历和节假日",[this]{if(m_canvas->m_calendarWidget)m_canvas->m_calendarWidget->syncCalendarData();});b->setEnabled(m_canvas->calendarWidgetVisible());
     } else if(id=="activity") {
         auto *c=card(layout,"应用时长记录");auto *recording=new QCheckBox("记录前台应用时间",page);c->addWidget(recording);

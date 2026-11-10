@@ -28,6 +28,61 @@ class CalendarTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db=Path(tmp)/'absent.db';r=m.read_snapshot(db,dt.date.today(),dt.date.today())
             self.assertEqual(r['items'],[]);self.assertFalse(db.exists())
+            with self.assertRaises(sqlite3.OperationalError):
+                m.mutate_schedule(db, {'action':'delete','id':'missing','version':'stale'})
+            self.assertFalse(db.exists())
+
+    def test_edit_and_delete_use_the_exact_versioned_native_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db=Path(tmp)/'calendar.db'
+            row=dict(id='chosen', start_date='2026-09-08', end_date='2026-09-08',
+                     start_day='8',start_month='9',end_day='0',end_month='0',
+                     start_hour='9',start_minute='0',end_hour='10',end_minute='0',
+                     beginDateTime='2026-09-08T00:00:00',endDateTime='2026-09-08T00:00:00',
+                     descript='原始内容',repeat='不重复',isAllDay=0,isLunar=0,remind='日程发生时')
+            columns=','.join(row)
+            with sqlite3.connect(db) as conn:
+                conn.execute('CREATE TABLE Schedule ('+columns+')')
+                stmt='INSERT INTO Schedule VALUES ('+','.join('?' for _ in row)+')'
+                conn.execute(stmt,tuple(row.values()))
+                conn.execute(stmt,tuple(dict(row,id='neighbor').values()))
+            today=dt.date(2026,11,10)
+            def item():
+                return next(i for i in m.read_snapshot(db,today,today,today)['items'] if i['sourceId']=='chosen')
+            before=item()
+            request=dict(action='edit',id='chosen',version=before['version'],title='完整事项\n保留换行',
+                         date='2026-11-11',start='14:30',end='13:00')
+            with self.assertRaisesRegex(ValueError,'结束时间'):
+                m.mutate_schedule(db,request)
+            self.assertEqual(item()['version'],before['version'])
+            m.mutate_schedule(db,dict(request,end='15:00'))
+            after=item()
+            self.assertEqual((after['date'],after['time'],after['title']),('2026-11-11','14:30','完整事项\n保留换行'))
+            self.assertEqual(after['completionKey'],before['completionKey'])
+            with sqlite3.connect(db) as conn:
+                self.assertEqual(conn.execute("SELECT beginDateTime,endDateTime,start_day,start_month,end_day,remind FROM Schedule WHERE id='chosen'").fetchone(),
+                                 ('2026-11-11T00:00:00','2026-11-11T00:00:00','11','11','0','日程发生时'))
+            delete=dict(action='delete',id='chosen',version=before['version'])
+            with self.assertRaisesRegex(ValueError,'已变化'):
+                m.mutate_schedule(db,delete)
+            m.mutate_schedule(db,dict(delete,version=after['version']))
+            with sqlite3.connect(db) as conn:
+                self.assertEqual(conn.execute('SELECT * FROM Schedule').fetchall(),[tuple(dict(row,id='neighbor').values())])
+
+    def test_today_recurring_occurrences_survive_distant_month_navigation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db=Path(tmp)/'calendar.db'
+            with sqlite3.connect(db) as conn:
+                conn.execute('CREATE TABLE Schedule(id,start_date,end_date,start_hour,start_minute,descript,repeat,isAllDay,isLunar,beginrepeat)')
+                conn.execute("INSERT INTO Schedule VALUES('r','2026-11-01','2026-11-01','9','30','每日','每天',0,0,'无限重复')")
+            today=dt.date(2026,11,10)
+            distant=dt.date(2028,5,1)
+            items=m.read_snapshot(db,distant,distant,today)['items']
+            dates={item['date']:item for item in items}
+            self.assertEqual(dates[str(today)]['time'],'09:30')
+            self.assertIn(str(distant),dates)
+            self.assertNotEqual(dates[str(today)]['completionKey'],dates[str(distant)]['completionKey'])
+            self.assertFalse(dates[str(today)]['editableTime'])
 class ChineseCalendarTests(unittest.TestCase):
     def test_lunar_festivals_leap_month_and_year_boundary(self):
         from chinese_calendar import LunarCalendar

@@ -512,7 +512,7 @@ void CalendarDesklet::writeItem(const QString &action,const QJsonObject &item,QJ
     timeout->start(3000);
 }
 void CalendarDesklet::paintContent(QPainter &p){
-    if(!m_list)return;const QColor ink=inkColor(),muted=mutedColor(),accent("#9ae8db");
+    if(!m_list)return;const QColor ink=inkColor(),muted=mutedColor(),accent("#9ae8db"),pendingColor("#ffcf78");
     text(p,QRectF(12,66,width()*.29,55),QString::number(m_selected.day()),42,ink,true);
     text(p,QRectF(12,120,width()*.29,22),QLocale(QLocale::Chinese).dayName(m_selected.dayOfWeek(),QLocale::LongFormat),12,muted);
     const auto selected=m_dates.value(m_selected.toString(Qt::ISODate)).toObject();
@@ -533,8 +533,18 @@ void CalendarDesklet::paintContent(QPainter &p){
             const bool off=info["off"].toBool();
             text(p,QRectF(cell.right()-9,cell.top(),10,11),off?"休":"班",8,off?QColor("#ffb6a9"):QColor("#f3d39a"));
         }
-        bool marked=false;for(const auto &v:m_items){const auto o=v.toObject();if(covers(o,date) && !m_completed.contains(o.value("completionKey").toString())){marked=true;break;}}
-        if(marked){p.setPen(Qt::NoPen);p.setBrush(accent);p.drawEllipse(QPointF(cell.left()+3,cell.top()+8),1.4,1.4);}
+        bool hasTask=false,hasPending=false;
+        for(const auto &value:m_items){
+            const auto item=value.toObject();
+            if(!covers(item,date))continue;
+            hasTask=true;
+            if(!m_completed.contains(item.value("completionKey").toString())){hasPending=true;break;}
+        }
+        if(hasTask){
+            const qreal radius=hasPending?1.9:1.4;
+            p.setPen(Qt::NoPen);p.setBrush(hasPending?pendingColor:accent);
+            p.drawEllipse(QPointF(cell.left()+3,cell.top()+8),radius,radius);
+        }
     }
     if(!m_agendaCollapsed && !drawerCapturing())paintAgendaHeader(p);
     const int footerSplit=m_summary->x();

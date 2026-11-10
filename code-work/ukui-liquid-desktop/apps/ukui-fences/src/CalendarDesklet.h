@@ -34,6 +34,8 @@ private:
     void rewatch();
     void updateList();
     void updateSummary();
+    void updateSummaryToolTip();
+    QString agendaStatus() const;
     void updateActions();
     QJsonObject selectedItem() const;
     void toggleComplete();

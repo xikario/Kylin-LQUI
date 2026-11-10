@@ -64,13 +64,15 @@ static int runCalendarTest(const QString &root){
         auto awaitHeight=[&](int target){for(int w=0;w<2000 && (calendar->height()!=target || calendar->drawerRunning());w+=20)settle(20);settle(200);};
         int drawerBuilds=calendar->materialBuilds();
         collapse->click();settle(140);calendar->grab().save(output+"/collapsing.png");
-        check(calendar->drawerRunning() && calendar->height()>313 && calendar->height()<520,"collapse animates like a fence drawer");
-        awaitHeight(313);
+        check(calendar->drawerRunning() && calendar->height()>270 && calendar->height()<520,"collapse animates like a fence drawer");
+        awaitHeight(270);
         check(calendar->materialBuilds()-drawerBuilds<=1,"collapse rebuilds glass at most once");
-        check(calendar->height()==313 && !list->isVisible() && !calendar->findChild<QPushButton *>("calendarAll")->isVisible(),"collapse hides agenda and shrinks card");
-        check(calendar->pos()==expandedPos && calendar->minimumHeight()==313,"collapse preserves position");
+        check(calendar->height()==270 && !list->isVisible() && !calendar->findChild<QPushButton *>("calendarAll")->isVisible(),"collapse hides agenda and shrinks card");
+        check(calendar->pos()==expandedPos && calendar->minimumHeight()==270,"collapse preserves position");
         auto *summary=calendar->findChild<QPushButton *>("calendarSummary");
-        check(summary && summary->isVisible(),"today reminder stays visible when the agenda is collapsed");
+        check(summary && summary->isVisible() && summary->x()>calendar->width()/3 &&
+              summary->y()>224 && calendar->rect().contains(summary->geometry()),
+              "compact reminder fits below the grid on the right without growing the card");
         if(!summary)return 1;
         const auto preview=summary->text().split('\n');
         check(preview.size()==2 && preview[0].startsWith("17:30 ") && preview[1].startsWith("18:00 ") &&
@@ -196,10 +198,10 @@ static int runCalendarTest(const QString &root){
         check(avoids,"desktop icons avoid calendar geometry");
         calendar->grab().save(output+"/calendar.png");
         canvas.setCalendarWidgetVisible(false);check(!calendar->isVisible(),"calendar can be hidden through desktop widget menu action");canvas.setCalendarWidgetVisible(true);
-        collapse->click();awaitHeight(313);LiquidDesklet::setAutoStart("calendar",true);calendar->savePlacement();
+        collapse->click();awaitHeight(270);LiquidDesklet::setAutoStart("calendar",true);calendar->savePlacement();
     }
     {DesktopCanvas canvas;canvas.show();settle(1900);auto *calendar=canvas.findChild<CalendarDesklet *>();check(calendar && calendar->isVisible() && calendar->pos()==QPoint(0,0) && calendar->scheduleCount()==2,"calendar restarts with its placement and system tasks");
-        check(calendar && calendar->height()==313 && !calendar->findChild<QListWidget *>("calendarAgenda")->isVisible(),"collapsed state survives restart");
+        check(calendar && calendar->height()==270 && !calendar->findChild<QListWidget *>("calendarAgenda")->isVisible(),"collapsed state survives restart");
         if(calendar){calendar->findChild<QPushButton *>("calendarCollapse")->click();for(int w=0;w<2000 && (calendar->height()!=520 || calendar->drawerRunning());w+=20)settle(20);check(calendar->height()==520,"expanded custom height survives restart");
             auto *items=calendar->findChild<QListWidget *>("calendarAgenda");
             bool completed=false;

@@ -3,7 +3,9 @@
 import argparse
 import datetime as dt
 import hashlib
+import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import sqlite3
@@ -17,6 +19,8 @@ def day(value):
 
 NON_REPEATING = ('', '不重复', '不重複', 'No repeat', 'Never')
 WORK_TODO_PREFIX = re.compile(r'^【工作待办】#([0-9]+)(?=\s|$)')
+WORK_TODO_STATES = {'published', 'accepted', 'in_progress', 'pending_review',
+                    'done', 'rejected', 'cancelled'}
 TIME_COLUMNS = {'start_day', 'start_month', 'end_day', 'end_month', 'start_hour',
                 'start_minute', 'end_hour', 'end_minute', 'beginDateTime', 'endDateTime'}
 
@@ -105,7 +109,7 @@ def read_snapshot(path, begin, end, agenda_today=None):
                                   'completionKey':native_key}
                     if work_task:
                         item['completionKey']=json.dumps(['work-todo',work_task[1]],separators=(',', ':'))
-                        item['legacyCompletionKey']=native_key
+                        item['workTaskId']=work_task[1]
                     items.append(item)
             except (KeyError,ValueError,TypeError,OverflowError):
                 warnings.add('部分日程格式异常，请在系统日历查看')
@@ -156,10 +160,75 @@ def mutate_schedule(path, request):
         conn.execute(f'UPDATE Schedule SET {assignments} WHERE id=?', (*changes.values(), request['id']))
 
 
+def work_todo_client():
+    override = os.environ.get('UKUI_FENCES_WORK_TODO_CLIENT')
+    candidates = [Path(override)] if override else [
+        Path.home()/location/'skills/work-todo-midplatform/scripts/work_todo.py'
+        for location in ('.gemini/config', '.kylinbot/workspace')
+    ]
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
+        raise FileNotFoundError('work-todo client')
+    spec = importlib.util.spec_from_file_location('fences_work_todo_client', path)
+    client = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(client)
+    return client
+
+
+def work_todo_request(client, task_id=None, note=''):
+    conf = client.load_conf()
+
+    def read_states():
+        tasks = client.api(conf, 'GET', '/api/tasks', params={'mine': 'true', 'archived': 'include'})
+        if not isinstance(tasks, list):
+            raise ValueError('invalid work-todo response')
+        return {str(task['id']): task['status'] for task in tasks
+                if isinstance(task, dict) and str(task.get('id', '')).isdigit()
+                and isinstance(task.get('status'), str) and task['status'] in WORK_TODO_STATES}
+
+    states = read_states()
+    if task_id is None:
+        return {'statuses': states}
+    # Verify current ownership and state. A task already awaiting review or
+    # accepted as done is never submitted twice, even from a stale calendar.
+    if states.get(task_id) in ('pending_review', 'done'):
+        return {'statuses': states}
+    if states.get(task_id) not in ('accepted', 'in_progress'):
+        return {'statuses': states, 'error': '这条待办当前不能提交审核，请核对中台状态。'}
+    if not note.strip() or len(note)>2000:
+        return {'statuses': states, 'error': '请填写 1～2000 字的验收说明。'}
+    result = client.api(conf, 'POST', '/api/tasks/%d/submit' % int(task_id),
+                        {'type': 'result', 'content': note.strip(), 'progress_pct': 100})
+    status = result.get('status') if isinstance(result, dict) else None
+    if isinstance(status, str) and status in WORK_TODO_STATES:
+        states[task_id] = status
+    else:
+        states = read_states()
+    reply = {'statuses': states}
+    if states.get(task_id) not in ('pending_review', 'done'):
+        reply['error'] = '中台尚未确认提交，请稍后核对状态。'
+    return reply
+
+
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--database',required=True);parser.add_argument('--begin');parser.add_argument('--end')
+    parser=argparse.ArgumentParser();parser.add_argument('--database');parser.add_argument('--begin');parser.add_argument('--end')
     parser.add_argument('--agenda-today');parser.add_argument('--mutate',action='store_true')
+    work=parser.add_mutually_exclusive_group()
+    work.add_argument('--work-status',action='store_true');work.add_argument('--work-submit')
     args=parser.parse_args()
+    if args.work_status or args.work_submit is not None:
+        try:
+            task_id=args.work_submit
+            if task_id is not None and not re.fullmatch(r'[0-9]{1,18}',task_id):
+                raise ValueError('invalid work-todo id')
+            result=work_todo_request(work_todo_client(),task_id,sys.stdin.read(4096) if task_id is not None else '')
+        except FileNotFoundError:
+            result={'error':'未找到本机工作待办连接。'}
+        except (Exception,SystemExit):
+            result={'error':'中台未确认提交，请核对最新状态。' if args.work_submit is not None else '暂时无法刷新中台状态，显示上次结果。'}
+        print(json.dumps(result,ensure_ascii=False));raise SystemExit(1 if result.get('error') else 0)
+    if not args.database:
+        parser.error('--database is required for calendar operations')
     if args.mutate:
         try:
             mutate_schedule(args.database,json.load(sys.stdin))

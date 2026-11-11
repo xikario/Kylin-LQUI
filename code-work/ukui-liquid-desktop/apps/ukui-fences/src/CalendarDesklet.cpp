@@ -49,6 +49,21 @@ constexpr int SummaryTop=234, SummaryHeight=28, AgendaTop=269, FooterHeight=34;
 const QSize SummaryIconSize(12,14);
 constexpr int ItemRole=Qt::UserRole+1, CompletedRole=Qt::UserRole+2;
 const QString CompletedSetting=QStringLiteral("desklets/calendar/completed");
+const QString WorkAgendaSetting=QStringLiteral("desklets/calendar/workAgenda");
+
+QString workStatusLabel(const QString &status){
+    if(status=="published")return "待接收";
+    if(status=="accepted")return "已接收";
+    if(status=="in_progress")return "进行中";
+    if(status=="pending_review")return "待审核";
+    if(status=="done")return "已完成";
+    if(status=="rejected")return "已拒绝";
+    if(status=="cancelled")return "已取消";
+    return "中台状态未确认";
+}
+bool canSubmitWork(const QString &status){
+    return status=="accepted" || status=="in_progress";
+}
 
 bool saveCompleted(const QSet<QString> &keys){
     QStringList completed=keys.values();completed.sort();
@@ -185,14 +200,15 @@ CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"ca
         if(exit==0 && status==QProcess::NormalExit && error.error==QJsonParseError::NoError && document.isObject()){
             // A change during the read must still be seen by the next check.
             m_loadedRevision=m_requestedRevision;m_readFailures=0;
-            m_items=document.object()["items"].toArray();m_warning=document.object()["warning"].toString();
+            m_nativeItems=document.object()["items"].toArray();m_warning=document.object()["warning"].toString();
             m_dates=document.object()["dates"].toObject();m_calendarWarning=document.object()["calendarWarning"].toString();
-            migrateCompletedKeys();
+            mergeWorkAgenda();
         }else{
             ++m_readFailures;m_lastReadFailure.start();
             m_warning="系统待办读取失败，保留上次内容";
         }
         rewatch();updateList();updateSummary();if(isVisible())update();
+        if(!m_workPoll.isActive())refreshWorkStatus();
         if(m_again){m_again=false;m_debounce.start();}
     });
     connect(m_reader,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){
@@ -201,17 +217,23 @@ CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"ca
         m_warning="无法启动日历读取程序";updateList();updateSummary();update();
     });
     m_refreshTimer.setInterval(1000);connect(&m_refreshTimer,&QTimer::timeout,this,&CalendarDesklet::refreshIfNeeded);
+    m_workPoll.setParent(this);m_workPoll.setObjectName("calendarWorkPoll");m_workPoll.setSingleShot(true);m_workPoll.setInterval(30000);
+    connect(&m_workPoll,&QTimer::timeout,this,&CalendarDesklet::refreshWorkStatus);
     QSettings settings;
     const QStringList completed=settings.value(CompletedSetting).toStringList();
     for(const auto &key:completed)m_completed.insert(key);
+    m_savedWorkAgenda=settings.value(WorkAgendaSetting).toByteArray();
+    const auto workAgenda=QJsonDocument::fromJson(m_savedWorkAgenda).object();
+    m_workSlots=workAgenda.value("items").toObject();m_workStatuses=workAgenda.value("statuses").toObject();
+    mergeWorkAgenda();
     const bool collapsed=settings.value("desklets/calendar/agendaCollapsed",true).toBool();
     m_expandedHeight=qBound(ExpandedHeight,(collapsed?settings.value("desklets/calendar/expandedHeight",ExpandedHeight).toInt():height()),700);
     m_agendaCollapsed=collapsed;setAgendaCollapsed(collapsed);
-    updateDateButtons();updateSummary();updateActions();rewatch();arrangeControls();reload();
+    updateDateButtons();updateList();updateSummary();rewatch();arrangeControls();reload();
 }
 CalendarDesklet::~CalendarDesklet(){
     if(!m_agendaCollapsed)QSettings().setValue("desklets/calendar/expandedHeight",height());
-    for(auto *process:{m_holidaySync,m_reader,m_writer}){
+    for(auto *process:{m_holidaySync,m_reader,m_writer,m_workRequest}){
         if(!process || process->state()==QProcess::NotRunning)continue;
         disconnect(process,nullptr,this,nullptr);process->kill();process->waitForFinished(500);
     }
@@ -336,26 +358,32 @@ void CalendarDesklet::updateList(){
         if(m_allDates || covers(item,m_selected))visible.append(item);
     }
     auto group=[this](const QJsonObject &item){
-        if(m_completed.contains(item.value("completionKey").toString()))return 3;
+        if(itemCompleted(item))return 4;
+        if(workStatus(item)=="pending_review")return 3;
         if(covers(item,m_today))return 0;
         return itemDate(item,"endDate")<m_today?1:2;
     };
     std::stable_sort(visible.begin(),visible.end(),[&](const QJsonObject &a,const QJsonObject &b){
         const int ga=group(a),gb=group(b);
         if(ga!=gb)return ga<gb;
-        if(ga==1 || ga==3)return itemDate(a)>itemDate(b);
+        if(ga==1 || ga>=3)return itemDate(a)>itemDate(b);
         return false;
     });
     for(const auto &o:visible){
         const QDate date=itemDate(o);
-        const bool done=group(o)==3;
+        const bool done=itemCompleted(o);
+        const bool work=o.contains("workTaskId");
         QString prefix=date.toString("MM-dd")+"  "+o.value("time").toString();
-        if(done)prefix+=" · 已完成";
+        if(work)prefix+=" · "+workStatusLabel(workStatus(o));
+        else if(done)prefix+=" · 已完成";
         else if(itemDate(o,"endDate")<m_today)prefix+=" · 已过日期";
         auto *item=new QListWidgetItem(prefix+"\n"+o.value("title").toString(),m_list);
         item->setData(Qt::UserRole,m_allDates?date:m_selected);
         item->setData(ItemRole,o);item->setData(CompletedRole,done);
-        item->setToolTip(Qt::convertFromPlainText(o.value("title").toString()+"\n单击选中 · 双击在系统日历查看"));
+        QString tip=o.value("title").toString();
+        if(work){tip+="\n中台状态："+workStatusLabel(workStatus(o));if(!m_workWarning.isEmpty())tip+="\n"+m_workWarning;}
+        else tip+="\n单击选中 · 双击在系统日历查看";
+        item->setToolTip(Qt::convertFromPlainText(tip));
         if(o.value("id").toString()==selected)m_list->setCurrentItem(item);
     }
     if(m_list->count()==0){
@@ -372,9 +400,10 @@ void CalendarDesklet::updateSummary(){
         const auto item=value.toObject();
         if(!covers(item,m_selected))continue;
         anyOnDate=true;
-        if(m_completed.contains(item.value("completionKey").toString()))continue;
+        if(itemCompleted(item))continue;
         const QString title=item.value("title").toString().simplified();
-        lines.append(shortLine(item.value("time").toString()+" "+(title.isEmpty()?"未命名":title),10));
+        const QString label=workStatus(item)=="pending_review"?QString("待审核"):(title.isEmpty()?"未命名":title);
+        lines.append(shortLine(item.value("time").toString()+" "+label,10));
         if(lines.size()==2)break;
     }
     const bool pending=!lines.isEmpty();
@@ -388,6 +417,7 @@ void CalendarDesklet::updateSummary(){
 }
 QString CalendarDesklet::agendaStatus() const{
     if(!m_warning.isEmpty())return m_warning;
+    if(!m_workWarning.isEmpty())return m_workWarning;
     if(!m_calendarWarning.isEmpty())return m_calendarWarning;
     const auto selected=m_dates.value(m_selected.toString(Qt::ISODate)).toObject();
     if(!selected.isEmpty() && !selected["scheduleKnown"].toBool())
@@ -411,25 +441,94 @@ void CalendarDesklet::updateActions(){
     const QString key=item.value("completionKey").toString();
     const bool enabled=!m_writer && !key.isEmpty();
     const bool series=item.value("series").toBool();
-    m_complete->setText(m_completed.contains(key)?"恢复":"完成");
-    m_complete->setToolTip("完成状态保存在桌面待办");
-    m_edit->setToolTip(series?"编辑整组重复事项":"编辑所选事项");
-    m_delete->setToolTip(series?"删除整组重复事项":"从系统日历删除所选事项");
-    m_complete->setEnabled(enabled);m_edit->setEnabled(enabled);m_delete->setEnabled(enabled);
+    const bool work=item.contains("workTaskId");
+    const QString status=workStatus(item);
+    m_complete->setText(work?"提交审核":itemCompleted(item)?"恢复":"完成");
+    m_complete->setToolTip(work?(canSubmitWork(status)?"向中台提交审核，审核通过后才显示已完成":workStatusLabel(status)):"完成状态保存在桌面待办");
+    m_edit->setToolTip(work?"工作待办在中台编辑":series?"编辑整组重复事项":"编辑所选事项");
+    m_delete->setToolTip(work?"工作待办在中台管理":series?"删除整组重复事项":"从系统日历删除所选事项");
+    m_complete->setEnabled(enabled && (!work || (canSubmitWork(status) && !m_workRequest)));
+    m_edit->setEnabled(enabled && !work);m_delete->setEnabled(enabled && !work);
 }
-void CalendarDesklet::migrateCompletedKeys(){
-    auto migrated=m_completed;
-    for(const auto &value:m_items){
+QString CalendarDesklet::workStatus(const QJsonObject &item) const{
+    return m_workStatuses.value(item.value("workTaskId").toString()).toString();
+}
+bool CalendarDesklet::itemCompleted(const QJsonObject &item) const{
+    if(item.contains("workTaskId"))return workStatus(item)=="done";
+    return m_completed.contains(item.value("completionKey").toString());
+}
+void CalendarDesklet::mergeWorkAgenda(){
+    m_items=m_nativeItems;
+    QSet<QString> present;
+    for(const auto &value:m_nativeItems){
         const auto item=value.toObject();
-        const QString legacy=item.value("legacyCompletionKey").toString(),key=item.value("completionKey").toString();
-        if(!legacy.isEmpty() && !key.isEmpty() && migrated.remove(legacy))migrated.insert(key);
+        const QString id=item.value("workTaskId").toString();
+        if(!id.isEmpty()){present.insert(id);m_workSlots.insert(id,item);}
     }
-    if(migrated==m_completed)return;
-    m_completed=std::move(migrated);
-    if(!saveCompleted(m_completed))m_warning="暂时无法保存完成状态";
+    // The importer removes inactive native rows; keep the last calendar slot
+    // for work already submitted or completed in the authoritative service.
+    QJsonObject savedStatuses;
+    for(auto it=m_workSlots.constBegin();it!=m_workSlots.constEnd();++it){
+        const QString status=m_workStatuses.value(it.key()).toString();
+        if(!status.isEmpty())savedStatuses[it.key()]=status;
+        if(!present.contains(it.key()) && (status=="pending_review" || status=="done"))m_items.append(it.value());
+    }
+    if(m_workSlots.isEmpty())return;
+    const auto data=QJsonDocument(QJsonObject{{"items",m_workSlots},{"statuses",savedStatuses}}).toJson(QJsonDocument::Compact);
+    if(data!=m_savedWorkAgenda){
+        QSettings settings;settings.setValue(WorkAgendaSetting,data);settings.sync();
+        if(settings.status()==QSettings::NoError)m_savedWorkAgenda=data;
+    }
+}
+void CalendarDesklet::refreshWorkStatus(){
+    if(isVisible() && !m_workSlots.isEmpty() && !m_workRequest && !m_workPromptOpen)requestWork();
+}
+void CalendarDesklet::requestWork(const QString &taskId,const QString &note){
+    if(m_workRequest)return;
+    m_workPoll.stop();
+    const bool submit=!taskId.isEmpty();
+    auto *process=new QProcess(this);m_workRequest=process;updateActions();
+    auto *timeout=new QTimer(process);timeout->setSingleShot(true);
+    connect(timeout,&QTimer::timeout,process,&QProcess::kill);
+    auto finish=[this,process,timeout,submit](bool ok){
+        if(m_workRequest!=process)return;
+        timeout->stop();m_workRequest=nullptr;
+        const auto reply=QJsonDocument::fromJson(process->readAllStandardOutput()).object();
+        const bool received=reply.value("statuses").isObject();
+        if(received)m_workStatuses=reply.value("statuses").toObject();
+        m_workWarning=reply.value("error").toString();
+        if(m_workWarning.isEmpty()&&(!ok||!received))
+            m_workWarning=submit?"中台未确认提交，请核对最新状态。":"暂时无法刷新中台状态，显示上次结果。";
+        mergeWorkAgenda();updateList();updateSummary();update();
+        if(submit&&!m_workWarning.isEmpty()){
+            auto *notice=LiquidDialog::createMessage(this,"工作待办",m_workWarning,QMessageBox::Warning);
+            notice->setAttribute(Qt::WA_DeleteOnClose);notice->open();
+        }
+        process->deleteLater();
+        if(isVisible())m_workPoll.start(submit&&!received?1000:30000);
+    };
+    if(submit)connect(process,&QProcess::started,this,[process,note]{process->write(note.toUtf8());process->closeWriteChannel();});
+    connect(process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[finish](int code,QProcess::ExitStatus status){finish(code==0&&status==QProcess::NormalExit);});
+    connect(process,&QProcess::errorOccurred,this,[finish](QProcess::ProcessError error){if(error==QProcess::FailedToStart)finish(false);});
+    const QStringList args=submit?QStringList{calendarScript(),"--work-submit",taskId}:QStringList{calendarScript(),"--work-status"};
+    process->start("/usr/bin/python3",args);timeout->start(12000);
 }
 void CalendarDesklet::toggleComplete(){
-    const QString key=selectedItem().value("completionKey").toString();
+    const auto item=selectedItem();
+    const QString taskId=item.value("workTaskId").toString();
+    if(!taskId.isEmpty()){
+        if(m_workRequest || m_writer || !canSubmitWork(workStatus(item)))return;
+        m_workPoll.stop();
+        m_workPromptOpen=true;
+        bool ok=false;
+        const QString note=LiquidDialog::getText(this,"提交工作待办审核","验收说明（审核通过后才显示已完成）：",
+                                                QLineEdit::Normal,"提交验收",&ok).trimmed();
+        m_workPromptOpen=false;
+        if(ok&&!note.isEmpty())requestWork(taskId,note);
+        else if(isVisible())m_workPoll.start(30000);
+        return;
+    }
+    const QString key=item.value("completionKey").toString();
     if(key.isEmpty() || m_writer)return;
     if(!m_completed.remove(key))m_completed.insert(key);
     if(!saveCompleted(m_completed)){
@@ -441,7 +540,7 @@ void CalendarDesklet::toggleComplete(){
 }
 void CalendarDesklet::editSelected(){
     const auto item=selectedItem();
-    if(item.isEmpty() || m_writer)return;
+    if(item.isEmpty() || item.contains("workTaskId") || m_writer)return;
     const auto clock=item.value("editableTime").toObject();
     const bool series=item.value("series").toBool(),allDay=item.value("allDay").toBool();
     auto *dialog=new LiquidDialog::Dialog(this);
@@ -490,7 +589,7 @@ void CalendarDesklet::editSelected(){
 }
 void CalendarDesklet::deleteSelected(){
     const auto item=selectedItem();
-    if(item.isEmpty() || m_writer)return;
+    if(item.isEmpty() || item.contains("workTaskId") || m_writer)return;
     const bool series=item.value("series").toBool();
     const QString title=shortLine(item.value("title").toString().simplified(),100);
     auto *dialog=LiquidDialog::createMessage(this,series?"删除整组重复待办？":"删除待办？",
@@ -527,7 +626,7 @@ void CalendarDesklet::writeItem(const QString &action,const QJsonObject &item,QJ
     timeout->start(3000);
 }
 void CalendarDesklet::paintContent(QPainter &p){
-    if(!m_list)return;const QColor ink=inkColor(),muted=mutedColor(),accent("#9ae8db"),pendingColor("#ffcf78");
+    if(!m_list)return;const QColor ink=inkColor(),muted=mutedColor(),accent("#9ae8db"),pendingColor("#ffcf78"),reviewColor("#c6b3ff");
     text(p,QRectF(12,66,width()*.29,55),QString::number(m_selected.day()),42,ink,true);
     text(p,QRectF(12,120,width()*.29,22),QLocale(QLocale::Chinese).dayName(m_selected.dayOfWeek(),QLocale::LongFormat),12,muted);
     const auto selected=m_dates.value(m_selected.toString(Qt::ISODate)).toObject();
@@ -548,16 +647,16 @@ void CalendarDesklet::paintContent(QPainter &p){
             const bool off=info["off"].toBool();
             text(p,QRectF(cell.right()-9,cell.top(),10,11),off?"休":"班",8,off?QColor("#ffb6a9"):QColor("#f3d39a"));
         }
-        bool hasTask=false,hasPending=false;
+        int marker=0;
         for(const auto &value:m_items){
             const auto item=value.toObject();
             if(!covers(item,date))continue;
-            hasTask=true;
-            if(!m_completed.contains(item.value("completionKey").toString())){hasPending=true;break;}
+            marker=qMax(marker,itemCompleted(item)?1:workStatus(item)=="pending_review"?2:3);
+            if(marker==3)break;
         }
-        if(hasTask){
-            const qreal radius=hasPending?1.9:1.4;
-            p.setPen(Qt::NoPen);p.setBrush(hasPending?pendingColor:accent);
+        if(marker){
+            const qreal radius=marker==3?1.9:marker==2?1.7:1.4;
+            p.setPen(Qt::NoPen);p.setBrush(marker==3?pendingColor:marker==2?reviewColor:accent);
             p.drawEllipse(QPointF(cell.left()+3,cell.top()+8),radius,radius);
         }
     }
@@ -596,8 +695,9 @@ void CalendarDesklet::mouseMoveEvent(QMouseEvent *e){
 void CalendarDesklet::showEvent(QShowEvent *e){
     LiquidDesklet::showEvent(e);m_refreshTimer.start();
     if(QDate::currentDate()!=m_today)refreshIfNeeded();else reload();
+    refreshWorkStatus();
 }
-void CalendarDesklet::hideEvent(QHideEvent *e){m_refreshTimer.stop();LiquidDesklet::hideEvent(e);}
+void CalendarDesklet::hideEvent(QHideEvent *e){m_refreshTimer.stop();m_workPoll.stop();LiquidDesklet::hideEvent(e);}
 void CalendarDesklet::openSystemCalendar(QDate d){
     auto msg=QDBusMessage::createMethodCall("org.ukui.calendar.Notifications","/org/ukui/calendar/Notifications","org.ukui.calendar.Notifications","OpenSchedule");msg<<d.day()<<d.month()<<d.year();
     auto *w=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(msg,1500),this);

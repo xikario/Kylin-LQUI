@@ -9,9 +9,29 @@
 #include <QPlainTextEdit>
 #include <QFileSystemWatcher>
 #include <QSignalBlocker>
+#include <QLineEdit>
 static int runCalendarTest(const QString &root){
     QSettings settings;settings.setValue("smartSpace/autoStart",false);settings.setValue("systemMonitor/autoStart",false);settings.setValue("desklets/calendar/agendaCollapsed",false);
-    settings.setValue("desklets/calendar/completed",QStringList{QStringLiteral("[\"old\"]")});settings.sync();
+    settings.setValue("desklets/calendar/completed",QStringList{QStringLiteral("[\"work-todo\",\"701\"]")});settings.sync();
+    const QString remoteFile=root+"/work-status",clientFile=root+"/fake_work_todo.py";
+    auto setRemote=[&](const QByteArray &status){QFile f(remoteFile);return f.open(QIODevice::WriteOnly|QIODevice::Truncate) && f.write(status)==status.size();};
+    check(setRemote("accepted"),"isolated middle-platform state written");
+    {
+        QFile client(clientFile);if(!client.open(QIODevice::WriteOnly))return 1;
+        client.write(R"PY(import os
+from pathlib import Path
+state=Path(os.environ['LQUI_TEST_WORK_STATUS'])
+def load_conf(): return {}
+def api(conf, method, path, body=None, params=None):
+    if method == 'GET' and path == '/api/tasks' and params == {'mine':'true','archived':'include'}:
+        return [{'id':701,'status':state.read_text()}]
+    if method == 'POST' and path == '/api/tasks/701/submit' and body == {'type':'result','content':'测试验收','progress_pct':100} and state.read_text() == 'accepted':
+        state.write_text('pending_review')
+        return {'id':701,'status':'pending_review'}
+    raise ValueError('unexpected fake work-todo request')
+)PY");
+    }
+    qputenv("UKUI_FENCES_WORK_TODO_CLIENT",clientFile.toUtf8());qputenv("LQUI_TEST_WORK_STATUS",remoteFile.toUtf8());
     const QString database=root+"/config/.kylin_calendar_Schedule2.db";QDir().mkpath(root+"/config");
     auto sql=[&](const QString &statement){return QProcess::execute("/usr/bin/python3",{"-c","import sqlite3,sys; c=sqlite3.connect(sys.argv[1]);c.executescript(sys.argv[2]);c.commit();c.close()",database,statement})==0;};
     check(sql("CREATE TABLE Schedule(id,start_date,end_date,start_hour,start_minute,descript,repeat,isAllDay,isLunar,beginrepeat,endrepeat);"),"isolated native calendar database created");
@@ -138,19 +158,32 @@ static int runCalendarTest(const QString &root){
         auto *remove=calendar->findChild<QPushButton *>("calendarDelete");
         check(complete && edit && remove,"expanded agenda exposes the three task actions");
         if(!complete || !edit || !remove)return 1;
-        check(selectTask("历史待办") && complete->isEnabled(),"old task can be selected from the expanded list");
-        check(list->currentItem() && list->currentItem()->text().contains("已完成") && complete->text()=="恢复",
-              "legacy calendar-row completion follows the imported work task");
-        complete->click();
-        check(list->currentItem() && !list->currentItem()->text().contains("已完成"),"completed task can be reopened");
-        complete->click();
-        check(sql(QString("DELETE FROM Schedule WHERE id='old'; INSERT INTO Schedule VALUES('pushed-again','%1','%1','12','0','【工作待办】#701 历史待办','不重复',0,0,'','');").arg(oldDate)),
-              "work sync recreates the same task with a new native row ID");
-        auto repushed=[&]{
-            return selectTask("历史待办") && list->currentItem()->data(Qt::UserRole+1).toJsonObject()["sourceId"].toString()=="pushed-again";
-        };
-        for(int w=0;w<3000 && !repushed();w+=50)settle(50);
-        check(repushed() && list->currentItem()->text().contains("已完成"),"work task remains completed after reimport");
+        check(selectTask("系统待办测试") && complete->text()=="完成","ordinary calendar rows still support local completion");
+        complete->click();check(list->currentItem()->text().contains("已完成"),"ordinary calendar row is completed locally");
+        complete->click();check(!list->currentItem()->text().contains("已完成"),"ordinary calendar row can be reopened");
+        auto workState=[&](const QString &status){return selectTask("历史待办") && list->currentItem()->text().contains(" · "+status);};
+        for(int w=0;w<3000 && !workState("已接收");w+=50)settle(50);
+        check(workState("已接收") && complete->text()=="提交审核" && complete->isEnabled(),
+              "work task shows its remote status instead of the old local completion flag");
+        if(!complete->isEnabled())return 1;
+        QTimer::singleShot(160,calendar,[&]{
+            auto *dialog=calendar->findChild<QDialog *>("liquidInputDialog");
+            if(!dialog)return;
+            if(auto *note=dialog->findChild<QLineEdit *>())note->setText("测试验收");
+            dialog->accept();
+        });
+        QTimer watchdog;watchdog.setSingleShot(true);
+        QObject::connect(&watchdog,&QTimer::timeout,calendar,[&]{if(auto *dialog=calendar->findChild<QDialog *>("liquidInputDialog"))dialog->reject();});
+        watchdog.start(1000);complete->click();watchdog.stop();
+        for(int w=0;w<3000 && !workState("待审核");w+=50)settle(50);
+        check(workState("待审核") && !complete->isEnabled() && !list->currentItem()->text().contains("已完成"),
+              "desktop submission reaches the middle platform and waits for review");
+        check(setRemote("done") && sql("DELETE FROM Schedule WHERE id='old';"),"approval fixture removes the native calendar mirror");
+        auto *workPoll=calendar->findChild<QTimer *>("calendarWorkPoll");
+        check(workPoll && workPoll->isActive(),"visible calendar schedules automatic work status refreshes");
+        if(workPoll)QMetaObject::invokeMethod(workPoll,"timeout");
+        for(int w=0;w<3000 && !workState("已完成");w+=50)settle(50);
+        check(workState("已完成") && !complete->isEnabled(),"approved work remains on its date after the mirror row is removed");
         calendar->grab().save(output+"/expanded-actions.png");
 
         check(selectTask("系统待办测试"),"original task selected for edit");

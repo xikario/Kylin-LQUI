@@ -10,6 +10,7 @@
 #include "NextKdeGlassView.h"
 #include "LiquidOpticsRenderer.h"
 #include <QApplication>
+#include <QClipboard>
 #include <QScreen>
 #include <QWindow>
 #include <QPainter>
@@ -488,6 +489,12 @@ void Drawer::ToggleAt(int x,int y,int width,int height) {
     if(width>0&&height>0&&width<4096&&height<4096&&QGuiApplication::screenAt(next.center()))panelAnchor=next;
     Toggle();
 }
+void Drawer::CaptureAt(int x,int y,int width,int height) {
+    if(capturing)return;
+    const QRect next(x,y,width,height);
+    if(width>0&&height>0&&width<4096&&height<4096&&QGuiApplication::screenAt(next.center()))panelAnchor=next;
+    beginCapture();
+}
 bool Drawer::ImportDropAt(const QString &manifest,int x,int y,int width,int height) {
     const auto payload=StationDrop::read(manifest);if(payload.isEmpty())return false;
     const QRect anchor(x,y,width,height);if(width>0&&height>0&&QGuiApplication::screenAt(anchor.center()))panelAnchor=anchor;
@@ -549,21 +556,32 @@ bool Drawer::eventFilter(QObject *watched,QEvent *event) {
 void Drawer::closeEvent(QCloseEvent *event){if(quitting)event->accept();else{event->ignore();Hide();}}
 
 void Drawer::beginCapture() {
-    if(capturing)return;hideTimer.stop();motion.stop();capturing=true;opened=false;QWidget::hide();edge->hide();
+    if(capturing)return;
+    restoreCaptureDrawer=opened;
+    const bool wasVisible=isVisible()||edge->isVisible();
+    hideTimer.stop();motion.stop();capturing=true;opened=false;QWidget::hide();edge->hide();
     updateReplyMode();
     // Bounded settling wait lets KWin remove both surfaces before reading screen pixels.
-    QTimer::singleShot(140,this,[this]{RegionCapture::beginWithGeometry([owner=QPointer<Drawer>(this)](QImage image,QRect selection){if(owner)owner->acceptCapture(image,selection);});});
+    QTimer::singleShot(wasVisible?140:0,this,[this]{RegionCapture::beginWithGeometry([owner=QPointer<Drawer>(this)](QImage image,QRect selection){if(owner)owner->acceptCapture(image,selection);});});
 }
 void Drawer::acceptCapture(const QImage &image,const QRect &selection) {
-    if(image.isNull()){capturing=false;syncPanelEntry();shown=0;reveal(true);setStatus("已取消截图");return;}
+    if(!capturing)restoreCaptureDrawer=opened;
+    if(image.isNull()){
+        capturing=false;updateReplyMode();syncPanelEntry();shown=0;
+        if(restoreCaptureDrawer){reveal(true);setStatus("已取消截图");}
+        return;
+    }
     capturing=true;QWidget::hide();edge->hide();
+    hideTimer.stop();motion.stop();opened=false;
     auto *editor=new CaptureEditor(image,this,selection);editor->setAttribute(Qt::WA_DeleteOnClose);editor->setProcessingAvailable(!backend->busy());
     connect(backend,&AgentClient::turnFinished,editor,[this,editor]{editor->setProcessingAvailable(!backend->busy());});
     connect(editor,&QDialog::finished,this,[this,editor](int result){
         const auto image=editor->resultImage();const auto action=editor->selectedAction();
         QTimer::singleShot(0,this,[this,image,action,result]{
-            capturing=false;updateReplyMode();syncPanelEntry();shown=0;reveal(true);
-            if(result!=QDialog::Accepted){setStatus("已取消截图编辑");return;}
+            capturing=false;updateReplyMode();syncPanelEntry();shown=0;
+            const bool accepted=result==QDialog::Accepted;
+            if(restoreCaptureDrawer||(accepted&&action!="copy"))reveal(true);
+            if(!accepted){if(restoreCaptureDrawer)setStatus("已取消截图编辑");return;}
             processCapture(image,action);
         });
     });
@@ -571,6 +589,7 @@ void Drawer::acceptCapture(const QImage &image,const QRect &selection) {
 }
 void Drawer::processCapture(const QImage &image,const QString &action) {
     if(image.isNull())return;
+    if(action=="copy"){QApplication::clipboard()->setImage(image);if(opened)setStatus("截图已复制到剪贴板");return;}
     if(action=="insert"){attachImage(image);persist();return;}
     if(backend->busy()){attachImage(image);input->setHint("当前回复尚未结束；截图已放入输入框。");persist();return;}
     QString error;const QString path=history.storeImage(image,&error);if(path.isEmpty()){setStatus(error);return;}

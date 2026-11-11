@@ -24,6 +24,7 @@ int main(int argc,char **argv) {
     parser.addOption({"settings","打开设置"});parser.addOption({"reload","重新读取设置"});parser.addOption({"quit","退出当前实例"});parser.addOption({"state","读取当前实例状态"});
     parser.addOption({"anchor","任务栏入口的逻辑坐标 x,y,w,h","rect"});
     parser.addOption({"drop","接收拖放内容","manifest"});
+    parser.addOption({"capture","打开 AI 小站的框选截图"});
     parser.process(app);
     const auto values=parser.value("anchor").split(',');QList<int> anchor;
     if(parser.isSet("anchor")) {
@@ -43,13 +44,15 @@ int main(int argc,char **argv) {
     }
     if(!bus.registerService(service)) {
         if(parser.isSet("resident"))return 0;
-        if(parser.isSet("drop")) {
+        if(parser.isSet("drop")||parser.isSet("capture")) {
             const auto a=anchor.size()==4?anchor:QList<int>{0,0,0,0};
+            const bool drop=parser.isSet("drop");
             for(int attempt=0;attempt<30;++attempt) {
                 QDBusInterface existing(service,"/Cli","org.ukui.LiquidCli",bus);
                 if(existing.isValid()) {
-                    const auto reply=existing.call("ImportDropAt",parser.value("drop"),a[0],a[1],a[2],a[3]);
-                    if(reply.type()!=QDBusMessage::ErrorMessage)return !StationDrop::owns(parser.value("drop"))?0:1;
+                    const auto reply=drop?existing.call("ImportDropAt",parser.value("drop"),a[0],a[1],a[2],a[3])
+                                         :existing.call("CaptureAt",a[0],a[1],a[2],a[3]);
+                    if(reply.type()!=QDBusMessage::ErrorMessage)return !drop||!StationDrop::owns(parser.value("drop"))?0:1;
                     if(reply.errorName()!="org.freedesktop.DBus.Error.UnknownObject")return 1;
                 }
                 QEventLoop settle;QTimer::singleShot(100,&settle,&QEventLoop::quit);settle.exec();
@@ -65,6 +68,7 @@ int main(int argc,char **argv) {
     auto *settingsBridge=new LquiSettings::Bridge("ai",[&drawer](const QString &){return drawer.settingsBridgeRoot();},[]{return QJsonArray{QJsonObject{{"id","general"},{"title","AI 小站"},{"group","AI"}}};},&drawer);settingsBridge->registerOnSession();
     bus.registerObject("/Cli",&drawer,QDBusConnection::ExportScriptableSlots);
     if(parser.isSet("drop")){const auto a=anchor.size()==4?anchor:QList<int>{0,0,0,0};if(!drawer.ImportDropAt(parser.value("drop"),a[0],a[1],a[2],a[3]))return 1;}
+    else if(parser.isSet("capture")){const auto a=anchor.size()==4?anchor:QList<int>{0,0,0,0};drawer.CaptureAt(a[0],a[1],a[2],a[3]);}
     else if(anchor.size()==4){if(parser.isSet("settings"))drawer.PreferencesAt(anchor[0],anchor[1],anchor[2],anchor[3]);else drawer.ToggleAt(anchor[0],anchor[1],anchor[2],anchor[3]);}
     else if(parser.isSet("settings"))drawer.Preferences();else if(parser.isSet("show")||parser.isSet("toggle"))drawer.Show();
     if(parser.isSet("resident"))QTimer::singleShot(900,&drawer,&Drawer::prepareResident);

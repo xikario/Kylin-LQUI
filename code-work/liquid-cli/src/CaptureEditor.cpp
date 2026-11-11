@@ -38,7 +38,11 @@ QIcon toolIcon(const QString &name,const QColor &color=QColor("#e8edf5")) {
     else if(name=="freehand"){QPainterPath path;path.moveTo(4,18);path.cubicTo(8,3,10,18,13,9);path.cubicTo(16,1,17,20,21,6);p.drawPath(path);}
     else if(name=="undo"||name=="redo"){if(name=="redo"){p.translate(24,0);p.scale(-1,1);}p.drawArc(QRectF(6,7,13,12),-35*16,220*16);p.drawLine(5,6,5,12);p.drawLine(5,12,11,12);}
     else if(name=="cancel"){p.drawLine(6,6,18,18);p.drawLine(18,6,6,18);}
-    else if(name=="insert"){p.drawLine(4,12,10,18);p.drawLine(10,18,21,6);}
+    else if(name=="copy"){p.drawLine(4,12,10,18);p.drawLine(10,18,21,6);}
+    else if(name=="insert"){
+        p.drawLine(2,11,7,16);p.drawLine(7,16,15,6);
+        p.drawLine(19,8,19,19);p.drawLine(15,15,19,19);p.drawLine(19,19,23,15);
+    }
     else {QPolygonF arrow;arrow<<QPointF(6,3)<<QPointF(6,20)<<QPointF(11,15)<<QPointF(15,20)<<QPointF(18,18)<<QPointF(14,13)<<QPointF(21,12)<<QPointF(6,3);p.drawPolyline(arrow);}
     QIcon icon(image);QPixmap disabled(image);{QPainter muted(&disabled);muted.setCompositionMode(QPainter::CompositionMode_SourceIn);muted.fillRect(disabled.rect(),QColor("#778493"));}icon.addPixmap(disabled,QIcon::Disabled);return icon;
 }
@@ -74,6 +78,7 @@ CaptureEditor::CaptureEditor(QImage image,QWidget *parent,const QRect &selection
     separator();undoButton=button("captureUndo","撤销 · Ctrl+Z");undoButton->setIcon(toolIcon("undo"));redoButton=button("captureRedo","重做 · Ctrl+Shift+Z");redoButton->setIcon(toolIcon("redo"));connect(undoButton,&QPushButton::clicked,this,&CaptureEditor::undo);connect(redoButton,&QPushButton::clicked,this,&CaptureEditor::redo);
     for(const auto &item:QList<QPair<QString,QString>>{{"翻译","translate"},{"识别","ocr"},{"总结","summary"}}){auto *action=button("captureAction_"+item.second,item.first+"截图，立即处理");action->setFixedWidth(39);action->setText(item.first);processing<<action;connect(action,&QPushButton::clicked,this,[this,item]{finish(item.second);});}
     separator();auto *cancel=button("captureCancel","取消 · Esc");cancel->setIcon(toolIcon("cancel",QColor("#ff6a71")));connect(cancel,&QPushButton::clicked,this,&QDialog::reject);
+    auto *copy=button("captureCopy","复制截图到剪贴板");copy->setIcon(toolIcon("copy",QColor("#6ee3b2")));connect(copy,&QPushButton::clicked,this,[this]{finish("copy");});
     auto *insert=button("captureInsert","放入输入框，手动发送");insert->setIcon(toolIcon("insert",QColor("#6ee3b2")));connect(insert,&QPushButton::clicked,this,[this]{finish("insert");});
     layout->addWidget(toolbar,0,Qt::AlignHCenter);status=new QLabel(this);status->hide();
     auto *undoKey=new QShortcut(QKeySequence::Undo,this);connect(undoKey,&QShortcut::activated,this,&CaptureEditor::undo);auto *redoKey=new QShortcut(QKeySequence::Redo,this);connect(redoKey,&QShortcut::activated,this,&CaptureEditor::redo);

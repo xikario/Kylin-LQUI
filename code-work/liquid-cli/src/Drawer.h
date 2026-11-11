@@ -49,6 +49,7 @@ public slots:
     Q_SCRIPTABLE void Hide();
     Q_SCRIPTABLE void Toggle();
     Q_SCRIPTABLE void ToggleAt(int x,int y,int width,int height);
+    Q_SCRIPTABLE void CaptureAt(int x,int y,int width,int height);
     Q_SCRIPTABLE void Preferences();
     Q_SCRIPTABLE void PreferencesAt(int x,int y,int width,int height);
     Q_SCRIPTABLE bool ImportDropAt(const QString &manifest,int x,int y,int width,int height);
@@ -109,6 +110,7 @@ private:
     qint64 compactDismissedAt=0;
     qreal shown=0;
     bool opened=false,pinned=false,engaged=false,capturing=false,quitting=false,unread=false;
+    bool restoreCaptureDrawer=false;
     // Temporary switch is independent of the configured startup default.
     bool quickReply=false;
 };

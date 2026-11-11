@@ -23,23 +23,12 @@ class UKUIPanel:public QWidget { Q_OBJECT public:using QWidget::QWidget; };
 class FakeStation:public QObject {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface","org.ukui.LiquidCli")
-public:int calls=0,preferences=0,drops=0;QRect anchor,settingsAnchor,dropAnchor;QJsonObject payload;
+public:int calls=0,preferences=0,drops=0,captures=0;QRect anchor,settingsAnchor,dropAnchor,captureAnchor;QJsonObject payload;bool capturePopup=false;
 public slots:
     Q_SCRIPTABLE void ToggleAt(int x,int y,int w,int h){++calls;anchor=QRect(x,y,w,h);}
     Q_SCRIPTABLE void PreferencesAt(int x,int y,int w,int h){++preferences;settingsAnchor=QRect(x,y,w,h);}
+    Q_SCRIPTABLE void CaptureAt(int x,int y,int w,int h){++captures;captureAnchor=QRect(x,y,w,h);capturePopup=QApplication::activePopupWidget()!=nullptr;}
     Q_SCRIPTABLE bool ImportDropAt(const QString &manifest,int x,int y,int w,int h){payload=StationDrop::read(manifest);dropAnchor=QRect(x,y,w,h);++drops;StationDrop::discard(manifest);return !payload.isEmpty();}
-};
-class FakeScreenshot:public QObject {
-    Q_OBJECT
-    Q_CLASSINFO("D-Bus Interface","org.dharkael.kylinscreenshot")
-public:
-    int calls=0,delay=-1;
-    QString path;
-    bool popupVisible=false;
-public slots:
-    Q_SCRIPTABLE void graphicCapture(const QString &target,int delayMs,uint){
-        ++calls;path=target;delay=delayMs;popupVisible=QApplication::activePopupWidget()!=nullptr;
-    }
 };
 class StationTest:public QObject {
     Q_OBJECT
@@ -111,9 +100,6 @@ private slots:
         QContextMenuEvent context(QContextMenuEvent::Mouse,orb->rect().center(),orb->mapToGlobal(orb->rect().center()));QApplication::sendEvent(orb,&context);
         auto *menu=qobject_cast<QMenu*>(QApplication::activePopupWidget());QVERIFY(menu);for(auto *action:menu->actions())if(action->text().contains("设置"))action->trigger();menu->close();
         QTRY_COMPARE(fake.preferences,1);QCOMPARE(fake.settingsAnchor,QRect(orb->mapToGlobal(QPoint()),orb->size()));
-        FakeScreenshot screenshot;
-        QVERIFY(bus.registerObject("/",&screenshot,QDBusConnection::ExportScriptableSlots));
-        QVERIFY(bus.registerService("org.dharkael.kylinscreenshot"));
         auto chooseCapture=[&](const QString &name){
             QContextMenuEvent e(QContextMenuEvent::Mouse,orb->rect().center(),orb->mapToGlobal(orb->rect().center()));
             QApplication::sendEvent(orb,&e);
@@ -125,17 +111,15 @@ private slots:
             return !QApplication::activePopupWidget();
         };
         QVERIFY(chooseCapture("aiStationCaptureNow"));
-        QTRY_COMPARE(screenshot.calls,1);
-        QVERIFY(screenshot.path.isEmpty()&&!screenshot.popupVisible);
-        QCOMPARE(screenshot.delay,0);
+        QTRY_COMPARE(fake.captures,1);
+        QCOMPARE(fake.captureAnchor,QRect(orb->mapToGlobal(QPoint()),orb->size()));
+        QVERIFY(!fake.capturePopup);
         QElapsedTimer countdown;countdown.start();
         QVERIFY(chooseCapture("aiStationCaptureDelayed"));
-        QTest::qWait(400);QCOMPARE(screenshot.calls,1);
-        QTRY_COMPARE(screenshot.calls,2);
+        QTest::qWait(400);QCOMPARE(fake.captures,1);
+        QTRY_COMPARE(fake.captures,2);
         QVERIFY(countdown.elapsed()>=3000);
-        QVERIFY(screenshot.path.isEmpty()&&!screenshot.popupVisible);
-        QCOMPARE(screenshot.delay,0);
-        bus.unregisterService("org.dharkael.kylinscreenshot");bus.unregisterObject("/");
+        QVERIFY(!fake.capturePopup);
         QMimeData mime;mime.setText("拖入的说明");QDragEnterEvent drag(orb->rect().center(),Qt::CopyAction,&mime,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(orb,&drag);QVERIFY(drag.isAccepted());
         QDropEvent drop(orb->rect().center(),Qt::CopyAction,&mime,Qt::LeftButton,Qt::NoModifier);QApplication::sendEvent(orb,&drop);QVERIFY(drop.isAccepted());
         QTRY_COMPARE(fake.drops,1);QCOMPARE(fake.payload.value("text").toString(),QString("拖入的说明"));QCOMPARE(fake.dropAnchor,QRect(orb->mapToGlobal(QPoint()),orb->size()));

@@ -23,6 +23,7 @@
 #include <QTest>
 #include <QSignalSpy>
 #include <QApplication>
+#include <QClipboard>
 #include <QTemporaryDir>
 #include <QDir>
 #include <QJsonDocument>
@@ -277,6 +278,16 @@ private slots:
         const auto resume=requests(marker,"thread/resume");QCOMPARE(resume.size(),1);
         QCOMPARE(resume.first().value("params").toObject().value("threadId").toString(),thread);QCOMPARE(d.conversation().threadId,thread);
         d.client()->setIdleTimeout(0);QTest::qWait(600);QVERIFY(d.client()->running());
+    }
+    void screenshotCheckCopiesWithoutAttaching(){
+        QString marker;Drawer d(config(&marker),folder());
+        QImage shot(93,47,QImage::Format_RGB32);shot.fill(QColor("#438b68"));
+        d.acceptCapture(shot);
+        auto *editor=d.findChild<CaptureEditor*>();QVERIFY(editor);
+        editor->findChild<QPushButton*>("captureCopy")->click();
+        QTRY_COMPARE(QApplication::clipboard()->image().size(),shot.size());
+        QCOMPARE(QApplication::clipboard()->image().pixelColor(20,20),shot.pixelColor(20,20));
+        QVERIFY(d.composer()->images().isEmpty());QVERIFY(!d.expanded());QVERIFY(!QFileInfo::exists(marker));
     }
     void screenshotIsAttachedNotSent(){
         QString marker;Drawer d(config(&marker),folder());d.Show();

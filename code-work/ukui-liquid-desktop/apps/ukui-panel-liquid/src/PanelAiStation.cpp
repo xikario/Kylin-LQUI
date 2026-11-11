@@ -28,7 +28,6 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QProcess>
-#include <QRandomGenerator>
 #include <QShowEvent>
 #include <QHideEvent>
 #include <QScreen>
@@ -186,13 +185,7 @@ protected:
             auto *action=m->addAction(label,m,[this,m,delay]{
                 m->close();
                 // Give the compositor time to remove the menu in the quick path.
-                // The delay belongs here so both actions invoke region selection.
-                QTimer::singleShot(delay,Qt::PreciseTimer,this,[]{
-                    const QString serviceName="org.dharkael.kylinscreenshot";
-                    auto call=QDBusMessage::createMethodCall(serviceName,"/",serviceName,"graphicCapture");
-                    call.setArguments({QString(),0,QRandomGenerator::global()->generate()});
-                    QDBusConnection::sessionBus().call(call,QDBus::NoBlock);
-                });
+                QTimer::singleShot(delay,Qt::PreciseTimer,this,&Orb::launchCapture);
             });
             action->setObjectName(name);
         };
@@ -210,6 +203,20 @@ protected:
 private:
     Display *dropDisplay=nullptr;Atom positionAtom=0,copyAtom=0;
     bool launching=false,dragOver=false;
+    void launchCapture(){
+        const QRect anchor(mapToGlobal(QPoint()),size());
+        auto call=QDBusMessage::createMethodCall("org.ukui.LiquidCli","/Cli","org.ukui.LiquidCli","CaptureAt");
+        call.setArguments({anchor.x(),anchor.y(),anchor.width(),anchor.height()});
+        auto *request=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call,1200),this);
+        connect(request,&QDBusPendingCallWatcher::finished,this,[this,anchor](QDBusPendingCallWatcher *w){
+            const QDBusPendingReply<> reply=*w;w->deleteLater();
+            if(!reply.isError())return;
+            const auto name=reply.error().name();
+            if(name!="org.freedesktop.DBus.Error.ServiceUnknown"&&name!="org.freedesktop.DBus.Error.NameHasNoOwner")return;
+            const QString a=QString("%1,%2,%3,%4").arg(anchor.x()).arg(anchor.y()).arg(anchor.width()).arg(anchor.height());
+            if(!QProcess::startDetached(launcher(),{"--capture","--anchor",a}))setToolTip("无法打开 AI小站截图");
+        });
+    }
     void sendDrop(const QString &manifest,const QRect &anchor,int attempt=0) {
         if(!QFileInfo::exists(manifest))return;
         auto call=QDBusMessage::createMethodCall("org.ukui.LiquidCli","/Cli","org.ukui.LiquidCli","ImportDropAt");

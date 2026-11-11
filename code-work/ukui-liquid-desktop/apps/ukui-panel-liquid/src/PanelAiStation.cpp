@@ -28,6 +28,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QProcess>
+#include <QRandomGenerator>
 #include <QShowEvent>
 #include <QHideEvent>
 #include <QScreen>
@@ -139,7 +140,7 @@ private:QWidget *button;QPainterPath glyph;
 class Orb final : public QAbstractButton, public QAbstractNativeEventFilter {
 public:
     explicit Orb(QWidget *parent):QAbstractButton(parent) {
-        setObjectName("aiStationOrb");setAccessibleName("AI小站");setToolTip("AI小站 · 右键设置");
+        setObjectName("aiStationOrb");setAccessibleName("AI小站");setToolTip("AI小站 · 右键截图与设置");
         setCursor(Qt::PointingHandCursor);setFocusPolicy(Qt::StrongFocus);setFixedSize(44,44);
         setAcceptDrops(true);
         if(QGuiApplication::platformName()=="xcb") {
@@ -179,7 +180,25 @@ protected:
     void contextMenuEvent(QContextMenuEvent *e) override {
         auto *m=new QMenu(this);m->setAttribute(Qt::WA_DeleteOnClose);
         m->addAction("打开 AI小站",this,[this]{launch(false);});
-        m->addAction("AI小站设置…",this,[this]{launch(true);});m->popup(e->globalPos());
+        m->addAction("AI小站设置…",this,[this]{launch(true);});
+        m->addSeparator();
+        auto addCapture=[this,m](const QString &label,const QString &name,int delay){
+            auto *action=m->addAction(label,m,[this,m,delay]{
+                m->close();
+                // Give the compositor time to remove the menu in the quick path.
+                // The delay belongs here so both actions invoke region selection.
+                QTimer::singleShot(delay,Qt::PreciseTimer,this,[]{
+                    const QString serviceName="org.dharkael.kylinscreenshot";
+                    auto call=QDBusMessage::createMethodCall(serviceName,"/",serviceName,"graphicCapture");
+                    call.setArguments({QString(),0,QRandomGenerator::global()->generate()});
+                    QDBusConnection::sessionBus().call(call,QDBus::NoBlock);
+                });
+            });
+            action->setObjectName(name);
+        };
+        addCapture("现在截图","aiStationCaptureNow",250);
+        addCapture("延时 3 秒截图","aiStationCaptureDelayed",3000);
+        m->popup(e->globalPos());
     }
     void paintEvent(QPaintEvent *) override {
         QPainter p(this);p.setRenderHint(QPainter::Antialiasing);

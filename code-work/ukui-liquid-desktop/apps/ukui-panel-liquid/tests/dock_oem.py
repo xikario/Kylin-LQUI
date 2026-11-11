@@ -197,7 +197,7 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             background=named(native,'BackgroundWidget')
             check(calendar['x']+calendar['w']==background['x']+background['w'],'full native calendar aligns with Dock right edge')
             visible_motion=[e for e in native.get('calendarEvents',[]) if e['opacity']>.05]
-            check(len(visible_motion)>2 and len({e['x'] for e in visible_motion})==1 and visible_motion[0]['y']>visible_motion[-1]['y'],'calendar rises vertically with no visible sideways motion')
+            check(all(abs(e['x']-calendar['x'])<=2 and abs(e['y']-calendar['y'])<=2 for e in visible_motion),'calendar fades in at its final position without visible geometry animation')
             (args.output/'calendar-motion.json').write_text(json.dumps(visible_motion,indent=2))
             # OEM font/style polish can resize the calendar once after mapping
             # at fractional DPI (also present in the unmodified host). Let that
@@ -207,6 +207,12 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             for _ in range(12):
                 state=call(wait=100);cal=next(w for w in state['windows'] if w['class']=='LunarCalendarWidget');calendar_positions.append(tuple(cal[k] for k in ('x','y','w','h')))
             check(len(set(calendar_positions))==1,'native calendar remains stationary across twelve layout samples')
+            for _ in range(4):
+                shifted=call('repositionCalendar',wait=150);cal=next(w for w in shifted['windows'] if w['class']=='LunarCalendarWidget')
+                check(abs(cal['x']+cal['w']-background['x']-background['w'])<=2,'late native screen-right placement is corrected back to the Dock')
+            for button in ('kylin-calendar-plugin_KBorderlessButton_btnNextYear','kylin-calendar-plugin_KBorderlessButton_btnPrevYear','btn_btnToday'):
+                changed=call('click',name=button,wait=250);cal=next(w for w in changed['windows'] if w['class']=='LunarCalendarWidget')
+                check(abs(cal['x']+cal['w']-background['x']-background['w'])<=2,'calendar navigation retains the Dock anchor: '+button)
             call('click',name='kylin-calendar-plugin_CalendarButtonText_calendar_button',wait=150)
             popup=call('click',name='StatusNotifier_arrowBtn',wait=650)
             overflow=next(w for w in popup['windows'] if w['name']=='liquidTrayOverflow')

@@ -197,11 +197,10 @@ private slots:
         s.animation="slide";d.applySettings(s);d.Show();QTRY_COMPARE_WITH_TIMEOUT(d.pos(),d.targetGeometry().topLeft(),1000);
         s.width=680;s.height=850;s.liquid=35;const int builds=d.glassBuilds();d.applySettings(s);QCOMPARE(d.geometry(),d.targetGeometry());QVERIFY(d.glassBuilds()>builds);
     }
-    void taskbarMotionPushesThroughAnchorAndReverses(){
+    void taskbarMotionKeepsGeometryAndCachedSurfaceWhileFading(){
         auto s=config();s.animation="float";Drawer d(s,folder());const QRect screen=QGuiApplication::primaryScreen()->availableGeometry();
         d.ToggleAt(screen.right()-45,screen.bottom()-35,32,32);const QRect target=d.targetGeometry();const int builds=d.glassBuilds();
-        QTest::qWait(65);QVERIFY(d.y()>target.y()+10);QVERIFY(!d.mask().isEmpty());
-        QVERIFY(d.mask().translated(d.pos()).boundingRect().intersected(target)==d.mask().translated(d.pos()).boundingRect());
+        QTest::qWait(65);QCOMPARE(d.geometry(),target);QVERIFY(d.mask().isEmpty());QVERIFY(d.progress()>0);
         d.Hide();QTest::qWait(25);d.Show();QTRY_COMPARE_WITH_TIMEOUT(d.progress(),1.,1000);QCOMPARE(d.geometry(),target);QVERIFY(d.mask().isEmpty());QCOMPARE(d.glassBuilds(),builds);
         d.Hide();QTRY_VERIFY_WITH_TIMEOUT(!d.isVisible(),1000);QCOMPARE(d.glassBuilds(),builds);
     }

@@ -20,6 +20,7 @@
 #include "StationDrop.h"
 
 class UKUIPanel:public QWidget { Q_OBJECT public:using QWidget::QWidget; };
+class LunarCalendarWidget:public QWidget { Q_OBJECT public:using QWidget::QWidget; };
 class FakeStation:public QObject {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface","org.ukui.LiquidCli")
@@ -34,6 +35,17 @@ class StationTest:public QObject {
     Q_OBJECT
     static void write(const QString &path,const QByteArray &data){QDir().mkpath(QFileInfo(path).path());QFile f(path);QVERIFY(f.open(QIODevice::WriteOnly));f.write(data);}
 private slots:
+    void calendarIgnoresLateOemRepositionWithoutDpiOscillation(){
+        const auto screen=QGuiApplication::primaryScreen()->availableGeometry();
+        UKUIPanel panel;panel.setGeometry(screen.left()+100,screen.bottom()-60,650,48);panel.show();PanelAiStation bridge(&panel);
+        LunarCalendarWidget calendar;calendar.resize(300,400);calendar.move(900,200);calendar.show();
+        QTest::qWait(250);QPoint expected(panel.geometry().right()-calendar.width()+1,panel.y()-calendar.height()-8);
+        QVERIFY((calendar.pos()-expected).manhattanLength()<=2);QVERIFY(calendar.windowOpacity()>.99);
+        for(int n=0;n<4;++n){calendar.move(950,200+n*10);QVERIFY((calendar.pos()-expected).manhattanLength()<=2);QTest::qWait(30);QVERIFY((calendar.pos()-expected).manhattanLength()<=2);}
+        calendar.move(expected+QPoint(1,0));const auto rounded=calendar.pos();QTest::qWait(100);QCOMPARE(calendar.pos(),rounded);
+        calendar.resize(330,430);QTest::qWait(80);expected=QPoint(panel.geometry().right()-calendar.width()+1,panel.y()-calendar.height()-8);QVERIFY((calendar.pos()-expected).manhattanLength()<=2);
+        calendar.hide();calendar.move(950,200);calendar.show();QTest::qWait(220);QVERIFY((calendar.pos()-expected).manhattanLength()<=2);QVERIFY(calendar.windowOpacity()>.99);
+    }
     void networkAccounting(){
         QTemporaryDir root;StationMetrics metrics(root.path()+"/sys",root.path()+"/proc");
         for(const QString &name:QStringList{"eth0","tun0","lo"}) {

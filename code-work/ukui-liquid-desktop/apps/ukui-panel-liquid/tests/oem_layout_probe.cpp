@@ -209,6 +209,9 @@ class LayoutProbe : public QObject {
             qApp->setProperty("liquidSystemControlsEnabled",request.value("value").toBool());
         } else if(action=="dockEnable") {
             if(panel){panel->setProperty("liquidDockEnabled",request.value("value").toBool());}
+        } else if(action=="repositionCalendar") {
+            QWidget *calendar=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->inherits("LunarCalendarWidget")&&w->isVisible()){calendar=w;break;}
+            ok=calendar;if(calendar){const auto *screen=QGuiApplication::screenAt(calendar->geometry().center());if(!screen)screen=QGuiApplication::primaryScreen();const auto area=screen->availableGeometry();calendar->move(area.right()-calendar->width()+1,area.top()+40);}
         } else if(action=="hover") {
             auto *w=find(request.value("name").toString());ok=w;
             if(w)QCursor::setPos(w->mapToGlobal(w->rect().center()));

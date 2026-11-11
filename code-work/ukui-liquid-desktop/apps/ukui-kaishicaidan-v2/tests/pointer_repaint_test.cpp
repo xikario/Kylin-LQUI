@@ -100,8 +100,8 @@ public:
         check(menu.m_lastBackdrop.pixelColor(menu.m_lastBackdrop.rect().center())==QColor("#267654"),
               "first material samples the visible desktop window rather than the root wallpaper");
         settle(65);
-        check(menu.m_popupMotion.state()==QAbstractAnimation::Running && !menu.mask().isEmpty(),
-              "launcher emerges through the taskbar edge using cached material");
+        check(menu.m_popupProgress>0 && menu.mask().isEmpty() && menu.geometry()==menu.m_popupTarget,
+              "launcher fades cached material without per-frame moves or clipping");
         menu.hideMenu();settle(25);menu.showMenu();settle(350);
         check(menu.m_visible && menu.m_popupProgress==1 && menu.mask().isEmpty()
             && menu.m_popupMotion.state()==QAbstractAnimation::Stopped,

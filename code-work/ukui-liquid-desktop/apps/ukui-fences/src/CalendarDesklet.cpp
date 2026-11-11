@@ -50,6 +50,11 @@ const QSize SummaryIconSize(12,14);
 constexpr int ItemRole=Qt::UserRole+1, CompletedRole=Qt::UserRole+2;
 const QString CompletedSetting=QStringLiteral("desklets/calendar/completed");
 
+bool saveCompleted(const QSet<QString> &keys){
+    QStringList completed=keys.values();completed.sort();
+    QSettings settings;settings.setValue(CompletedSetting,completed);settings.sync();
+    return settings.status()==QSettings::NoError;
+}
 QString calendarScript(){
     const QString installed=QCoreApplication::applicationDirPath()+"/calendar_snapshot.py";
     return QFileInfo::exists(installed)?installed:QString::fromUtf8(UKUI_FENCES_CALENDAR_READER_PATH);
@@ -182,6 +187,7 @@ CalendarDesklet::CalendarDesklet(DesktopCanvas *canvas):LiquidDesklet(canvas,"ca
             m_loadedRevision=m_requestedRevision;m_readFailures=0;
             m_items=document.object()["items"].toArray();m_warning=document.object()["warning"].toString();
             m_dates=document.object()["dates"].toObject();m_calendarWarning=document.object()["calendarWarning"].toString();
+            migrateCompletedKeys();
         }else{
             ++m_readFailures;m_lastReadFailure.start();
             m_warning="系统待办读取失败，保留上次内容";
@@ -411,13 +417,22 @@ void CalendarDesklet::updateActions(){
     m_delete->setToolTip(series?"删除整组重复事项":"从系统日历删除所选事项");
     m_complete->setEnabled(enabled);m_edit->setEnabled(enabled);m_delete->setEnabled(enabled);
 }
+void CalendarDesklet::migrateCompletedKeys(){
+    auto migrated=m_completed;
+    for(const auto &value:m_items){
+        const auto item=value.toObject();
+        const QString legacy=item.value("legacyCompletionKey").toString(),key=item.value("completionKey").toString();
+        if(!legacy.isEmpty() && !key.isEmpty() && migrated.remove(legacy))migrated.insert(key);
+    }
+    if(migrated==m_completed)return;
+    m_completed=std::move(migrated);
+    if(!saveCompleted(m_completed))m_warning="暂时无法保存完成状态";
+}
 void CalendarDesklet::toggleComplete(){
     const QString key=selectedItem().value("completionKey").toString();
     if(key.isEmpty() || m_writer)return;
     if(!m_completed.remove(key))m_completed.insert(key);
-    QStringList completed=m_completed.values();completed.sort();
-    QSettings settings;settings.setValue(CompletedSetting,completed);settings.sync();
-    if(settings.status()!=QSettings::NoError){
+    if(!saveCompleted(m_completed)){
         if(!m_completed.remove(key))m_completed.insert(key);
         LiquidDialog::warning(this,"待办","暂时无法保存完成状态，请稍后重试。");
         return;

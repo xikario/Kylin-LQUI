@@ -10,7 +10,8 @@
 #include <QFileSystemWatcher>
 #include <QSignalBlocker>
 static int runCalendarTest(const QString &root){
-    QSettings settings;settings.setValue("smartSpace/autoStart",false);settings.setValue("systemMonitor/autoStart",false);settings.setValue("desklets/calendar/agendaCollapsed",false);settings.sync();
+    QSettings settings;settings.setValue("smartSpace/autoStart",false);settings.setValue("systemMonitor/autoStart",false);settings.setValue("desklets/calendar/agendaCollapsed",false);
+    settings.setValue("desklets/calendar/completed",QStringList{QStringLiteral("[\"old\"]")});settings.sync();
     const QString database=root+"/config/.kylin_calendar_Schedule2.db";QDir().mkpath(root+"/config");
     auto sql=[&](const QString &statement){return QProcess::execute("/usr/bin/python3",{"-c","import sqlite3,sys; c=sqlite3.connect(sys.argv[1]);c.executescript(sys.argv[2]);c.commit();c.close()",database,statement})==0;};
     check(sql("CREATE TABLE Schedule(id,start_date,end_date,start_hour,start_minute,descript,repeat,isAllDay,isLunar,beginrepeat,endrepeat);"),"isolated native calendar database created");
@@ -126,7 +127,7 @@ static int runCalendarTest(const QString &root){
         calendar->findChild<QPushButton *>("calendarAll")->click();
 
         const QString oldDate=QDate::currentDate().addDays(-62).toString(Qt::ISODate);
-        check(sql(QString("INSERT INTO Schedule VALUES('old','%1','%1','12','0','历史待办','不重复',0,0,'','');").arg(oldDate)),"older one-off fixture written");
+        check(sql(QString("INSERT INTO Schedule VALUES('old','%1','%1','12','0','【工作待办】#701 历史待办','不重复',0,0,'','');").arg(oldDate)),"older work task fixture written");
         auto selectTask=[&](const QString &name){
             for(int i=0;i<list->count();++i)if(list->item(i)->text().contains(name)){list->setCurrentRow(i);return true;}
             return false;
@@ -137,12 +138,19 @@ static int runCalendarTest(const QString &root){
         auto *remove=calendar->findChild<QPushButton *>("calendarDelete");
         check(complete && edit && remove,"expanded agenda exposes the three task actions");
         if(!complete || !edit || !remove)return 1;
-        check(selectTask("历史待办") && complete->isEnabled(),"old pending tasks can be selected from the expanded list");
-        complete->click();
-        check(list->currentItem() && list->currentItem()->text().contains("已完成") && complete->text()=="恢复","old task can be marked complete");
+        check(selectTask("历史待办") && complete->isEnabled(),"old task can be selected from the expanded list");
+        check(list->currentItem() && list->currentItem()->text().contains("已完成") && complete->text()=="恢复",
+              "legacy calendar-row completion follows the imported work task");
         complete->click();
         check(list->currentItem() && !list->currentItem()->text().contains("已完成"),"completed task can be reopened");
         complete->click();
+        check(sql(QString("DELETE FROM Schedule WHERE id='old'; INSERT INTO Schedule VALUES('pushed-again','%1','%1','12','0','【工作待办】#701 历史待办','不重复',0,0,'','');").arg(oldDate)),
+              "work sync recreates the same task with a new native row ID");
+        auto repushed=[&]{
+            return selectTask("历史待办") && list->currentItem()->data(Qt::UserRole+1).toJsonObject()["sourceId"].toString()=="pushed-again";
+        };
+        for(int w=0;w<3000 && !repushed();w+=50)settle(50);
+        check(repushed() && list->currentItem()->text().contains("已完成"),"work task remains completed after reimport");
         calendar->grab().save(output+"/expanded-actions.png");
 
         check(selectTask("系统待办测试"),"original task selected for edit");

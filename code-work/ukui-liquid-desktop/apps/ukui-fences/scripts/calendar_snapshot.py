@@ -5,6 +5,7 @@ import datetime as dt
 import hashlib
 import json
 from pathlib import Path
+import re
 import sqlite3
 import sys
 from chinese_calendar import metadata
@@ -15,6 +16,7 @@ def day(value):
 
 
 NON_REPEATING = ('', '不重复', '不重複', 'No repeat', 'Never')
+WORK_TODO_PREFIX = re.compile(r'^【工作待办】#([0-9]+)(?=\s|$)')
 TIME_COLUMNS = {'start_day', 'start_month', 'end_day', 'end_month', 'start_hour',
                 'start_minute', 'end_hour', 'end_minute', 'beginDateTime', 'endDateTime'}
 
@@ -85,17 +87,26 @@ def read_snapshot(path, begin, end, agenda_today=None):
                             if yes:starts.add(cursor)
                             cursor+=dt.timedelta(days=1)
                 source_id=str(r['id'])
+                title=str(r['descript'])
+                # The work-todo importer deletes/recreates its calendar rows
+                # on sync. The task number in its reserved prefix survives.
+                work_task=WORK_TODO_PREFIX.match(title) if not series else None
                 version=row_version(r)
                 editable_time=time_fields(r)
                 for date in starts:
                     all_day=bool(r.get('isAllDay'))
                     hour=int(r['start_hour']);minute=int(r['start_minute'])
                     clock=dt.time(hour,minute).strftime('%H:%M')
-                    items.append({'id':str(r['id'])+'@'+str(date),'date':str(date),'endDate':str(date+dt.timedelta(days=duration)),
-                                  'time':'全天' if all_day else clock,'title':str(r['descript']), 'allDay':all_day,
+                    native_key=json.dumps([source_id,str(date)] if series else [source_id],
+                                          ensure_ascii=False,separators=(',', ':'))
+                    item={'id':source_id+'@'+str(date),'date':str(date),'endDate':str(date+dt.timedelta(days=duration)),
+                                  'time':'全天' if all_day else clock,'title':title, 'allDay':all_day,
                                   'sourceId':source_id,'version':version,'series':series,'editableTime':editable_time,
-                                  'completionKey':json.dumps([source_id,str(date)] if series else [source_id],
-                                                             ensure_ascii=False,separators=(',', ':'))})
+                                  'completionKey':native_key}
+                    if work_task:
+                        item['completionKey']=json.dumps(['work-todo',work_task[1]],separators=(',', ':'))
+                        item['legacyCompletionKey']=native_key
+                    items.append(item)
             except (KeyError,ValueError,TypeError,OverflowError):
                 warnings.add('部分日程格式异常，请在系统日历查看')
     items.sort(key=lambda x:(x['date'],not x['allDay'],x['time'],x['id']))

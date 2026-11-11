@@ -39,6 +39,7 @@ private:
     void updateSummaryToolTip();
     QString agendaStatus() const;
     void updateActions();
+    void migrateCompletedKeys();
     QJsonObject selectedItem() const;
     void toggleComplete();
     void editSelected();

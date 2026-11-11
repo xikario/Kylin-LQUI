@@ -50,6 +50,7 @@
 #undef FocusOut
 #include <algorithm>
 #include <QDynamicPropertyChangeEvent>
+#include <dlfcn.h>
 
 namespace {
 const QString service="org.ukui.AiStationPanel";
@@ -437,6 +438,7 @@ private:
 }
 PanelAiStation::PanelAiStation(QObject *parent):QObject(parent) {
     qApp->setProperty("lquiCalendarGeometryEnabled",true);
+    if(auto detach=reinterpret_cast<void (*)()>(dlsym(RTLD_DEFAULT,"lqui_calendar_detach_preload")))detach();
     pending.setSingleShot(true);connect(&pending,&QTimer::timeout,this,&PanelAiStation::attach);
     qApp->installEventFilter(this);schedule();
     // Floating widgets must go away while QApplication's widget/platform
@@ -570,7 +572,7 @@ QString PanelAiStation::State() const {
     for(auto *w:QApplication::topLevelWidgets())if(w->inherits("LunarCalendarWidget")&&w->isVisible()&&w->windowHandle()){
         const auto r=w->windowHandle()->geometry();calendars.append(QJsonObject{{"x",r.x()},{"y",r.y()},{"width",r.width()},{"height",r.height()},{"dpr",w->devicePixelRatioF()},{"windowId",QString::number(w->winId())}});
     }
-    return QString::fromUtf8(QJsonDocument(QJsonObject{{"clusters",array},{"orbs",orbs},{"desktopCorners",edge},{"systemEntries",systemEntries},{"calendars",calendars},{"calendarGeometryRedirects",qApp->property("lquiCalendarGeometryRedirects").toInt()}}).toJson(QJsonDocument::Compact));
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"clusters",array},{"orbs",orbs},{"desktopCorners",edge},{"systemEntries",systemEntries},{"calendars",calendars},{"calendarGeometryRedirects",qApp->property("lquiCalendarGeometryRedirects").toInt()},{"calendarPreloadInherited",qEnvironmentVariable("LD_PRELOAD").contains("liblqui-calendar-geometry-bridge.so")}}).toJson(QJsonDocument::Compact));
 }
 
 bool PanelAiStation::OpenCalendar(){

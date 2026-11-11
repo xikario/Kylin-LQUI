@@ -249,6 +249,7 @@ class LayoutProbe : public QObject {
         QTimer::singleShot(request.value("wait").toInt(650),this,[=]{
             if(!guard)return;QJsonObject result{{"ok",ok},{"controlSyncs",qApp->property("lquiControlSyncs").toInt()},{"systemControls",qApp->property("liquidSystemControlsEnabled").toBool()},{"controlLauncher",qEnvironmentVariable("LQUI_CONTROL_CENTER_LAUNCHER")}};
             result["calendarGeometryRedirects"]=qApp->property("lquiCalendarGeometryRedirects").toInt();
+            result["calendarPreloadInherited"]=qEnvironmentVariable("LD_PRELOAD").contains("liblqui-calendar-geometry-bridge.so");
             if(panel) {
                 result.insert("panel",item(panel));result.insert("winId",QString::number(panel->winId()));
                 result.insert("backend",panel->property("liquidPanelLayoutBackend").toString());

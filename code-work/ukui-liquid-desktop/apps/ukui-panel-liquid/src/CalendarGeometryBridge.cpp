@@ -25,3 +25,13 @@ extern "C" void lquiCalendarSdkGeometry(QWindow *window,const QRect &requested) 
     if(original)original(window,target);
     else if(window)window->setGeometry(target);
 }
+
+// The library stays mapped in the panel, but must not propagate to programs
+// launched from its application icons, menu, tray, or capture entry points.
+extern "C" void lqui_calendar_detach_preload() {
+    Dl_info info{};if(!dladdr(reinterpret_cast<void *>(&lquiCalendarSdkGeometry),&info)||!info.dli_fname)return;
+    auto entries=qgetenv("LD_PRELOAD").split(':');
+    if(!entries.removeAll(QByteArray(info.dli_fname)))return;
+    entries.removeAll(QByteArray());
+    if(entries.isEmpty())qunsetenv("LD_PRELOAD");else qputenv("LD_PRELOAD",entries.join(':'));
+}

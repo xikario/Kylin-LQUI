@@ -149,6 +149,7 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             call('select',name='liquidIconTheme',index=0,wait=100);call('closeSettings',wait=300)
         initial=call();
         if args.calendar_regression_only:
+            check(not initial.get('calendarPreloadInherited',True),'calendar bridge is not inherited by launched applications')
             dimensions=re.search(r'dimensions:\s+(\d+x\d+)',subprocess.check_output(['xdpyinfo'],text=True)).group(1)
             recorder=subprocess.Popen(['ffmpeg','-v','error','-y','-f','x11grab','-video_size',dimensions,'-framerate','30','-i',os.environ['DISPLAY'],'-c:v','libx264','-preset','ultrafast','-crf','28',str(args.output/'calendar-replay.mp4')],stdout=subprocess.DEVNULL,stderr=open(args.output/'recording.log','w'))
             opened=call('click',name='kylin-calendar-plugin_CalendarButtonText_calendar_button',wait=500)

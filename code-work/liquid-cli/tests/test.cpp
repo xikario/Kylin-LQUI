@@ -204,6 +204,21 @@ private slots:
         d.Hide();QTest::qWait(25);d.Show();QTRY_COMPARE_WITH_TIMEOUT(d.progress(),1.,1000);QCOMPARE(d.geometry(),target);QVERIFY(d.mask().isEmpty());QCOMPARE(d.glassBuilds(),builds);
         d.Hide();QTRY_VERIFY_WITH_TIMEOUT(!d.isVisible(),1000);QCOMPARE(d.glassBuilds(),builds);
     }
+    void fractionalDpiRoundingDoesNotTriggerResizePerFrame(){
+        auto s=config();s.width=480;s.height=420;s.animation="float";Drawer d(s,folder());
+        class Rounder:public QObject {
+        public:int requests=0;QWidget *window=nullptr;
+        protected:bool eventFilter(QObject *,QEvent *e)override{
+            if(e->type()==QEvent::Resize&&window->size()==QSize(480,420)){
+                ++requests;QPointer<QWidget> guard(window);QTimer::singleShot(0,window,[guard]{if(guard)guard->resize(479,419);});
+            }
+            return false;
+        }} rounder;rounder.window=&d;d.installEventFilter(&rounder);
+        const auto screen=QGuiApplication::primaryScreen()->availableGeometry();d.ToggleAt(screen.right()-45,screen.bottom()-35,32,32);
+        QTRY_COMPARE_WITH_TIMEOUT(d.progress(),1.,1000);QCOMPARE(d.size(),QSize(479,419));QCOMPARE(rounder.requests,1);
+        d.Hide();QTRY_VERIFY_WITH_TIMEOUT(!d.isVisible(),1000);d.Show();QTRY_COMPARE_WITH_TIMEOUT(d.progress(),1.,1000);
+        QCOMPARE(d.size(),QSize(479,419));QCOMPARE(rounder.requests,1);QVERIFY(d.mask().isEmpty());
+    }
     void hiddenEdgeDoesNotPulseDuringBackgroundReply(){
         Drawer d(config(),folder());auto *pulse=d.edgeWidget()->findChild<QTimer*>("edgeBusyPulse");QVERIFY(pulse);
         d.submit("pulse fixture",{});QTRY_VERIFY(d.client()->busy());QVERIFY(pulse->isActive());

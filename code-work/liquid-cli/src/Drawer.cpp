@@ -159,11 +159,7 @@ Drawer::Drawer(Settings config,QString conversationFolder):QWidget(nullptr,Qt::T
     connect(&motion,&QVariantAnimation::valueChanged,this,[this](const QVariant &v){place(v.toReal());});
     connect(&motion,&QVariantAnimation::finished,this,[this]{
         if(!opened){QWidget::hide();setWindowOpacity(1);}
-        else {
-            // Removing the native animation mask does not invalidate all of
-            // Qt's translucent backing store (including child backgrounds).
-            place(1);repaint();
-        }
+        else place(1);
     });
     edge=new Edge(this);positionEdge();
     auto *panelWatcher=new QDBusServiceWatcher("org.ukui.AiStationPanel",QDBusConnection::sessionBus(),QDBusServiceWatcher::WatchForOwnerChange,this);
@@ -514,7 +510,7 @@ void Drawer::place(qreal value) {
     const int distance=settings.animation=="slide"?target.height()+14:kFloatDistance;
     const auto *screen=QGuiApplication::screenAt(panelAnchor.center());
     const bool topAnchor=panelAnchor.isValid()&&screen&&panelAnchor.center().y()<screen->availableGeometry().center().y();
-    if(size()!=target.size())resize(target.size());
+    if(qAbs(width()-target.width())>1||qAbs(height()-target.height())>1)resize(target.size());
     if(panelAnchor.isValid()) {DockPopupMotion::apply(this,target,topAnchor?2:3,value);return;}
     clearMask();
     move(target.topLeft()+QPoint(0,qRound((topAnchor?-1:1)*distance*(1-value))));
@@ -523,11 +519,13 @@ void Drawer::place(qreal value) {
 void Drawer::animate(bool show) {
     motion.stop();const qreal from=isVisible()?shown:0.;
     if(show&&!isVisible()){
-        // Populate the whole backing store before the taskbar mask clips it.
-        // Material-cache readiness alone does not mean these pixels were
-        // painted. Keep this preparation invisible and outside the frame loop.
-        setGeometry(targetGeometry());clearMask();setWindowOpacity(0);
-        QWidget::show();layout()->activate();repaint();place(from);raise();
+        // Preserve fractional-DPI settled dimensions and let the normal expose
+        // paint fill the backing store once; no animation mask needs priming.
+        const auto target=targetGeometry();
+        if(qAbs(width()-target.width())>1||qAbs(height()-target.height())>1)resize(target.size());
+        if((pos()-target.topLeft()).manhattanLength()>2)move(target.topLeft());
+        if(!mask().isEmpty())clearMask();setWindowOpacity(0);
+        QWidget::show();layout()->activate();place(from);raise();
     }
     bool reduced=QSettings("org.ukui","style").value("reduceAnimation",false).toBool();
     if(settings.animation=="none"||reduced){place(show?1:0);if(show)repaint();else{QWidget::hide();setWindowOpacity(1);}return;}

@@ -11,12 +11,13 @@ parser.add_argument('--calendar-native',action='store_true')
 parser.add_argument('--cohesive',action='store_true')
 parser.add_argument('--system-items',action='store_true')
 parser.add_argument('--system-items-only',action='store_true')
+parser.add_argument('--calendar-regression-only',action='store_true')
 parser.add_argument('--indicators-only',action='store_true')
 parser.add_argument('--settings-only',action='store_true',help='Only settings protocol/client checks on the isolated native host')
 parser.add_argument('--settings-center',type=pathlib.Path)
 parser.add_argument('--launcher',type=pathlib.Path)
 args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
-if args.system_items_only:args.system_items=True
+if args.system_items_only or args.calendar_regression_only:args.system_items=True
 assert os.environ.get('DOCK_ISOLATED')=='1','Run on a private Xvfb and D-Bus session'
 owned=subprocess.check_output(['gdbus','call','--session','--dest','org.freedesktop.DBus','--object-path','/org/freedesktop/DBus','--method','org.freedesktop.DBus.NameHasOwner','org.ukui.AiStationPanel'],text=True)
 assert 'false' in owned,'Refusing the running user panel bus; use a fresh dbus-run-session'
@@ -65,6 +66,8 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
     env=dict(os.environ,XDG_CONFIG_HOME=str(home/'.config'),XDG_CACHE_HOME=str(home/'.cache'),XDG_DATA_HOME=str(temp/'data'),
              GSETTINGS_BACKEND='memory',LQUI_SETTINGS_LEGACY='1',QT_PLUGIN_PATH=str(BUILD/'test-plugins')+':'+str(BUILD/'plugins'),
              UKUI_PANEL_LAYOUT_PROBE_SOCKET=str(endpoint),UKUI_LIQUID_GLASS_NO_GL='1',PATH=str(safeBin)+':'+os.environ['PATH'],DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(temp/'no-system-bus'),PULSE_SERVER='unix:'+str(temp/'no-pulse'))
+    bridge=BUILD/'liblqui-calendar-geometry-bridge.so'
+    if bridge.exists() and os.environ.get('LQUI_CALENDAR_NO_BRIDGE')!='1':env['LD_PRELOAD']=str(bridge)+(':'+env['LD_PRELOAD'] if env.get('LD_PRELOAD') else '')
     if args.system_items:
         control_launcher=temp/'open-control';control_log=temp/'control-open.jsonl'
         control_launcher.write_text('#!/usr/bin/python3\nimport sys,json\nwith open('+repr(str(control_log))+',"a") as f:f.write(json.dumps(sys.argv[1:])+"\\n")\n');control_launcher.chmod(0o755)
@@ -77,7 +80,7 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
              '/usr/bin/ukui-panel','-style','layoutprobe']
     process=subprocess.Popen(command,env=env,stdout=open(args.output/'stdout.log','w'),stderr=subprocess.STDOUT,start_new_session=True)
     observations=[]
-    launcher=None;system_items=None
+    launcher=None;system_items=None;recorder=None
     def call(action='state',**kw):
         with socket.socket(socket.AF_UNIX) as s:
             s.settimeout(12);s.connect(str(endpoint));s.sendall((json.dumps(dict(action=action,**kw))+'\n').encode());r=json.loads(s.makefile('rb').readline())
@@ -145,6 +148,38 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
                 check(len({theme_pixels[(key,name)] for key in ('color','glass','mist')})==3,'all three themes update '+name+' artwork')
             call('select',name='liquidIconTheme',index=0,wait=100);call('closeSettings',wait=300)
         initial=call();
+        if args.calendar_regression_only:
+            dimensions=re.search(r'dimensions:\s+(\d+x\d+)',subprocess.check_output(['xdpyinfo'],text=True)).group(1)
+            recorder=subprocess.Popen(['ffmpeg','-v','error','-y','-f','x11grab','-video_size',dimensions,'-framerate','30','-i',os.environ['DISPLAY'],'-c:v','libx264','-preset','ultrafast','-crf','28',str(args.output/'calendar-replay.mp4')],stdout=subprocess.DEVNULL,stderr=open(args.output/'recording.log','w'))
+            opened=call('click',name='kylin-calendar-plugin_CalendarButtonText_calendar_button',wait=500)
+            background=named(opened,'BackgroundWidget');right=background['x']+background['w']
+            def calendar_of(state):return next(w for w in state['windows'] if w['class']=='LunarCalendarWidget')
+            def verify_calendar(state,settled=True):
+                cal=calendar_of(state);native=cal['nativeGeometry']
+                check(abs(native['serverX']/native['dpr']+native['w']-right)<=2,'actual X11 window remains aligned with the Dock')
+                if settled:
+                    check(abs(native['x']+native['w']-right)<=2,'native QWindow remains aligned with the Dock')
+                    check(abs(native['serverX']/native['dpr']-native['x'])<=2,'X11 server position agrees with the Qt window')
+                    check(abs(cal['x']-native['x'])<=2 and abs(cal['y']-native['y'])<=2,'QWidget and QWindow coordinates remain consistent')
+                    check(abs(native['y']+native['h']-(background['y']-8))<=2,'calendar bottom stays above the Dock when its height changes')
+            verify_calendar(opened)
+            call('calendarBridgePassThrough',wait=20)
+            call('hover',name='kylin-calendar-plugin_DayLabel_item_widget_16',wait=30)
+            shifted=call('nativeCalendarPosition',wait=40)
+            call('captureScreen',path=str(temp/'native-position.png'),wait=0);shutil.copy2(temp/'native-position.png',args.output/'native-position.png')
+            (args.output/'native-position.json').write_text(json.dumps(shifted,ensure_ascii=False,indent=2));verify_calendar(shifted);verify_calendar(call(wait=160))
+            check(shifted.get('calendarGeometryRedirects',0)>0,'SDK geometry request was corrected before forwarding')
+            for cycle in range(3):
+                for index in (16,17,18,19,20,14):
+                    name='kylin-calendar-plugin_DayLabel_item_widget_'+str(index)
+                    call('hover',name=name,wait=20);changed=call('click',name=name,wait=40);verify_calendar(changed)
+                    changed=call(wait=120);verify_calendar(changed)
+                call('click',name='kylin-calendar-plugin_CalendarButtonText_calendar_button',wait=180)
+                opened=call('click',name='kylin-calendar-plugin_CalendarButtonText_calendar_button',wait=350);verify_calendar(opened)
+            for value in (True,False,True,False):
+                changed=call('check',name='kylin-calendar-plugin_QCheckBox_chk_yijichoose',value=value,wait=180);verify_calendar(changed)
+            call('captureScreen',path=str(temp/'calendar-final.png'),wait=0);shutil.copy2(temp/'calendar-final.png',args.output/'calendar-final.png')
+            call('shutdown',wait=0);check(process.wait(timeout=8)==0,'calendar interaction replay exits cleanly');raise SystemExit(0)
         if args.indicators_only:
             subprocess.run(['gdbus','call','--session','--dest','com.ukui.search.appdb.service','--object-path','/org/ukui/search/appDataBase/dbManager','--method','org.ukui.search.appDBManager.SetGrouped','true'],check=True,stdout=subprocess.DEVNULL)
             grouped=call('applications',count=3,grouped=True,wait=1300)
@@ -466,6 +501,7 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             call('shutdown',wait=0)
             check(process.wait(timeout=8)==0,'final panel shutdown has no teardown crash')
     finally:
+        if recorder and recorder.poll() is None:recorder.send_signal(signal.SIGINT);recorder.wait(timeout=10)
         if system_items:system_items.terminate();system_items.wait(timeout=4)
         if launcher and launcher.poll() is None:
             os.killpg(launcher.pid,signal.SIGTERM);launcher.wait(timeout=5)

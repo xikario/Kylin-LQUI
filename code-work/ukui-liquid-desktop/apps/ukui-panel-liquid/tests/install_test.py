@@ -19,7 +19,7 @@ class InstallTest(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.root, self.home = self.base / 'repo', self.base / 'home with space'
         self.inputs = ['build/plugins/styles/libukuiliquidpanel.so', 'scripts/ukui-panel-liquid',
-                       'scripts/session-start.py', 'scripts/restore.py', 'build/ukui-liquid-effects-trial']
+                       'scripts/session-start.py', 'scripts/restore.py', 'build/ukui-liquid-effects-trial','build/liblqui-calendar-geometry-bridge.so']
         for name in self.inputs:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)

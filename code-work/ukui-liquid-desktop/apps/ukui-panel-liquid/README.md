@@ -2,6 +2,8 @@
 
 通过 Qt 5 QStylePlugin 为系统 `/usr/bin/ukui-panel` 添加液态底板、进程内菜单和提示样式，保留 OEM 面板的任务、开始和托盘功能。插件委托基础样式处理原有控件，不替换系统面板二进制，也不设置全局 `QT_STYLE_OVERRIDE`。
 
+原生日历使用 Kylin SDK 直接设置 `QWindow` 几何，事后移动 `QWidget` 会与原生请求冲突。受管启动器仅为任务栏进程加载 `liblqui-calendar-geometry-bridge.so`，在 SDK 的公开几何入口把日历请求对齐到 Dock，其他窗口原样转发；不改系统库或私有对象内存。安装器一起备份、部署和恢复兼容库，启动器验证其摘要。关闭受管启动或兼容检查失败时使用原生面板。
+
 [项目主页](../../README.md) · [构建](../../docs/BUILD.md) · [安装与恢复](../../docs/INSTALL_AND_RESTORE.md)
 
 本组件属于仓库 [v0.6.0 发布集合](../../docs/versions/v0.6.0.md)。

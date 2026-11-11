@@ -4,6 +4,7 @@ import base64,hashlib,json,os,signal,subprocess,sys,tempfile
 from pathlib import Path
 HOST_MANIFEST_B64='@LQUI_HOST_MANIFEST@'
 PLUGIN_SHA256='@LQUI_PLUGIN_SHA256@'
+CALENDAR_BRIDGE_SHA256='@LQUI_CALENDAR_BRIDGE_SHA256@'
 PANEL=Path('/usr/bin/ukui-panel')
 
 def digest(path):
@@ -20,6 +21,7 @@ def compatible():
 
 def main():
     args=sys.argv[1:];plugin=Path.home()/'.local/lib/ukui-panel-liquid/plugins'
+    calendar_bridge=plugin.parent/'liblqui-calendar-geometry-bridge.so'
     runtime=Path(os.environ.get('XDG_RUNTIME_DIR','/run/user/'+str(os.getuid())))
     marker=runtime/'kylin-lqui-panel-failed.json'
     if '--retry-liquid' in args:
@@ -28,11 +30,12 @@ def main():
         except FileNotFoundError:pass
     try:failed=json.loads(marker.read_text()).get('plugin')==PLUGIN_SHA256
     except (OSError,ValueError):failed=False
-    usable=compatible() and (plugin/'styles/libukuiliquidpanel.so').is_file() and not failed
+    usable=compatible() and (plugin/'styles/libukuiliquidpanel.so').is_file() and calendar_bridge.is_file() and digest(calendar_bridge)==CALENDAR_BRIDGE_SHA256 and not failed
     if '--check-compatibility' in args:return 0 if usable else 1
     if '--original' in args:args.remove('--original');usable=False
     if not usable:os.execv(str(PANEL),[str(PANEL)]+args)
     env=dict(os.environ,QT_PLUGIN_PATH=str(plugin)+(os.pathsep+os.environ['QT_PLUGIN_PATH'] if os.environ.get('QT_PLUGIN_PATH') else ''))
+    env['LD_PRELOAD']=':'.join([str(calendar_bridge)]+[p for p in env.get('LD_PRELOAD','').split(':') if p and p!=str(calendar_bridge)])
     child=subprocess.Popen([str(PANEL),'-style','ukuiliquidpanel']+args,env=env)
     stopping=[False]
     def stop(signum,_):

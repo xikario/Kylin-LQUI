@@ -29,6 +29,7 @@
 #include <QStylePlugin>
 #include <QTimer>
 #include <QWidget>
+#include <QWindow>
 #include <QAction>
 #include <QMetaMethod>
 #include <QScrollBar>
@@ -43,6 +44,15 @@ class LayoutProbe : public QObject {
     QLocalServer server; QPointer<QWidget> panel; QJsonArray events,dndEvents,calendarEvents,dockMotion; bool traceDock=false;
     QJsonObject item(QWidget *w) {
         const QRect g(w->mapToGlobal(QPoint()),w->size());
+        QJsonObject native;
+        if(w->isWindow()&&w->windowHandle()){
+            const auto r=w->windowHandle()->geometry();native={{"x",r.x()},{"y",r.y()},{"w",r.width()},{"h",r.height()},{"opacity",w->windowOpacity()},{"exposed",w->windowHandle()->isExposed()},{"visible",w->windowHandle()->isVisible()}};
+            using Open=void *(*)(const char *);using Root=unsigned long(*)(void *);using Translate=int(*)(void *,unsigned long,unsigned long,int,int,int *,int *,unsigned long *);
+            static const auto open=reinterpret_cast<Open>(dlsym(RTLD_DEFAULT,"XOpenDisplay"));static void *display=open?open(nullptr):nullptr;
+            static const auto root=reinterpret_cast<Root>(dlsym(RTLD_DEFAULT,"XDefaultRootWindow"));static const auto translate=reinterpret_cast<Translate>(dlsym(RTLD_DEFAULT,"XTranslateCoordinates"));
+            int x=0,y=0;unsigned long child=0;
+            if(display&&root&&translate&&translate(display,w->winId(),root(display),0,0,&x,&y,&child)){native["serverX"]=x;native["serverY"]=y;native["dpr"]=w->devicePixelRatioF();}
+        }
         QJsonArray children;
         for(auto *c:w->findChildren<QWidget *>(QString(),Qt::FindDirectChildrenOnly))children.append(item(c));
         QJsonArray methods;
@@ -50,7 +60,7 @@ class LayoutProbe : public QObject {
             methods.append(QString::fromLatin1(w->metaObject()->method(i).methodSignature()));
         QJsonObject extra;
         if(auto *scroll=qobject_cast<QAbstractScrollArea *>(w))extra={{"verticalMaximum",scroll->verticalScrollBar()->maximum()},{"verticalVisible",scroll->verticalScrollBar()->isVisible()},{"horizontalVisible",scroll->horizontalScrollBar()->isVisible()},{"value",scroll->horizontalScrollBar()->value()},{"maximum",scroll->horizontalScrollBar()->maximum()},{"pageStep",scroll->horizontalScrollBar()->pageStep()}};
-        return {{"methods",methods},{"scroll",extra},{"class",w->metaObject()->className()},{"name",w->objectName()},
+        return {{"nativeGeometry",native},{"methods",methods},{"scroll",extra},{"class",w->metaObject()->className()},{"name",w->objectName()},
             {"windowClass",w->window()->metaObject()->className()},{"parentName",w->parentWidget()?w->parentWidget()->objectName():QString()},{"cell",w->property("lquiCell").toString()},{"layoutClass",w->layout()?w->layout()->metaObject()->className():""},
             {"x",g.x()},{"y",g.y()},{"w",g.width()},{"h",g.height()},
             {"visible",w->isVisible()},{"offscreen",w->testAttribute(Qt::WA_DontShowOnScreen)},{"minimum",w->minimumWidth()},
@@ -209,6 +219,18 @@ class LayoutProbe : public QObject {
             qApp->setProperty("liquidSystemControlsEnabled",request.value("value").toBool());
         } else if(action=="dockEnable") {
             if(panel){panel->setProperty("liquidDockEnabled",request.value("value").toBool());}
+        } else if(action=="calendarBridgePassThrough") {
+            QWidget ordinary(nullptr,Qt::Tool);ordinary.winId();
+            using Geometry=void(*)(QWindow *,const QRect &);const auto geometry=reinterpret_cast<Geometry>(dlsym(RTLD_DEFAULT,"_ZN3kdk13WindowManager11setGeometryEP7QWindowRK5QRect"));
+            const int before=qApp->property("lquiCalendarGeometryRedirects").toInt();const QRect target(40,50,180,100);
+            ok=geometry;if(geometry){geometry(ordinary.windowHandle(),target);ok=ordinary.windowHandle()->geometry()==target&&qApp->property("lquiCalendarGeometryRedirects").toInt()==before;}
+        } else if(action=="nativeCalendarPosition") {
+            QWidget *calendar=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->inherits("LunarCalendarWidget")&&w->isVisible()){calendar=w;break;}
+            static void *library=dlopen("/usr/lib/aarch64-linux-gnu/ukui-panel/libcalendar.so",RTLD_NOW|RTLD_NOLOAD);
+            using Position=void(*)(QWidget *);static auto position=library?reinterpret_cast<Position>(dlsym(library,"_ZN19LunarCalendarWidget32setCalendarPositionFromUKuiPanelEv")):nullptr;
+            ok=calendar&&position;if(ok)position(calendar);
+        } else if(action=="captureScreen") {
+            auto *screen=QGuiApplication::primaryScreen();ok=screen&&screen->grabWindow(0).save(request.value("path").toString());
         } else if(action=="repositionCalendar") {
             QWidget *calendar=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->inherits("LunarCalendarWidget")&&w->isVisible()){calendar=w;break;}
             ok=calendar;if(calendar){const auto *screen=QGuiApplication::screenAt(calendar->geometry().center());if(!screen)screen=QGuiApplication::primaryScreen();const auto area=screen->availableGeometry();calendar->move(area.right()-calendar->width()+1,area.top()+40);}
@@ -226,6 +248,7 @@ class LayoutProbe : public QObject {
         QPointer<QLocalSocket> guard(socket);
         QTimer::singleShot(request.value("wait").toInt(650),this,[=]{
             if(!guard)return;QJsonObject result{{"ok",ok},{"controlSyncs",qApp->property("lquiControlSyncs").toInt()},{"systemControls",qApp->property("liquidSystemControlsEnabled").toBool()},{"controlLauncher",qEnvironmentVariable("LQUI_CONTROL_CENTER_LAUNCHER")}};
+            result["calendarGeometryRedirects"]=qApp->property("lquiCalendarGeometryRedirects").toInt();
             if(panel) {
                 result.insert("panel",item(panel));result.insert("winId",QString::number(panel->winId()));
                 result.insert("backend",panel->property("liquidPanelLayoutBackend").toString());

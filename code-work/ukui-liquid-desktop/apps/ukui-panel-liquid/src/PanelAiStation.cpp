@@ -1,5 +1,6 @@
 #include "PanelAiStation.h"
 #include "CalendarPlacement.h"
+#include "LiquidPopup.h"
 #include "../../../shared/icon-style/IconPolicy.h"
 #include "ControlCenterLauncher.h"
 #include <QKeyEvent>
@@ -50,11 +51,21 @@
 #undef FocusOut
 #include <algorithm>
 #include <QDynamicPropertyChangeEvent>
+#include <QSet>
 #include <dlfcn.h>
 
 namespace {
 const QString service="org.ukui.AiStationPanel";
 QString launcher(){return qEnvironmentVariable("UKUI_AI_STATION_LAUNCHER",QDir::homePath()+"/.local/bin/liquid-cli");}
+void *calendarSymbol(QWidget *widget,const char *name) {
+    Dl_info info{};if(!widget||!dladdr(widget->metaObject(),&info)||!info.dli_fname)return nullptr;
+    void *library=dlopen(info.dli_fname,RTLD_LAZY|RTLD_NOLOAD);if(!library)return nullptr;
+    void *symbol=dlsym(library,name);dlclose(library);return symbol;
+}
+QWidget *scheduleCalendar(QWidget *item) {
+    for(auto *p=item;p;p=p->parentWidget())if(p->inherits("LunarCalendarWidget"))return p;
+    return nullptr;
+}
 QRect calendarTarget(QWidget *calendar) {
     return calendarDockTarget(calendar->size());
 }
@@ -501,8 +512,59 @@ void PanelAiStation::attach() {
         }
     }
 }
+void PanelAiStation::wireCalendarSchedule(QWidget *item) {
+    auto *calendar=scheduleCalendar(item);if(!calendar)return;
+    // The OEM double-click and menu slots both dereference an unrelated null
+    // editor member. Keep its native row and replace only these edit routes.
+    QObject::disconnect(item,SIGNAL(ScheduleClick(QString)),calendar,nullptr);
+    QObject::disconnect(item,SIGNAL(EditSchedule(QString)),calendar,nullptr);
+    QObject::connect(item,SIGNAL(ScheduleClick(QString)),this,SLOT(onCalendarScheduleEdit(QString)),Qt::UniqueConnection);
+    QObject::connect(item,SIGNAL(EditSchedule(QString)),this,SLOT(onCalendarScheduleEdit(QString)),Qt::UniqueConnection);
+}
+void PanelAiStation::onCalendarScheduleEdit(QString id) {
+    auto *item=qobject_cast<QWidget*>(sender());
+    using Id=QString(*)(QWidget *);const auto getId=reinterpret_cast<Id>(calendarSymbol(item,"_ZN13schedule_item5getIdEv"));
+    if(getId){const auto current=getId(item);if(!current.isEmpty())id=current;}
+    if(auto *calendar=scheduleCalendar(item))queueCalendarEdit(calendar,id);
+}
+void PanelAiStation::queueCalendarEdit(QWidget *calendar,const QString &id) {
+    if(!calendar||calendar->property("lquiCalendarEditPending").toBool())return;
+    calendar->setProperty("lquiCalendarEditPending",true);QPointer<QWidget> owner(calendar);
+    QTimer::singleShot(0,this,[owner,id]{
+        if(!owner)return;owner->setProperty("lquiCalendarEditPending",false);
+        auto fail=[owner]{if(owner)LiquidPopup::showText(owner->mapToGlobal(QPoint(20,50)),"系统日历编辑入口不可用，已阻止可能导致任务栏退出的操作。",owner,owner->rect());};
+        using Factory=void(*)(QWidget *);using Mode=void(*)(QWidget *,int,bool);using Text=void(*)(QWidget *,QString);
+        const auto factory=reinterpret_cast<Factory>(calendarSymbol(owner,"_ZN19LunarCalendarWidget15slotAddScheduleEv"));
+        const auto mode=reinterpret_cast<Mode>(calendarSymbol(owner,"_ZN13CSchceduleDlg11setPropertyEib"));
+        const auto setId=reinterpret_cast<Text>(calendarSymbol(owner,"_ZN13CSchceduleDlg5setIdE7QString"));
+        const auto load=reinterpret_cast<Text>(calendarSymbol(owner,"_ZN13CSchceduleDlg15setStatusFromIdE7QString"));
+        if(id.isEmpty()||!factory||!mode||!setId||!load){fail();return;}
+        QSet<QWidget*> before;
+        for(auto *w:QApplication::topLevelWidgets())if(w->inherits("CSchceduleDlg")){
+            if(w->property("lquiScheduleEditId").toString()==id){w->show();w->raise();w->activateWindow();return;}
+            before.insert(w);
+        }
+        // Use the OEM's safe dialog factory and ownership/cleanup connections,
+        // then apply the same public edit-mode/id loaders used by its edit slot.
+        factory(owner);QPointer<QWidget> editor;
+        for(auto *w:QApplication::topLevelWidgets())if(w->inherits("CSchceduleDlg")&&!before.contains(w)){editor=w;break;}
+        if(!editor){fail();return;}
+        mode(editor,0,true);setId(editor,id);load(editor,id);
+        editor->setProperty("lquiScheduleEditId",id);editor->show();editor->raise();editor->activateWindow();
+    });
+}
 bool PanelAiStation::eventFilter(QObject *o,QEvent *e) {
     auto *calendar=qobject_cast<QWidget*>(o);
+    if(calendar&&calendar->inherits("schedule_item")){
+        if(e->type()==QEvent::Show||e->type()==QEvent::Polish||e->type()==QEvent::MouseButtonPress){
+            wireCalendarSchedule(calendar);QPointer<QWidget> item(calendar);QTimer::singleShot(0,this,[this,item]{if(item)wireCalendarSchedule(item);});
+        }
+        if(e->type()==QEvent::MouseButtonDblClick){
+            wireCalendarSchedule(calendar);
+            using Id=QString(*)(QWidget *);const auto getId=reinterpret_cast<Id>(calendarSymbol(calendar,"_ZN13schedule_item5getIdEv"));
+            queueCalendarEdit(scheduleCalendar(calendar),getId?getId(calendar):QString());e->accept();return true;
+        }
+    }
     if(calendar&&calendar->inherits("LunarCalendarWidget")&&e->type()==QEvent::Move&&calendar->isVisible()
         &&!calendar->property("lquiCalendarOpening").toBool()&&!calendar->property("lquiCalendarCorrecting").toBool()){
         const auto target=calendarTarget(calendar);if(target.isValid())positionCalendar(calendar,target.topLeft());

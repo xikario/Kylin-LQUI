@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Dock adaptation against the real OEM taskbar in private X11/D-Bus/config."""
-import argparse, ast, configparser, ctypes, json, os, pathlib, re, shutil, signal, socket, subprocess, sys, tempfile, time
+import argparse, ast, configparser, ctypes, json, os, pathlib, re, shutil, signal, socket, sqlite3, subprocess, sys, tempfile, time, datetime
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 BUILD=pathlib.Path(os.environ.get('LQUI_PANEL_TEST_BUILD',str(ROOT/'build')))
@@ -12,6 +12,7 @@ parser.add_argument('--cohesive',action='store_true')
 parser.add_argument('--system-items',action='store_true')
 parser.add_argument('--system-items-only',action='store_true')
 parser.add_argument('--calendar-regression-only',action='store_true')
+parser.add_argument('--calendar-editor-only',action='store_true')
 parser.add_argument('--indicators-only',action='store_true')
 parser.add_argument('--settings-only',action='store_true',help='Only settings protocol/client checks on the isolated native host')
 parser.add_argument('--settings-center',type=pathlib.Path)
@@ -52,6 +53,12 @@ def clear_active_window():
 with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
     temp=pathlib.Path(directory);home=pathlib.Path.home()
     for name in ('config/ukui','cache','data','log'):(temp/name).mkdir(parents=True,exist_ok=True)
+    if args.calendar_editor_only:
+        calendar_db=temp/'config/.kylin_calendar_Schedule2.db';today=datetime.date.today();d=str(today)
+        row=dict(id='1999999999001',start_day=str(today.day),start_month=str(today.month),start_hour='23',start_minute='00',end_hour='23',end_minute='30',end_day=str(today.day),end_month=str(today.month),descript='LQUI safe edit fixture',start_date=d,end_date=d,remind='不提醒',repeat='不重复',beginrepeat='无限重复',endrepeat='2099-12-31',beginDateTime=d+'T00:00:00',endDateTime=d+'T00:00:00',isAllDay=0,isLunar=0,allDayremind='不提醒')
+        with sqlite3.connect(calendar_db) as db:
+            db.execute('CREATE TABLE Schedule ('+','.join(k+' TEXT NOT NULL' for k in row)+')')
+            db.execute('INSERT INTO Schedule VALUES ('+','.join('?' for _ in row)+')',list(row.values()))
     for name in ('panel.conf','panel-commission.ini','liquid-panel.ini'):
         src=home/'.config/ukui'/name
         if src.exists() and not args.settings_only:shutil.copy2(src,temp/'config/ukui'/name)
@@ -60,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
     config['dock']['adaptive']='true';config['dock']['clickFeedback']='true'
     with (temp/'config/ukui/liquid-panel.ini').open('w') as f:config.write(f)
     safeBin=temp/'safe-bin';safeBin.mkdir()
-    for program in ('systemctl','loginctl','ukui-session','ukui-screensaver-command','mate-session-save','pkexec','sudo'):
+    for program in ('systemctl','loginctl','ukui-session','ukui-screensaver-command','mate-session-save','pkexec','sudo','crontab'):
         stub=safeBin/program;stub.write_text('#!/bin/sh\nexit 1\n');stub.chmod(0o755)
     endpoint=temp/'probe.sock'
     env=dict(os.environ,XDG_CONFIG_HOME=str(home/'.config'),XDG_CACHE_HOME=str(home/'.cache'),XDG_DATA_HOME=str(temp/'data'),
@@ -148,6 +155,24 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
                 check(len({theme_pixels[(key,name)] for key in ('color','glass','mist')})==3,'all three themes update '+name+' artwork')
             call('select',name='liquidIconTheme',index=0,wait=100);call('closeSettings',wait=300)
         initial=call();
+        if args.calendar_editor_only:
+            def rows():
+                with sqlite3.connect(calendar_db) as db:return db.execute('SELECT id,descript FROM Schedule ORDER BY id').fetchall()
+            before=rows()
+            def open_editor(action):
+                call('click',name='kylin-calendar-plugin_CalendarButtonText_calendar_button',wait=600);call('nameScheduleItem',wait=0)
+                result=call(action,name='regressionScheduleItem',wait=600)
+                editors=[w for w in result['windows'] if w['class']=='CSchceduleDlg' and w['visible']]
+                (args.output/('editor-'+action+'.json')).write_text(json.dumps(result,ensure_ascii=False,indent=2))
+                check(len(editors)==1,'exactly one native edit dialog opens via '+action)
+                check(editors[0]['scheduleEditId']=='1999999999001','editor is bound to the original schedule id')
+                check(any(w.get('editText')=='LQUI safe edit fixture' for w in nodes(editors[0])),'native editor loads the existing description')
+                check(rows()==before,'opening editor does not modify the calendar database')
+                return result
+            open_editor('doubleClick');call('scheduleEditor',cancel=True,wait=350);check(rows()==before,'cancel preserves the original event')
+            open_editor('scheduleMenuEdit');call('scheduleEditor',text='LQUI edited fixture',save=True,wait=600)
+            check(rows()==[('1999999999001','LQUI edited fixture')],'save updates the same event without inserting a duplicate')
+            call('shutdown',wait=0);check(process.wait(timeout=8)==0,'native editor regression exits without crashing');raise SystemExit(0)
         if args.calendar_regression_only:
             check(not initial.get('calendarPreloadInherited',True),'calendar bridge is not inherited by launched applications')
             dimensions=re.search(r'dimensions:\s+(\d+x\d+)',subprocess.check_output(['xdpyinfo'],text=True)).group(1)

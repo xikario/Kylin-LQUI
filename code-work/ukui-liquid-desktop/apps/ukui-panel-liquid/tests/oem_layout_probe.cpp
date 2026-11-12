@@ -11,6 +11,8 @@
 #include <QJsonObject>
 #include <QLayout>
 #include <QLabel>
+#include <QTextEdit>
+#include <QLineEdit>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMenu>
@@ -60,7 +62,7 @@ class LayoutProbe : public QObject {
             methods.append(QString::fromLatin1(w->metaObject()->method(i).methodSignature()));
         QJsonObject extra;
         if(auto *scroll=qobject_cast<QAbstractScrollArea *>(w))extra={{"verticalMaximum",scroll->verticalScrollBar()->maximum()},{"verticalVisible",scroll->verticalScrollBar()->isVisible()},{"horizontalVisible",scroll->horizontalScrollBar()->isVisible()},{"value",scroll->horizontalScrollBar()->value()},{"maximum",scroll->horizontalScrollBar()->maximum()},{"pageStep",scroll->horizontalScrollBar()->pageStep()}};
-        return {{"nativeGeometry",native},{"methods",methods},{"scroll",extra},{"class",w->metaObject()->className()},{"name",w->objectName()},
+        return {{"editText",qobject_cast<QTextEdit*>(w)?qobject_cast<QTextEdit*>(w)->toPlainText():QString()},{"buttonText",qobject_cast<QAbstractButton*>(w)?qobject_cast<QAbstractButton*>(w)->text():QString()},{"scheduleEditId",w->property("lquiScheduleEditId").toString()},{"nativeGeometry",native},{"methods",methods},{"scroll",extra},{"class",w->metaObject()->className()},{"name",w->objectName()},
             {"windowClass",w->window()->metaObject()->className()},{"parentName",w->parentWidget()?w->parentWidget()->objectName():QString()},{"cell",w->property("lquiCell").toString()},{"layoutClass",w->layout()?w->layout()->metaObject()->className():""},
             {"x",g.x()},{"y",g.y()},{"w",g.width()},{"h",g.height()},
             {"visible",w->isVisible()},{"offscreen",w->testAttribute(Qt::WA_DontShowOnScreen)},{"minimum",w->minimumWidth()},
@@ -224,6 +226,19 @@ class LayoutProbe : public QObject {
             using Geometry=void(*)(QWindow *,const QRect &);const auto geometry=reinterpret_cast<Geometry>(dlsym(RTLD_DEFAULT,"_ZN3kdk13WindowManager11setGeometryEP7QWindowRK5QRect"));
             const int before=qApp->property("lquiCalendarGeometryRedirects").toInt();const QRect target(40,50,180,100);
             ok=geometry;if(geometry){geometry(ordinary.windowHandle(),target);ok=ordinary.windowHandle()->geometry()==target&&qApp->property("lquiCalendarGeometryRedirects").toInt()==before;}
+        } else if(action=="nameScheduleItem") {
+            ok=false;for(auto *w:QApplication::allWidgets())if(w->inherits("schedule_item")&&w->isVisible()){w->setObjectName("regressionScheduleItem");ok=true;break;}
+        } else if(action=="scheduleMenuEdit") {
+            auto *w=find("regressionScheduleItem");ok=w&&QMetaObject::invokeMethod(w,"slotEditSchedule",Qt::DirectConnection);
+        } else if(action=="scheduleEditor") {
+            QWidget *editor=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->inherits("CSchceduleDlg")&&w->isVisible()){editor=w;break;}
+            ok=editor;
+            if(editor&&request.value("cancel").toBool())editor->close();
+            else if(editor){
+                auto *text=editor->findChild<QTextEdit*>();ok=text;
+                if(text)text->setPlainText(request.value("text").toString());
+                if(ok&&request.value("save").toBool())ok=QMetaObject::invokeMethod(editor,"slotConfirmClick",Qt::DirectConnection);
+            }
         } else if(action=="nativeCalendarPosition") {
             QWidget *calendar=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->inherits("LunarCalendarWidget")&&w->isVisible()){calendar=w;break;}
             static void *library=dlopen("/usr/lib/aarch64-linux-gnu/ukui-panel/libcalendar.so",RTLD_NOW|RTLD_NOLOAD);

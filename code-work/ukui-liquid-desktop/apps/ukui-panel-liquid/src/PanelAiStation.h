@@ -17,7 +17,11 @@ public slots:
     Q_SCRIPTABLE bool OpenCalendar();
 protected:
     bool eventFilter(QObject *,QEvent *) override;
+private slots:
+    void onCalendarScheduleEdit(QString id);
 private:
+    void wireCalendarSchedule(QWidget *item);
+    void queueCalendarEdit(QWidget *calendar,const QString &id);
     void shutdown();
     void schedule();
     void attach();

@@ -169,8 +169,11 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
                 check(any(w.get('editText')=='LQUI safe edit fixture' for w in nodes(editors[0])),'native editor loads the existing description')
                 check(rows()==before,'opening editor does not modify the calendar database')
                 return result
-            open_editor('doubleClick');call('scheduleEditor',cancel=True,wait=350);check(rows()==before,'cancel preserves the original event')
-            open_editor('scheduleMenuEdit');call('scheduleEditor',text='LQUI edited fixture',save=True,wait=600)
+            open_editor('doubleClick')
+            repeated=call('doubleClick',name='regressionScheduleItem',wait=200)
+            check(sum(w['class']=='CSchceduleDlg' for w in repeated['windows'])==1,'repeated double click reuses the editor')
+            call('scheduleEditor',cancel=True,wait=350);check(rows()==before,'cancel preserves the original event')
+            open_editor('scheduleContextEdit');call('scheduleEditor',text='LQUI edited fixture',save=True,wait=600)
             check(rows()==[('1999999999001','LQUI edited fixture')],'save updates the same event without inserting a duplicate')
             call('shutdown',wait=0);check(process.wait(timeout=8)==0,'native editor regression exits without crashing');raise SystemExit(0)
         if args.calendar_regression_only:

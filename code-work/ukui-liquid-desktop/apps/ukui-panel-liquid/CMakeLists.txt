@@ -102,7 +102,7 @@ if(BUILD_TESTING AND XVFB_RUN_EXECUTABLE AND DBUS_RUN_SESSION_EXECUTABLE)
     find_package(Qt5 REQUIRED COMPONENTS Test)
     add_executable(liquid-ai-station-test tests/ai_station_test.cpp src/PanelAiStation.cpp src/StationMetrics.cpp)
     target_include_directories(liquid-ai-station-test PRIVATE src ${X11_INCLUDE_DIR} ${XCB_INCLUDE_DIR} ../../shared/desktop-launch)
-    target_link_libraries(liquid-ai-station-test PRIVATE Qt5::Widgets Qt5::DBus Qt5::Test ${X11_LIBRARY})
+    target_link_libraries(liquid-ai-station-test PRIVATE Qt5::Widgets Qt5::DBus Qt5::Test ${X11_LIBRARY} ${CMAKE_DL_LIBS} ukui-liquid-popup)
     foreach(SCALE 1 1.25 1.5 2)
         add_test(NAME panel-ai-station-${SCALE} COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2560x1440x24"
             ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:liquid-ai-station-test>)

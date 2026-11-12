@@ -228,6 +228,14 @@ class LayoutProbe : public QObject {
             ok=geometry;if(geometry){geometry(ordinary.windowHandle(),target);ok=ordinary.windowHandle()->geometry()==target&&qApp->property("lquiCalendarGeometryRedirects").toInt()==before;}
         } else if(action=="nameScheduleItem") {
             ok=false;for(auto *w:QApplication::allWidgets())if(w->inherits("schedule_item")&&w->isVisible()){w->setObjectName("regressionScheduleItem");ok=true;break;}
+        } else if(action=="scheduleContextEdit") {
+            auto *w=find("regressionScheduleItem");ok=w;
+            if(w){
+                QTimer::singleShot(80,this,[]{for(auto *top:QApplication::topLevelWidgets())if(auto *menu=qobject_cast<QMenu*>(top))if(menu->isVisible()){
+                    for(auto *a:menu->actions())if(a->text().contains("编辑")){a->trigger();menu->close();return;}menu->close();
+                }});
+                const auto p=w->rect().center();QMouseEvent press(QEvent::MouseButtonPress,p,w->mapToGlobal(p),Qt::RightButton,Qt::RightButton,Qt::NoModifier);QApplication::sendEvent(w,&press);
+            }
         } else if(action=="scheduleMenuEdit") {
             auto *w=find("regressionScheduleItem");ok=w&&QMetaObject::invokeMethod(w,"slotEditSchedule",Qt::DirectConnection);
         } else if(action=="scheduleEditor") {

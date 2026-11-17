@@ -1,5 +1,7 @@
 #include "PanelMaterialJob.h"
 #include "../../../shared/async-work/AsyncProcessStop.h"
+#include "../../../shared/effects/EffectsPolicy.h"
+#include <QGuiApplication>
 #include <QDataStream>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -8,6 +10,12 @@
 #include <dlfcn.h>
 
 namespace {
+// A stuck or crashing worker is a rendering failure for the whole session:
+// two within 10 minutes switch every module to the lite tier (EffectsPolicy.h).
+void reportWorkerTrouble(const QString &kind){
+    if(QGuiApplication::platformName()!=QLatin1String("xcb"))return;
+    LquiEffects::reportFailure(QStringLiteral("panel-material-worker"),kind);
+}
 QString helperPath(){
     if(qEnvironmentVariableIsSet("LQUI_PANEL_MATERIAL_WORKER"))return qEnvironmentVariable("LQUI_PANEL_MATERIAL_WORKER");
     Dl_info info{};
@@ -51,8 +59,12 @@ void PanelMaterialJob::start(){
         if(token==revision)callback(result,gpu);
         start();
     };
-    connect(child,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[finish](int code,QProcess::ExitStatus status){finish(code==0&&status==QProcess::NormalExit);});
+    connect(child,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this,child,finish](int code,QProcess::ExitStatus status){
+        // Our own kill after a timeout is not a second failure: process!=child by then.
+        if(process==child&&(status!=QProcess::NormalExit||code!=0))
+            reportWorkerTrouble(status==QProcess::NormalExit?QStringLiteral("exit-")+QString::number(code):QStringLiteral("crash"));
+        finish(code==0&&status==QProcess::NormalExit);});
     connect(child,&QProcess::errorOccurred,this,[finish](QProcess::ProcessError error){if(error==QProcess::FailedToStart)finish(false);});
-    connect(deadline,&QTimer::timeout,this,[finish]{qWarning()<<"[LquiPanel] material worker timed out; keeping cached surface";finish(false);});
+    connect(deadline,&QTimer::timeout,this,[finish]{qWarning()<<"[LquiPanel] material worker timed out; keeping cached surface";reportWorkerTrouble(QStringLiteral("timeout"));finish(false);});
     child->start(helperPath(),QStringList{});deadline->start(2500);
 }

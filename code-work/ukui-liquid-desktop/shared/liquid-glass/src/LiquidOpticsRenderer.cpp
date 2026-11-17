@@ -3,6 +3,7 @@
 #include "../../effects/EffectsPolicy.h"
 #include <QDebug>
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QThread>
 #include <QElapsedTimer>
 #include <QFile>
@@ -97,16 +98,29 @@ public:
         if (current) context.doneCurrent();
     }
 
+    static constexpr qint64 SlowFrameMs = 1500;
+    // Only real desktop sessions report; offscreen/minimal test platforms never
+    // touch the health file (it is also per-DISPLAY, see EffectsPolicy.h).
+    static void reportTrouble(const char *kind, bool severe) {
+        if (QGuiApplication::platformName() != QLatin1String("xcb")) return;
+        qWarning() << "[LiquidGlass] reporting" << kind << "to session effects health";
+        LquiEffects::reportFailure(QStringLiteral("liquid-glass"), QString::fromLatin1(kind), severe);
+    }
     QImage render(const QImage &body, const QImage &clear, QSize logical, float radius, const QImage &shape, float refraction, float shade, float highlight, float chroma, float liquidStrength, int control, int finish,float lightSurface,QVector2D smoke) {
         if (!attempted) {
             QElapsedTimer elapsed; elapsed.start();
             attempted=true; ready=initialize();
             if (qEnvironmentVariableIsSet("UKUI_FENCES_STARTUP_TRACE"))
                 qInfo() << "[FencesStartup] widget-gl-initialized" << elapsed.elapsed() << "ms" << ready;
+            // No GL here: every process should stop retrying for this session.
+            if (!ready) reportTrouble("gpu-init-failed", true);
         }
         if (!ready || !context.makeCurrent(&surface)) return {};
+        QElapsedTimer frame; frame.start();
         const QImage result=draw(body,clear,logical,radius,shape,refraction,shade,highlight,chroma,liquidStrength,control,finish,lightSurface,smoke);
         context.doneCurrent(); // textures were released by draw() before this
+        if (result.isNull()) reportTrouble("gpu-render-failed", false);
+        else if (frame.elapsed() > SlowFrameMs) reportTrouble("gpu-slow", false); // driver stall
         return result;
     }
 

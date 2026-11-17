@@ -4,6 +4,9 @@ from pathlib import Path
 
 HOME = tempfile.TemporaryDirectory()
 os.environ['XDG_CONFIG_HOME'] = HOME.name
+RUNTIME = tempfile.TemporaryDirectory()
+os.chmod(RUNTIME.name, 0o700)
+os.environ['XDG_RUNTIME_DIR'] = RUNTIME.name
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PyQt5 import QtCore, QtWidgets
@@ -15,6 +18,7 @@ from effects_card import GlobalEffectsCard
 class EffectsCardTest(unittest.TestCase):
     def setUp(self):
         if Path(E.path()).exists(): Path(E.path()).unlink()
+        if Path(E.health_path()).exists(): Path(E.health_path()).unlink()
         self.card = GlobalEffectsCard(); self.card.resize(700, 400); self.card.show(); app.processEvents()
 
     def tearDown(self):
@@ -68,6 +72,26 @@ class EffectsCardTest(unittest.TestCase):
     def test_level_names_are_accessible(self):
         self.assertEqual([b.accessibleName() for b in self.card.level.buttons],
                          ['效果档位：完整', '效果档位：均衡', '效果档位：轻量', '效果档位：关闭'])
+
+    def test_auto_degrade_shows_reason_and_restore(self):
+        self.assertTrue(self.card.health_row.isHidden())
+        E.report_failure('renderer', 'gpu-init-failed', severe=True); self.card.refresh()
+        self.assertFalse(self.card.health_row.isHidden())
+        self.assertIn('gpu-init-failed', self.card.health_text.text())
+        self.assertEqual(self.card.level.currentIndex(), 0)                 # still shows the user's choice
+        self.assertFalse(self.card.gpu.isEnabled())                          # capped by effective lite
+        self.assertTrue(self.card.restore.isVisible())
+        self.card.restore.click(); app.processEvents()
+        self.assertFalse(E.tripped()); self.assertTrue(self.card.health_row.isHidden())
+
+    def test_casting_status_and_switch(self):
+        self.assertTrue(self.card.casting_switch.isChecked())
+        E.set_casting(True, 'ExceedShare'); self.card.refresh()
+        self.assertIn('ExceedShare', self.card.health_text.text())
+        self.assertFalse(self.card.restore.isVisible())                      # nothing to restore: it ends with casting
+        self.card.casting_switch.click(); app.processEvents()
+        self.assertFalse(E.casting_lite()); self.assertTrue(self.card.health_row.isHidden())
+        E.set_casting(False, '')
 
     def test_input_method_is_not_part_of_global(self):
         texts = ' '.join(w.text() for w in self.card.findChildren(QtWidgets.QLabel))

@@ -1,10 +1,12 @@
 #include "PanelMaterialJob.h"
+#include "../../../shared/effects/EffectsPolicy.h"
 #include <QApplication>
 #include <QTemporaryDir>
 #include <QFile>
 #include <QTimer>
 #include <QDebug>
 int main(int argc,char **argv){
+    QTemporaryDir runtime;qputenv("XDG_RUNTIME_DIR",runtime.path().toUtf8()); // isolated session health
     QApplication app(argc,argv);QTemporaryDir root;
     const QString worker=app.arguments().value(1);
     QFile fake(root.path()+"/stall");if(!fake.open(QIODevice::WriteOnly))return 1;
@@ -21,6 +23,13 @@ int main(int argc,char **argv){
         QTimer::singleShot(4000,&loop,&QEventLoop::quit);loop.exec();
     }
     if(!completed||stale||ticks<100){qCritical()<<"worker timeout blocked or delivered obsolete image"<<ticks;return 2;}
+    {
+        // A stuck worker is reported to the session health (one timeout: not yet tripped).
+        QFile health(LquiEffects::healthPath());
+        if(!health.open(QIODevice::ReadOnly)||!health.readAll().contains("panel-material-worker")){qCritical()<<"worker timeout not reported";return 6;}
+        LquiEffects::invalidate();if(LquiEffects::tripped()){qCritical()<<"one timeout must not trip";return 7;}
+        LquiEffects::clearHealth();
+    }
     qputenv("LQUI_PANEL_MATERIAL_WORKER",worker.toUtf8());completed=false;
     {
         PanelMaterialJob request(&app);QEventLoop loop;

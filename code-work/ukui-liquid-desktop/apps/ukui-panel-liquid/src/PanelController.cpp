@@ -62,6 +62,7 @@ static bool sameMaterialRect(const QRect &a,const QRect &b) {
 #include <QButtonGroup>
 #include <QSignalBlocker>
 #include "../../../shared/effects/EffectsPolicy.h"
+#include "../../../shared/effects/CastingWatch.h"
 
 namespace {
 void addPanelLayoutSettings(QFormLayout *form, QWidget *dialog, QWidget *panel,
@@ -185,6 +186,8 @@ PanelController::PanelController(QObject *parent):QObject(parent) {
         m_pendingMaterial=true; // tier may switch GPU/CPU glass or drop it: rebuild once
         flushPreview();
     });
+    // The taskbar is the session's single casting watcher (see CastingWatch.h).
+    new LquiEffects::CastingWatch(this);
     qApp->setProperty("liquidSystemControlsEnabled",s.value("controls/compact",true).toBool());
     new PanelSystemControls(this);
     qApp->setProperty("liquidNotificationHistory",s.value("controls/notificationHistory",true).toBool());

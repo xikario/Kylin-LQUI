@@ -108,6 +108,13 @@ class AgendaDelegate(W.QStyledItemDelegate):
         painter.restore()
 
 
+def report_worker_trouble(kind):
+    """Stuck/crashing material helper counts towards the session's automatic
+    switch to the lite tier (two within 10 minutes). Real desktops only."""
+    if G.QGuiApplication.platformName() == 'xcb':
+        effects_policy.report_failure('calendar-material-worker', kind)
+
+
 class Material:
     def init_material(self):
         self.setAttribute(C.Qt.WA_TranslucentBackground)
@@ -144,11 +151,16 @@ class Material:
         packet=C.QByteArray();writer=C.QDataStream(packet,C.QIODevice.WriteOnly);writer.setVersion(C.QDataStream.Qt_5_12)
         writer.writeUInt32(0x4c514d31);writer << C.QByteArray(json.dumps(options).encode());writer.writeDouble(captured.devicePixelRatio());writer << captured.toImage()
         worker=C.QProcess(W.QApplication.instance());self.destroyed.connect(worker.kill);self.material_worker=worker;deadline=C.QTimer(worker);deadline.setSingleShot(True)
-        deadline.timeout.connect(worker.kill)
+        def timed_out():
+            worker.timed_out=True;report_worker_trouble('timeout');worker.kill()
+        deadline.timeout.connect(timed_out)
         def complete(code=1,status=None):
             if getattr(worker,'settled',False):return
             worker.settled=True;deadline.stop()
             if self.material_worker is worker:self.material_worker=None
+            # Cancelled (revision changed) or already counted as a timeout: not another failure.
+            if code!=0 and revision==self.material_revision and not getattr(worker,'timed_out',False):
+                report_worker_trouble('exit-%d' % code)
             if code==0 and revision==self.material_revision:
                 data=worker.readAllStandardOutput()
                 if len(data)<=32*1024*1024:

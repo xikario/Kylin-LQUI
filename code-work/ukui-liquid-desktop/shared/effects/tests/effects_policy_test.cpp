@@ -4,6 +4,7 @@
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
+#include <QFile>
 #include <atomic>
 #include <cstdio>
 
@@ -20,6 +21,8 @@ static void writeSystemReduce(bool on){
 int main(int argc,char **argv){
     QTemporaryDir home;
     qputenv("XDG_CONFIG_HOME",home.path().toUtf8());
+    QTemporaryDir runtime; // health state lives in the per-login runtime dir
+    qputenv("XDG_RUNTIME_DIR",runtime.path().toUtf8());
     QCoreApplication app(argc,argv);
 
     // Defaults change nothing: motion follows system or the module's own toggle,
@@ -94,14 +97,53 @@ int main(int argc,char **argv){
     CHECK(!LquiEffects::gpuAllowed()&&LquiEffects::reducedMotion()&&LquiEffects::motionScale()==0.0);
     writeGlobal("effects/gpu","auto");writeGlobal("effects/motion","system");writeGlobal("effects/pointerLight",true);LquiEffects::invalidate();
 
+    // Phase 3: automatic degradation. Effective tier = the stricter of the
+    // user's tier and the session health cap; the user's choice is kept.
+    LquiEffects::setLevel(LquiEffects::Level::Full);LquiEffects::clearHealth();
+    CHECK(!LquiEffects::tripped()&&LquiEffects::level()==LquiEffects::Level::Full);
+    CHECK(!LquiEffects::reportFailure("material-worker","timeout"));        // one soft failure: no trip
+    CHECK(LquiEffects::level()==LquiEffects::Level::Full);
+    CHECK(LquiEffects::reportFailure("material-worker","timeout"));         // second within 10 min trips
+    CHECK(LquiEffects::tripped()&&LquiEffects::level()==LquiEffects::Level::Lite);
+    CHECK(LquiEffects::userLevel()==LquiEffects::Level::Full);              // choice untouched
+    CHECK(LquiEffects::tripReason().contains("material-worker"));
+    CHECK(!LquiEffects::gpuAllowed()&&!LquiEffects::liveCapture());
+    LquiEffects::setLevel(LquiEffects::Level::Off);
+    CHECK(LquiEffects::level()==LquiEffects::Level::Off);                   // stricter user choice wins
+    LquiEffects::setLevel(LquiEffects::Level::Full);
+    CHECK(LquiEffects::clearHealth()&&!LquiEffects::tripped()&&LquiEffects::level()==LquiEffects::Level::Full);
+    CHECK(LquiEffects::reportFailure("renderer","gpu-init-failed",true));   // severe: trips at once
+    CHECK(LquiEffects::level()==LquiEffects::Level::Lite);
+    LquiEffects::clearHealth();
+    // Casting: temporary cap while a casting app runs (switchable, default on).
+    CHECK(LquiEffects::castingLite());
+    CHECK(LquiEffects::setCasting(true,"ExceedShare"));
+    CHECK(LquiEffects::casting()&&LquiEffects::level()==LquiEffects::Level::Lite);
+    CHECK(LquiEffects::setCastingLite(false)&&LquiEffects::level()==LquiEffects::Level::Full);
+    CHECK(LquiEffects::setCastingLite(true)&&LquiEffects::level()==LquiEffects::Level::Lite);
+    CHECK(LquiEffects::setCasting(false,QString())&&LquiEffects::level()==LquiEffects::Level::Full);
+    // A corrupt health file must never disable effects or crash.
+    {QFile f(LquiEffects::healthPath());f.open(QIODevice::WriteOnly);f.write("{not json");}
+    LquiEffects::invalidate();
+    CHECK(!LquiEffects::tripped()&&LquiEffects::level()==LquiEffects::Level::Full);
+    // Concurrent reporters (renderer threads) never lose the trip.
+    LquiEffects::clearHealth();
+    QThread *a=QThread::create([]{for(int i=0;i<5;++i)LquiEffects::reportFailure("thread-a","timeout");});
+    QThread *b=QThread::create([]{for(int i=0;i<5;++i)LquiEffects::reportFailure("thread-b","timeout");});
+    a->start();b->start();a->wait();b->wait();delete a;delete b;
+    CHECK(LquiEffects::tripped());
+    LquiEffects::clearHealth();
+
     // GUI processes get a callback when another process changes the policy.
     int notified=0;
     LquiEffects::onChanged(&app,[&]{++notified;});
     QTimer::singleShot(50,&app,[]{QSettings s(LquiEffects::path(),QSettings::IniFormat);s.setValue("effects/pointerLight",false);s.sync();});
+    QTimer::singleShot(700,&app,[]{LquiEffects::setCasting(true,"ExceedShare");});
     QTimer::singleShot(1500,&app,&QCoreApplication::quit);
     app.exec();
-    CHECK(notified>=1);
+    CHECK(notified>=2);                                                    // settings edit + casting change
     CHECK(!LquiEffects::pointerLight());
+    CHECK(LquiEffects::casting());
 
     if(failures){std::fprintf(stderr,"%d failure(s)\n",failures);return 1;}
     std::puts("effects policy: ok");return 0;

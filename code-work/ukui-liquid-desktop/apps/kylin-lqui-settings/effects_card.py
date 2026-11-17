@@ -50,6 +50,21 @@ class GlobalEffectsCard(SettingsGroup):
         self.add_row(SettingRow('鼠标追光', self.pointer,
             '总开关。关闭后任务栏、桌面分区和开始菜单的鼠标追光全部停止，各模块自己的开关保留。', boolean=True))
 
+        self.casting_switch = Switch('投屏时自动轻量')
+        self.casting_switch.clicked.connect(lambda checked: self.save(effects_policy.set_casting_lite, checked))
+        self.add_row(SettingRow('投屏时自动轻量', self.casting_switch,
+            '检测到投屏程序（如 MAXHUB 传屏 ExceedShare）运行时，临时切到轻量；投屏结束自动恢复。', boolean=True))
+
+        # Session status: automatic degradation or casting cap, with a way back.
+        self.health_row = QtWidgets.QWidget(); line = QtWidgets.QHBoxLayout(self.health_row)
+        line.setContentsMargins(12, 4, 12, 4); line.setSpacing(12)
+        self.health_text = label('', True); line.addWidget(self.health_text, 1)
+        self.restore = QtWidgets.QPushButton('恢复'); self.restore.setAccessibleName('恢复液态特效')
+        self.restore.setToolTip('清除本次登录的故障记录，回到你选择的档位；再次出现故障会重新自动降级。')
+        self.restore.clicked.connect(lambda: self.save(lambda _: effects_policy.clear_health(), None))
+        line.addWidget(self.restore)
+        self.box.addWidget(self.health_row)
+
         note = label('档位是上限，下面三项可在档位之内单独调整。改动立即作用于正在运行的模块。输入法外观仍在「输入法」页单独设置。', True)
         note.setContentsMargins(12, 0, 12, 0)
         self.box.addWidget(note)
@@ -60,21 +75,33 @@ class GlobalEffectsCard(SettingsGroup):
 
     def refresh(self):
         """Show the stored policy without writing it (another process may own it)."""
-        level = effects_policy.level()
-        index = [value for _, value in LEVEL_OPTIONS].index(level)
+        chosen = effects_policy.user_level()
+        level = effects_policy.level()          # effective, after automatic caps
+        index = [value for _, value in LEVEL_OPTIONS].index(chosen)
         if self.level.currentIndex() != index:
             self.level.setCurrentIndex(index)
-        self.level_help.setText(LEVEL_HELP[level])
+        self.level_help.setText(LEVEL_HELP[chosen])
         motion = [value for _, value in MOTION_OPTIONS].index(effects_policy.motion())
         if self.motion.currentIndex() != motion:
             self.motion.setCurrentIndex(motion)
         # Show the user's own switch values; the tier only disables them.
-        for control, value in ((self.gpu, effects_policy.gpu_switch()), (self.pointer, effects_policy.pointer_switch())):
+        for control, value in ((self.gpu, effects_policy.gpu_switch()), (self.pointer, effects_policy.pointer_switch()),
+                               (self.casting_switch, effects_policy.casting_lite())):
             if control.isChecked() != value:
                 blocker = QtCore.QSignalBlocker(control); control.setChecked(value); del blocker
         self.motion.setEnabled(level in ('full', 'balanced'))
         self.gpu.setEnabled(level in ('full', 'balanced'))
         self.pointer.setEnabled(level == 'full')
+        tripped = effects_policy.tripped()
+        casting = effects_policy.casting() and effects_policy.casting_lite()
+        if tripped:
+            self.health_text.setText('已自动降到轻量：%s。本次登录内保持，重新登录或点「恢复」后回到你选的档位。'
+                                     % (effects_policy.trip_reason() or '渲染故障'))
+        elif casting:
+            self.health_text.setText('正在投屏（%s）：临时使用轻量，投屏结束后自动恢复。' % (effects_policy.casting_app() or '投屏程序'))
+        capped = (tripped or casting) and level != chosen
+        self.health_row.setHidden(not capped)
+        self.restore.setVisible(tripped)
 
     def save_level(self, index):
         self.save(effects_policy.set_level, LEVEL_OPTIONS[index][1])

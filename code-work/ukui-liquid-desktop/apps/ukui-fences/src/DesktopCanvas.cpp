@@ -626,6 +626,10 @@ DesktopCanvas::DesktopCanvas(QWidget *parent)
     LiquidPopup::theme().reducedMotion = effectiveReduceMotion();
     // Global effects (settings overview) changed in any process: re-apply.
     LquiEffects::onChanged(this,[this]{
+        const bool glass=effectiveFenceLiquidGlass();
+        if(!glass){m_fenceGlassRenderer.reset();m_fenceGlassWallpaperKey=-1;}
+        for(auto *fence:m_fences)fence->setLiquidGlassEnabled(glass);
+        if(glass&&!m_fences.isEmpty())prepareFenceGlass();
         const bool reduce=effectiveReduceMotion();
         if(LiquidPopup::theme().reducedMotion!=reduce){LiquidPopup::theme().reducedMotion=reduce;emit reduceMotionChanged(reduce);}
         for(auto *fence:findChildren<FenceWidget*>())fence->update();
@@ -1553,7 +1557,7 @@ void DesktopCanvas::setFenceLiquidGlassEnabled(bool enabled)
         m_fenceGlassRenderer.reset();
         m_fenceGlassWallpaperKey = -1;
     }
-    for (auto *fence : m_fences) fence->setLiquidGlassEnabled(enabled);
+    for (auto *fence : m_fences) fence->setLiquidGlassEnabled(effectiveFenceLiquidGlass());
 }
 
 void DesktopCanvas::setWallpaperMagnetEnabled(bool enabled)
@@ -1622,7 +1626,7 @@ void DesktopCanvas::prepareFenceGlass()
 void DesktopCanvas::finishInitialWallpaper()
 {
     if (m_initialWallpaperReady || m_wallpaperLoading || m_wallpaperReloadPending) return;
-    if (m_fenceLiquidGlassEnabled && !m_fences.isEmpty()) {
+    if (effectiveFenceLiquidGlass() && !m_fences.isEmpty()) {
         if (m_fenceGlassWallpaperKey != m_wallpaperCache.cacheKey()) {
             prepareFenceGlass();
             return;
@@ -4453,7 +4457,7 @@ bool DesktopCanvas::isInAnyFence(const QString &filePath) const
 FenceWidget *DesktopCanvas::createFence(const QString &title, const QRect &geo)
 {
     auto *fence = new FenceWidget(title, geo, this);
-    fence->setLiquidGlassEnabled(m_fenceLiquidGlassEnabled);
+    fence->setLiquidGlassEnabled(effectiveFenceLiquidGlass());
     fence->setFenceColor(m_defaultFenceColor);
     fence->setEditMode(m_editMode);
     fence->setIconScale(m_iconScale);

@@ -1,11 +1,13 @@
 #pragma once
 #include <QWidget>
+#include "../../effects/EffectsPolicy.h"
 #include <QtMath>
 
 // Fade the cached surface at its final position. Repeated X11 move/shape
 // updates stall the compositor on the target GPU, even without repainting.
 namespace DockPopupMotion {
 constexpr int OpenMs=150,CloseMs=120;
+inline int scaled(int ms){return qRound(ms*LquiEffects::motionScale());}
 inline void apply(QWidget *window,const QRect &target,int edge,qreal progress) {
     Q_UNUSED(edge);
     // Tolerate one logical pixel of fractional-DPI window-manager rounding.

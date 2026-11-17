@@ -55,7 +55,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.popup_motion=QtCore.QVariantAnimation(self);self.popup_progress=0.;self.closing=False;self.popup_target=QtCore.QRect()
         self.popup_motion.valueChanged.connect(self.popup_frame);self.popup_motion.finished.connect(self.popup_finished)
         self.navigation_active=False;self.navigation_overlay=PageTransition(self)
-        self.navigation_motion=QtCore.QVariantAnimation(self);self.navigation_motion.setDuration(190);self.navigation_motion.setEasingCurve(QtCore.QEasingCurve.InOutCubic)
+        self.navigation_motion=QtCore.QVariantAnimation(self);self.navigation_motion.setDuration(round(190*effects_policy.motion_scale()));self.navigation_motion.setEasingCurve(QtCore.QEasingCurve.InOutCubic)
         self.navigation_motion.valueChanged.connect(self.navigation_overlay.set_progress);self.navigation_motion.finished.connect(self.finish_navigation)
         self.setObjectName('lquiControlCenter');self.setWindowTitle('Kylin-LQUI 系统控制中心');self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setStyleSheet(FUSION_STYLE);self.backdrop=QtGui.QImage();self.native_glass=None
         palette=self.palette()
@@ -88,6 +88,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         def prepare():
             from native_glass import NativeGlass
             if revision!=self.material_revision:return None
+            if not (effects_policy.live_capture() and effects_policy.glass_material()):raise RuntimeError('glass material disabled by effects tier')
             return NativeGlass(image,screen,region,adaptive_smoke=True)
         def ready(result):
             self.material_loading=False;material=result.get('data') if result['ok'] else None
@@ -171,6 +172,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.refresh_controls();self.refresh();self.refresh_microphone()
         def prime():
             if self.isVisible():return
+            if not (effects_policy.live_capture() and effects_policy.glass_material()):return
             try:
                 from native_glass import NativeGlass
                 image=QtGui.QImage(64,64,QtGui.QImage.Format_ARGB32_Premultiplied);image.fill(QtGui.QColor('#304050'))
@@ -269,7 +271,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
     def animate_popup(self,opening):
         self.popup_motion.stop();end=1. if opening else 0.
         if self.reduced_motion():self.popup_frame(end);self.popup_finished();return
-        self.popup_motion.setDuration(max(40,round((260 if opening else 220)*abs(end-self.popup_progress))))
+        self.popup_motion.setDuration(max(40,round((260 if opening else 220)*effects_policy.motion_scale()*abs(end-self.popup_progress))))
         self.popup_motion.setEasingCurve(QtCore.QEasingCurve.OutCubic if opening else QtCore.QEasingCurve.InCubic)
         self.popup_motion.setStartValue(self.popup_progress);self.popup_motion.setEndValue(end);self.popup_motion.start()
     def dismiss(self):
@@ -331,7 +333,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
             after=self.grab();self.navigation_active=True;self.layout().setEnabled(False)
             for widget in (self.header_frame,self.scroll,self.status):widget.hide()
             self.navigation_overlay.set_frames(before,after,-1 if page=='home' else 1)
-            self.navigation_motion.setStartValue(0.);self.navigation_motion.setEndValue(1.);self.navigation_motion.start();self.update()
+            self.navigation_motion.setDuration(round(190*effects_policy.motion_scale()));self.navigation_motion.setStartValue(0.);self.navigation_motion.setEndValue(1.);self.navigation_motion.start();self.update()
         if self.opening_pending and not self.material_loading:self.prepare_opening_frame()
     def finish_navigation(self,apply=True):
         if not self.navigation_active:return

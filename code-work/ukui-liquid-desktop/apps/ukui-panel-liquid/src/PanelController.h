@@ -35,6 +35,7 @@ private:
     void invalidateMaterial(QWidget *);
     QString configFile() const;
     bool effectiveReducedMotion() const { return LquiEffects::reducedMotion(m_reducedMotion); }
+    bool effectiveEnabled() const { return m_enabled && LquiEffects::glassMaterial(); }
     bool m_enabled=true, m_reducedMotion=false, m_followWallpaper=true;
     bool m_dockAdaptive=true,m_dockClickFeedback=true,m_dockMagnification=false;
     LiquidPopup::SurfaceStyle m_surface;

@@ -389,7 +389,7 @@ QWidget *FencesSettingsWindow::buildPage(const QString &id) {
             auto *resetAppearance=button(c,"恢复颜色、材质与标题图标默认值",[this,fence,refreshIcon]{
                 if(!fence||!m_canvas)return;
                 fence->setFenceColor(m_canvas->m_defaultFenceColor);
-                fence->setLiquidGlassEnabled(m_canvas->m_fenceLiquidGlassEnabled);
+                fence->setLiquidGlassEnabled(m_canvas->effectiveFenceLiquidGlass());
                 fence->setTitleIconThemeName(QString());
                 const auto defaults=FenceIconPicker::defaultIconPaths();
                 const int index=m_canvas->m_fences.indexOf(fence);

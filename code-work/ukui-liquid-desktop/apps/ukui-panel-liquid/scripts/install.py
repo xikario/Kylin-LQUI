@@ -12,11 +12,11 @@ import base64
 
 CALENDAR_FILES = ('calendar_popup.py', 'calendar_data.py', 'calendar_snapshot.py',
                   'chinese_calendar.py', 'holiday_sync.py', 'lunar_hko_reference.json', 'china_holidays_2026.json',
-                  'calendar_appearance.py', 'glass_widgets.py', 'native_glass.py', 'liblqui-glass-bridge.so')
+                  'calendar_appearance.py', 'glass_widgets.py', 'native_glass.py', 'effects_policy.py', 'liblqui-glass-bridge.so')
 
 def calendar_source(root, name):
     if name in ('calendar_popup.py','calendar_data.py','calendar_appearance.py'):return root / 'scripts' / name
-    if name in ('glass_widgets.py','native_glass.py'):return root.parent / 'kylin-lqui-settings' / name
+    if name in ('glass_widgets.py','native_glass.py','effects_policy.py'):return root.parent / 'kylin-lqui-settings' / name
     if name=='liblqui-glass-bridge.so':return root / 'build' / name
     return root.parent / 'ukui-fences/scripts' / name
 

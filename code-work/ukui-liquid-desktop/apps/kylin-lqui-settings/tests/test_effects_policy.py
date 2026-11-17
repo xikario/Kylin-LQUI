@@ -47,13 +47,28 @@ class EffectsPolicyTest(unittest.TestCase):
         self.assertEqual(str(s.value('icons/uniform')).lower(), 'false')
         with self.assertRaises(ValueError): E.set_motion('loud')
 
+    def test_levels_cap_everything(self):
+        self.assertEqual(E.level(), 'full')
+        self.assertTrue(E.gpu_allowed() and E.live_capture() and E.decorative_frames() and E.glass_material())
+        self.assertEqual(E.motion_scale(), 1.0)
+        E.set_level('balanced')
+        self.assertTrue(E.gpu_allowed() and E.live_capture() and E.glass_material())
+        self.assertFalse(E.decorative_frames() or E.pointer_light(True))
+        self.assertAlmostEqual(E.motion_scale(), 0.7); self.assertFalse(E.reduced_motion())
+        E.set_level('lite'); E.set_motion('off')
+        self.assertFalse(E.gpu_allowed() or E.live_capture()); self.assertTrue(E.glass_material())
+        self.assertTrue(E.reduced_motion()); self.assertEqual(E.motion_scale(), 0.0)
+        E.set_level('off'); self.assertFalse(E.glass_material())
+        put('effects/level', 'turbo'); self.assertEqual(E.level(), 'full')
+        with self.assertRaises(ValueError): E.set_level('max')
+
     def test_values_written_by_python_read_by_cpp(self):
         probe = os.environ.get('LQUI_EFFECTS_CPP_PROBE')
         if not probe:
             self.skipTest('set LQUI_EFFECTS_CPP_PROBE to the C++ probe binary')
-        E.set_motion('off'); E.set_gpu_allowed(False); E.set_pointer_light(False)
+        E.set_level('balanced'); E.set_motion('off'); E.set_gpu_allowed(False); E.set_pointer_light(False)
         out = subprocess.run([probe], capture_output=True, text=True, timeout=10, env=os.environ).stdout.strip()
-        self.assertEqual(out, 'motion=off gpu=0 pointer=0')
+        self.assertEqual(out, 'level=balanced motion=off gpu=0 pointer=0')
 
 
 if __name__ == '__main__':

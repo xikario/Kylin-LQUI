@@ -896,7 +896,7 @@ public:
 
         // 初始化 Hover 动画
         m_hoverAnim = new QVariantAnimation(this);
-        m_hoverAnim->setDuration(160);
+        m_hoverAnim->setDuration(qMax(1,qRound(160*LquiEffects::motionScale())));
         m_hoverAnim->setEasingCurve(QEasingCurve::OutCubic);
         connect(m_hoverAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &value){
             m_hoverFactor = value.toReal();
@@ -1551,7 +1551,7 @@ StartMenu::StartMenu(QWidget *parent)
     // The timer animates towards an event-provided target; it does not poll X11.
     qApp->installEventFilter(this);
     // Global effects (settings overview) changed: drop the pointer light at once.
-    LquiEffects::onChanged(this,[this]{if(!LquiEffects::pointerLight()&&m_glassLightTimer){m_glassLightTimer->stop();update();}});
+    LquiEffects::onChanged(this,[this]{if(!LquiEffects::pointerLight()&&m_glassLightTimer){m_glassLightTimer->stop();update();}update();});
     setupClipboardHistory();
     applyFontToChildren();
     setupAppWatcher();
@@ -1860,7 +1860,7 @@ void StartMenu::applyX11BackdropEffect()
 bool StartMenu::paintGlassControl(QPainter &p,const QWidget *owner,const QRectF &target,
                                   qreal radius,qreal hover,bool pressed)
 {
-    if(m_skin!=Skin::EcoLiquid || !m_nextKdeGlassView) return false;
+    if(m_skin!=Skin::EcoLiquid || !m_nextKdeGlassView || !LquiEffects::liveCapture() || !LquiEffects::glassMaterial()) return false;
     if (p.hasClipping() && !p.clipBoundingRect().intersects(target.adjusted(-2, -2, 2, 2)))
         return true;
     const QPoint origin=owner->mapTo(this,QPoint(0,0));
@@ -1909,6 +1909,8 @@ bool StartMenu::captureNextKdeBackdrop(std::function<void()> ready)
     if (!m_nextKdeGlassView || isVisible())
         return false;
     if (m_skin != Skin::EcoLiquid || !isX11Platform())
+        return false;
+    if (!LquiEffects::liveCapture() || !LquiEffects::glassMaterial())
         return false;
 
     QScreen *screen = QGuiApplication::screenAt(pos() + QPoint(width() / 2, height() / 2));
@@ -2606,7 +2608,8 @@ void StartMenu::paintEvent(QPaintEvent *event)
         panelPath.addRoundedRect(panelRect, StartMenuTheme::kCornerRadius,
                                  StartMenuTheme::kCornerRadius);
         if (m_skin == Skin::EcoLiquid) {
-            if (m_nextKdeGlassView && !m_nextKdeGlassView->image().isNull()) {
+            if (m_nextKdeGlassView && !m_nextKdeGlassView->image().isNull()
+                && LquiEffects::liveCapture() && LquiEffects::glassMaterial()) {
                 p.drawImage(QPoint(0, 0), m_nextKdeGlassView->image());
                 // Responsive reflected light, not repeated framebuffer capture.
                 // Child widgets do not receive or lose any pointer events.
@@ -3623,7 +3626,7 @@ void StartMenu::animatePopup(bool opening)
     const qreal end=opening?1.:0.;
     if(reduced){m_popupProgress=end;DockPopupMotion::apply(this,m_popupTarget,m_popupEdge,end);if(!opening)hide();return;}
     DockPopupMotion::apply(this,m_popupTarget,m_popupEdge,m_popupProgress);
-    m_popupMotion.setDuration(qMax(40,qRound((opening?DockPopupMotion::OpenMs:DockPopupMotion::CloseMs)*qAbs(end-m_popupProgress))));
+    m_popupMotion.setDuration(qMax(40,qRound((opening?DockPopupMotion::OpenMs:DockPopupMotion::CloseMs)*qAbs(end-m_popupProgress)*LquiEffects::motionScale())));
     m_popupMotion.setEasingCurve(opening?QEasingCurve::OutCubic:QEasingCurve::InCubic);
     m_popupMotion.setStartValue(m_popupProgress);m_popupMotion.setEndValue(end);m_popupMotion.start();
 }

@@ -17,6 +17,11 @@
 // (taskbar, Fences, start menu, control center, calendar, material workers).
 //
 // Stored in ~/.config/kylin-lqui/appearance.ini, group [effects]:
+//   level         full | balanced | lite | off   tier; a cap on everything below
+//                 full      today's behaviour (default)
+//                 balanced  GPU glass + capture, no per-frame decoration, 70% motion
+//                 lite      CPU glass, no screen capture, no animation
+//                 off       no glass material at all, no animation
 //   motion        system | on | off   reduce animations; "system" keeps each
 //                                     module's previous behaviour (UKUI
 //                                     reduceAnimation OR the module's toggle)
@@ -32,12 +37,27 @@
 namespace LquiEffects {
 
 enum class Motion { System, On, Off };
+enum class Level { Full, Balanced, Lite, Off };
 
 namespace detail {
 constexpr int RecheckMs=500;
 
 inline QString motionKey(Motion value){
     return value==Motion::On?QStringLiteral("on"):value==Motion::Off?QStringLiteral("off"):QStringLiteral("system");
+}
+inline QString levelKey(Level value){
+    switch(value){
+    case Level::Balanced:return QStringLiteral("balanced");
+    case Level::Lite:return QStringLiteral("lite");
+    case Level::Off:return QStringLiteral("off");
+    default:return QStringLiteral("full");
+    }
+}
+inline Level parseLevel(const QString &value){
+    if(value==QLatin1String("balanced"))return Level::Balanced;
+    if(value==QLatin1String("lite"))return Level::Lite;
+    if(value==QLatin1String("off"))return Level::Off;
+    return Level::Full; // unknown values keep today's behaviour
 }
 inline Motion parseMotion(const QString &value){
     if(value==QLatin1String("on"))return Motion::On;
@@ -46,12 +66,13 @@ inline Motion parseMotion(const QString &value){
 }
 
 struct Snapshot {
+    Level level=Level::Full;
     Motion motion=Motion::System;
     bool systemReduce=false;
     bool gpu=true;
     bool pointerLight=true;
     bool operator==(const Snapshot &o) const {
-        return motion==o.motion&&systemReduce==o.systemReduce&&gpu==o.gpu&&pointerLight==o.pointerLight;
+        return level==o.level&&motion==o.motion&&systemReduce==o.systemReduce&&gpu==o.gpu&&pointerLight==o.pointerLight;
     }
 };
 
@@ -62,6 +83,7 @@ inline QString globalPath(){
 inline Snapshot load(){
     Snapshot result;
     QSettings global(globalPath(),QSettings::IniFormat);
+    result.level=parseLevel(global.value(QStringLiteral("effects/level"),QStringLiteral("full")).toString());
     result.motion=parseMotion(global.value(QStringLiteral("effects/motion"),QStringLiteral("system")).toString());
     result.gpu=global.value(QStringLiteral("effects/gpu"),QStringLiteral("auto")).toString()!=QLatin1String("off");
     result.pointerLight=global.value(QStringLiteral("effects/pointerLight"),true).toBool();
@@ -147,20 +169,35 @@ inline QString path(){return detail::globalPath();}
 // Forget the cached values (tests, or right after this process wrote them).
 inline void invalidate(){std::lock_guard<std::mutex> guard(detail::cache().lock);detail::cache().checked.invalidate();}
 
+inline Level level(){return detail::current().level;}
 inline Motion motion(){return detail::current().motion;}
+
 // moduleOwn: the module's existing "reduce motion" toggle, honoured while the
-// global choice is "system".
+// global choice is "system". Lite/Off tiers always reduce.
 inline bool reducedMotion(bool moduleOwn=false){
     const auto s=detail::current();
+    if(s.level==Level::Lite||s.level==Level::Off)return true;
     if(s.motion==Motion::On)return true;
     if(s.motion==Motion::Off)return false;
     return s.systemReduce||moduleOwn;
 }
+// Multiply animation durations by this (0 means: jump to the end state).
+inline double motionScale(bool moduleOwn=false){
+    if(reducedMotion(moduleOwn))return 0.0;
+    return level()==Level::Balanced?0.7:1.0;
+}
+// Glass material may be rendered at all (Off draws plain tinted surfaces).
+inline bool glassMaterial(){return level()!=Level::Off;}
 // The UKUI_LIQUID_GLASS_NO_GL test switch is handled by the renderer itself.
-inline bool gpuAllowed(){return detail::current().gpu;}
+inline bool gpuAllowed(){const auto s=detail::current();return s.gpu&&(s.level==Level::Full||s.level==Level::Balanced);}
+// Screen grabs for backdrops (menus, popups, calendar, control center).
+inline bool liveCapture(){const auto l=level();return l==Level::Full||l==Level::Balanced;}
+// Per-frame decorative timers: pointer light, hover magnification, click ripples.
+inline bool decorativeFrames(){return level()==Level::Full;}
 // Master cap: the module's own setting still has to allow it.
-inline bool pointerLight(bool moduleOwn=true){return moduleOwn&&detail::current().pointerLight;}
+inline bool pointerLight(bool moduleOwn=true){return moduleOwn&&detail::current().pointerLight&&decorativeFrames();}
 
+inline bool setLevel(Level value){return detail::write(QStringLiteral("effects/level"),detail::levelKey(value));}
 inline bool setMotion(Motion value){return detail::write(QStringLiteral("effects/motion"),detail::motionKey(value));}
 inline bool setGpuAllowed(bool value){return detail::write(QStringLiteral("effects/gpu"),value?QStringLiteral("auto"):QStringLiteral("off"));}
 inline bool setPointerLight(bool value){return detail::write(QStringLiteral("effects/pointerLight"),value);}

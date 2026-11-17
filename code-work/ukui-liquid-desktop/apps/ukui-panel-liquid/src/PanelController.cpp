@@ -155,7 +155,7 @@ PanelController::PanelController(QObject *parent):QObject(parent) {
     m_surface.radius=qBound(0.,s.value("appearance/radius",CohesiveGlass::DockRadius).toDouble(),24.);
     m_surface.highlight=qBound(0.,s.value("appearance/highlight",CohesiveGlass::Highlight).toDouble(),1.);
     LiquidPopup::install(*qApp);
-    LiquidPopup::setEnabled(m_enabled);
+    LiquidPopup::setEnabled(effectiveEnabled());
     LiquidPopup::theme().reducedMotion=effectiveReducedMotion();
     LiquidPopup::theme().highlight=m_surface.highlight;
     QTimer::singleShot(0, this, [this] { refreshBackdrop(true); });
@@ -180,7 +180,9 @@ PanelController::PanelController(QObject *parent):QObject(parent) {
     // Global effects (settings overview) changed in any process: re-apply.
     LquiEffects::onChanged(this,[this]{
         LiquidPopup::theme().reducedMotion=effectiveReducedMotion();
+        LiquidPopup::setEnabled(effectiveEnabled());
         if(!LquiEffects::pointerLight()){m_pointers.clear();m_pointerDamage.clear();m_hoverRefresh.stop();}
+        m_pendingMaterial=true; // tier may switch GPU/CPU glass or drop it: rebuild once
         flushPreview();
     });
     qApp->setProperty("liquidSystemControlsEnabled",s.value("controls/compact",true).toBool());
@@ -228,10 +230,10 @@ PanelController::PanelController(QObject *parent):QObject(parent) {
 void PanelController::attach(QWidget *w) {
     if (!w || !w->inherits("UKUIPanel") || w->property("liquidPanelAttached").toBool()) return;
     w->setProperty("liquidPanelAttached",true);
-    w->setProperty("liquidPanelEnabled",m_enabled);
-    w->setProperty("liquidDockEnabled",m_enabled&&m_dockAdaptive);w->setProperty("liquidDockClickFeedback",m_dockClickFeedback&&!effectiveReducedMotion());
+    w->setProperty("liquidPanelEnabled",effectiveEnabled());
+    w->setProperty("liquidDockEnabled",effectiveEnabled()&&m_dockAdaptive);w->setProperty("liquidDockClickFeedback",m_dockClickFeedback&&!effectiveReducedMotion()&&LquiEffects::decorativeFrames());
     w->setProperty("liquidDockReducedMotion",effectiveReducedMotion());
-    w->setProperty("liquidDockHoverMagnification",m_dockMagnification&&!effectiveReducedMotion());
+    w->setProperty("liquidDockHoverMagnification",m_dockMagnification&&!effectiveReducedMotion()&&LquiEffects::decorativeFrames());
     new PanelLayoutCompat(w,configFile(),w);
     new PanelDockCompat(w);
     m_cache.insert(w,{});
@@ -248,7 +250,7 @@ void PanelController::attach(QWidget *w) {
 void PanelController::apply(bool materialChanged) {
     LiquidPopup::theme().reducedMotion=effectiveReducedMotion();
     LiquidPopup::theme().highlight=m_surface.highlight;
-    LiquidPopup::setEnabled(m_enabled);
+    LiquidPopup::setEnabled(effectiveEnabled());
     m_pendingMaterial|=materialChanged;
     if(!m_previewRefresh.isActive())m_previewRefresh.start();
     m_configSave.start();
@@ -259,10 +261,10 @@ void PanelController::flushPreview() {
     qApp->setProperty("liquidPanelPreviewBatches",qApp->property("liquidPanelPreviewBatches").toInt()+1);
     for(auto it=m_cache.begin();it!=m_cache.end();++it) {
         if(rebuild)invalidateMaterial(it.key());
-        it.key()->setProperty("liquidPanelEnabled",m_enabled);syncOutline(it.key());it.key()->update();
-        it.key()->setProperty("liquidDockEnabled",m_enabled&&m_dockAdaptive);it.key()->setProperty("liquidDockClickFeedback",m_dockClickFeedback&&!effectiveReducedMotion());
+        it.key()->setProperty("liquidPanelEnabled",effectiveEnabled());syncOutline(it.key());it.key()->update();
+        it.key()->setProperty("liquidDockEnabled",effectiveEnabled()&&m_dockAdaptive);it.key()->setProperty("liquidDockClickFeedback",m_dockClickFeedback&&!effectiveReducedMotion()&&LquiEffects::decorativeFrames());
         it.key()->setProperty("liquidDockReducedMotion",effectiveReducedMotion());
-        it.key()->setProperty("liquidDockHoverMagnification",m_dockMagnification&&!effectiveReducedMotion());
+        it.key()->setProperty("liquidDockHoverMagnification",m_dockMagnification&&!effectiveReducedMotion()&&LquiEffects::decorativeFrames());
     }
 }
 void PanelController::saveConfiguration() {
@@ -515,7 +517,7 @@ void PanelController::settingsDialog(QWidget *owner) {
 }
 bool PanelController::eventFilter(QObject *obj,QEvent *e) {
     auto *w=qobject_cast<QWidget *>(obj);if(!w)return false;
-    if(m_enabled&&m_dockAdaptive&&w->window()->property("liquidPanelAttached").toBool()
+    if(effectiveEnabled()&&m_dockAdaptive&&w->window()->property("liquidPanelAttached").toBool()
         &&(e->type()==QEvent::MouseButtonPress||e->type()==QEvent::MouseButtonDblClick||e->type()==QEvent::MouseButtonRelease)
         &&static_cast<QMouseEvent*>(e)->button()==Qt::LeftButton) {
         bool taskBackground=false,button=false;
@@ -538,7 +540,7 @@ bool PanelController::eventFilter(QObject *obj,QEvent *e) {
         attach(w);
         if(auto *menu=qobject_cast<QMenu *>(w))addMenu(menu);
     }
-    if(m_enabled && m_pointerHighlight>0 && LquiEffects::pointerLight() && (e->type()==QEvent::MouseMove || e->type()==QEvent::Enter || e->type()==QEvent::Leave)) {
+    if(effectiveEnabled() && m_pointerHighlight>0 && LquiEffects::pointerLight() && (e->type()==QEvent::MouseMove || e->type()==QEvent::Enter || e->type()==QEvent::Leave)) {
         QWidget *panel=w;
         while(panel && !m_cache.contains(panel))panel=panel->parentWidget();
         if(panel && m_cache.contains(panel)) {
@@ -578,7 +580,7 @@ bool PanelController::eventFilter(QObject *obj,QEvent *e) {
             });
         }
     }
-    if(e->type()==QEvent::Paint && m_enabled) {
+    if(e->type()==QEvent::Paint && effectiveEnabled()) {
         ++m_paints;
         const auto region=static_cast<QPaintEvent *>(e)->region();
         for (const QRect &r:region) m_dirtyPixels+=quint64(r.width())*r.height();
@@ -611,7 +613,7 @@ bool PanelController::eventFilter(QObject *obj,QEvent *e) {
                     {"opacity",m_surface.opacity},{"highlight",m_surface.highlight},{"chroma",m_chroma},
                     {"clarity",m_clarity},{"strength",m_liquidStrength},{"radius",m_surface.radius}};
                 m_preparations[w]->request(source,options,[this,guard,requested,dpr](const QImage &rendered,bool gpu){
-                    if(!guard || !m_enabled)return;
+                    if(!guard || !effectiveEnabled())return;
                     if(!sameMaterialRect(requested,QRect(guard->mapToGlobal(QPoint()),guard->size())) || !qFuzzyCompare(dpr,guard->devicePixelRatioF())){
                         invalidateMaterial(guard);guard->update();return;
                     }
@@ -656,7 +658,7 @@ void PanelController::invalidateMaterial(QWidget *w) {
 }
 
 void PanelController::syncOutline(QWidget *w) {
-    if(!m_enabled) {
+    if(!effectiveEnabled()) {
         w->setProperty("liquidNativeShapeReset",true);
         const QRegion original=m_originalMasks.value(w);
         if(original.isEmpty())w->clearMask();else w->setMask(original);
@@ -675,7 +677,7 @@ void PanelController::syncOutline(QWidget *w) {
         const QRegion logical=QRegion(outline.toFillPolygon().toPolygon()) & w->rect();
         if(w->mask()!=logical)w->setMask(logical);
     }
-    setPanelNativeBackdrop(w,m_enabled);
+    setPanelNativeBackdrop(w,effectiveEnabled());
 }
 void PanelController::updateWallpaperWatchers() {
     if(!m_wallpaperWatcher.files().isEmpty())m_wallpaperWatcher.removePaths(m_wallpaperWatcher.files());

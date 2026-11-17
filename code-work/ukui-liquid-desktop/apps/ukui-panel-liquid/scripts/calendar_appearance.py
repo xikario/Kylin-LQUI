@@ -7,6 +7,7 @@ HERE = Path(__file__).resolve().parent
 if not (HERE/'glass_widgets.py').exists():
     sys.path.insert(0, str(HERE.parent.parent/'kylin-lqui-settings'))
 from glass_widgets import GlassCard, diffuse_backdrop, glyph
+import effects_policy
 
 STYLE = '''
 QWidget {font-family:"Noto Sans CJK SC";font-size:12px;color:#f0f4fa;}
@@ -122,6 +123,8 @@ class Material:
         self.cancel_material();revision=self.material_revision;self.material_ready=False
         screen=W.QApplication.screenAt(self.geometry().center()) or W.QApplication.primaryScreen()
         area=screen.geometry();region=self.geometry().intersected(area);offset=region.topLeft()-area.topLeft()
+        if not (effects_policy.live_capture() and effects_policy.glass_material()):
+            self.surface=G.QImage();self.update();return  # lite/off tier: plain painted surface, no capture, no worker
         captured=screen.grabWindow(0,offset.x(),offset.y(),region.width(),region.height())
         self.material_builds+=1
         dpr=self.devicePixelRatioF();expected=C.QSize(round(self.width()*dpr),round(self.height()*dpr))

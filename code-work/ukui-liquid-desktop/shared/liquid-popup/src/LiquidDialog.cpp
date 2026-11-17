@@ -1,3 +1,4 @@
+#include "../../effects/EffectsPolicy.h"
 #include "LiquidDialog.h"
 #include "LiquidButtons.h"
 #include <QApplication>
@@ -168,7 +169,7 @@ public:
         inputEnabled=window->isEnabled();restoreInput=true;window->setEnabled(false);
         done=std::move(completion);motion.stop();
         motion.setStartValue(window->windowOpacity());motion.setEndValue(0.);
-        motion.setDuration(LiquidPopup::theme().closeMs);
+        motion.setDuration(qRound(LiquidPopup::theme().closeMs*LquiEffects::motionScale(LiquidPopup::theme().reducedMotion)));
         motion.setEasingCurve(QEasingCurve::InCubic);motion.start();
         return true;
     }
@@ -233,7 +234,7 @@ protected:
             }
             if(animate()) {
                 motion.setStartValue(.15);motion.setEndValue(1.);
-                motion.setDuration(LiquidPopup::theme().openMs);
+                motion.setDuration(qRound(LiquidPopup::theme().openMs*LquiEffects::motionScale(LiquidPopup::theme().reducedMotion)));
                 motion.setEasingCurve(QEasingCurve::OutCubic);motion.start();
             }
         } else if(event->type()==QEvent::Paint && (options.material || options.settingsSurface)) {

@@ -6,6 +6,7 @@
 #include "FileClipboard.h"
 #include "MenuStyle.h"
 #include "LiquidPopup.h"
+#include "../../../shared/effects/EffectsPolicy.h"
 
 #include <QPainter>
 #include <QPainterPath>
@@ -866,7 +867,7 @@ void DesktopIcon::mousePressEvent(QMouseEvent *e)
 
         // Click feedback is available on every surface. Starting a drag ends
         // the animation before pointer tracking begins.
-        m_clickAnim = !LiquidPopup::theme().reducedMotion;
+        m_clickAnim = !(LiquidPopup::theme().reducedMotion || !LquiEffects::decorativeFrames());
         m_clickAnimProgress = 0.0;
         if(m_clickAnim)m_clickAnimTimer.start();
 

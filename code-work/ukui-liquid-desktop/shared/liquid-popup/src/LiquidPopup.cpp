@@ -1,5 +1,6 @@
 #include <QElapsedTimer>
 #include <QDebug>
+#include "../../effects/EffectsPolicy.h"
 #include "LiquidPopup.h"
 #include <QHelpEvent>
 #include <QAbstractItemView>
@@ -115,6 +116,7 @@ struct ProfileScope {
 QImage capture(const QRect &area, qreal dpr) {
     ProfileScope profile("capture");
     if (provider) return provider(area, dpr);
+    if (!LquiEffects::liveCapture()) return {};
     // X11 snapshot before mapping. Wayland has no silent global capture;
     // return an empty image and use a readable tonal fallback there.
     if (QGuiApplication::platformName() != QStringLiteral("xcb")) return {};
@@ -291,7 +293,7 @@ protected:
             snapshotReady=true;
             if(!theme().reducedMotion && QGuiApplication::platformName()=="xcb") {
                 fade.stop();fade.setStartValue(.15);fade.setEndValue(1.0);
-                fade.setDuration(theme().openMs);fade.setEasingCurve(QEasingCurve::OutCubic);fade.start();
+                fade.setDuration(qRound(theme().openMs*LquiEffects::motionScale(theme().reducedMotion)));fade.setEasingCurve(QEasingCurve::OutCubic);fade.start();
             }
             settle.stop(); // This opening's own placement is already rendered.
         } else if((e->type()==QEvent::Resize || e->type()==QEvent::Move)
@@ -525,7 +527,7 @@ QAction *execAt(QMenu &menu,QWidget *anchor) {
 Theme &theme(){return settings;}
 int Motion::duration(int fullMs, qreal remaining, int floorMs) {
     if(settings.reducedMotion) return 0;
-    return qMax(qMax(1,floorMs),qRound(fullMs*qBound<qreal>(0,remaining,1)));
+    return qRound(qMax(qMax(1,floorMs),qRound(fullMs*qBound<qreal>(0,remaining,1)))*LquiEffects::motionScale(settings.reducedMotion));
 }
 bool isEnabled(){return enabled;}
 bool drawMenuGlyph(QStyle::PrimitiveElement element,const QStyleOption *option,QPainter *p) {

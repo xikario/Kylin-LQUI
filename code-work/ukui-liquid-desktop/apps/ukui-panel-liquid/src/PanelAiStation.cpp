@@ -107,7 +107,7 @@ protected:
 private:
     void play(bool click) {
         QSettings appearance(QDir::homePath()+"/.config/ukui/liquid-panel.ini",QSettings::IniFormat);
-        if(LquiEffects::reducedMotion(appearance.value("appearance/reducedMotion",false).toBool()))return;
+        if(LquiEffects::reducedMotion(appearance.value("appearance/reducedMotion",false).toBool())||!LquiEffects::decorativeFrames())return;
         clicked=click;motion.stop();progress=0;setGeometry(button->rect());show();raise();frame.start();setProperty("animating",true);motion.start();
     }
     QWidget *button;QVariantAnimation motion;QElapsedTimer frame;qreal progress=0;bool clicked=false;

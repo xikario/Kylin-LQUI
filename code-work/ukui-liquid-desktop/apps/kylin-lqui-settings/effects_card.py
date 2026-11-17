@@ -9,6 +9,13 @@ import effects_policy
 from design import Switch
 from ui_components import SettingsGroup, SettingRow, RadioChoice, StatusLabel, label
 
+LEVEL_OPTIONS = (('完整', 'full'), ('均衡', 'balanced'), ('轻量', 'lite'), ('关闭', 'off'))
+LEVEL_HELP = {
+    'full': '完整：全部液态效果，包括 GPU 折射、鼠标追光、悬停放大和完整动画。',
+    'balanced': '均衡：保留 GPU 玻璃质感，停用鼠标追光等逐帧装饰，动画缩短到 70%。适合性能一般的电脑。',
+    'lite': '轻量：玻璃改用 CPU 绘制，不再截屏取背景，关闭动画。适合显卡较弱、投屏或卡顿时。',
+    'off': '关闭：不绘制液态玻璃，使用纯色底板，关闭动画。最省资源。',
+}
 MOTION_OPTIONS = (('跟随系统', 'system'), ('开启', 'on'), ('关闭', 'off'))
 
 
@@ -17,12 +24,21 @@ class GlobalEffectsCard(SettingsGroup):
         super().__init__('液态特效（全局）')
         self.setObjectName('globalEffectsCard')
 
+        self.level = RadioChoice([text for text, _ in LEVEL_OPTIONS])
+        for button, (text, _) in zip(self.level.buttons, LEVEL_OPTIONS):
+            button.setAccessibleName('效果档位：' + text)
+        self.level.activated.connect(self.save_level)
+        level_row = SettingRow('效果档位', self.level, LEVEL_HELP['full'])
+        self.level_help = level_row.help
+        self.add_row(level_row)
+
         self.motion = RadioChoice([text for text, _ in MOTION_OPTIONS])
         for button, (text, _) in zip(self.motion.buttons, MOTION_OPTIONS):
             button.setAccessibleName('减弱动画：' + text)
         self.motion.activated.connect(self.save_motion)
-        self.add_row(SettingRow('减弱动画', self.motion,
-            '跟随系统时，UKUI「减少动画」或各模块自己的开关任一开启即生效；选择开启或关闭则统一覆盖所有模块。'))
+        self.motion_row = SettingRow('减弱动画', self.motion,
+            '跟随系统时，UKUI「减少动画」或各模块自己的开关任一开启即生效；选择开启或关闭则统一覆盖所有模块。')
+        self.add_row(self.motion_row)
 
         self.gpu = Switch('GPU 渲染液态玻璃')
         self.gpu.clicked.connect(lambda checked: self.save(effects_policy.set_gpu_allowed, checked))
@@ -34,7 +50,7 @@ class GlobalEffectsCard(SettingsGroup):
         self.add_row(SettingRow('鼠标追光', self.pointer,
             '总开关。关闭后任务栏、桌面分区和开始菜单的鼠标追光全部停止，各模块自己的开关保留。', boolean=True))
 
-        note = label('改动立即作用于正在运行的模块。输入法外观仍在「输入法」页单独设置。', True)
+        note = label('档位是上限，下面三项可在档位之内单独调整。改动立即作用于正在运行的模块。输入法外观仍在「输入法」页单独设置。', True)
         note.setContentsMargins(12, 0, 12, 0)
         self.box.addWidget(note)
         self.status = StatusLabel(); self.status.setProperty('secondary', True); self.status.setContentsMargins(12, 0, 12, 0)
@@ -44,13 +60,24 @@ class GlobalEffectsCard(SettingsGroup):
 
     def refresh(self):
         """Show the stored policy without writing it (another process may own it)."""
-        choice = effects_policy.motion()
-        index = [value for _, value in MOTION_OPTIONS].index(choice)
-        if self.motion.currentIndex() != index:
-            self.motion.setCurrentIndex(index)
-        for control, value in ((self.gpu, effects_policy.gpu_allowed()), (self.pointer, effects_policy.pointer_light())):
+        level = effects_policy.level()
+        index = [value for _, value in LEVEL_OPTIONS].index(level)
+        if self.level.currentIndex() != index:
+            self.level.setCurrentIndex(index)
+        self.level_help.setText(LEVEL_HELP[level])
+        motion = [value for _, value in MOTION_OPTIONS].index(effects_policy.motion())
+        if self.motion.currentIndex() != motion:
+            self.motion.setCurrentIndex(motion)
+        # Show the user's own switch values; the tier only disables them.
+        for control, value in ((self.gpu, effects_policy.gpu_switch()), (self.pointer, effects_policy.pointer_switch())):
             if control.isChecked() != value:
                 blocker = QtCore.QSignalBlocker(control); control.setChecked(value); del blocker
+        self.motion.setEnabled(level in ('full', 'balanced'))
+        self.gpu.setEnabled(level in ('full', 'balanced'))
+        self.pointer.setEnabled(level == 'full')
+
+    def save_level(self, index):
+        self.save(effects_policy.set_level, LEVEL_OPTIONS[index][1])
 
     def save_motion(self, index):
         self.save(effects_policy.set_motion, MOTION_OPTIONS[index][1])
@@ -58,5 +85,4 @@ class GlobalEffectsCard(SettingsGroup):
     def save(self, setter, value):
         ok = setter(value)
         self.status.setText('' if ok else '保存失败：请检查 ~/.config/kylin-lqui 的写入权限。')
-        if not ok:
-            self.refresh()
+        self.refresh()

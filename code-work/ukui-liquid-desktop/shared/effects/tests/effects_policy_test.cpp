@@ -71,6 +71,29 @@ int main(int argc,char **argv){
     worker->start();for(int i=0;i<2000;++i)LquiEffects::gpuAllowed();worker->wait();delete worker;
     CHECK(allowed==2000);
 
+    // Effect tiers. Default "full" is today's behaviour; each lower tier is a cap.
+    writeGlobal("effects/motion","system");writeGlobal("effects/gpu","auto");writeGlobal("effects/pointerLight",true);
+    writeSystemReduce(false);LquiEffects::invalidate();
+    CHECK(LquiEffects::level()==LquiEffects::Level::Full);
+    CHECK(LquiEffects::gpuAllowed()&&LquiEffects::liveCapture()&&LquiEffects::decorativeFrames()&&LquiEffects::glassMaterial());
+    CHECK(qFuzzyCompare(LquiEffects::motionScale(),1.0));
+    CHECK(LquiEffects::setLevel(LquiEffects::Level::Balanced));
+    CHECK(LquiEffects::gpuAllowed()&&LquiEffects::liveCapture()&&LquiEffects::glassMaterial());
+    CHECK(!LquiEffects::decorativeFrames()&&!LquiEffects::pointerLight(true));
+    CHECK(qFuzzyCompare(LquiEffects::motionScale(),0.7)&&!LquiEffects::reducedMotion());
+    CHECK(LquiEffects::setLevel(LquiEffects::Level::Lite));
+    CHECK(!LquiEffects::gpuAllowed()&&!LquiEffects::liveCapture()&&LquiEffects::glassMaterial());
+    writeGlobal("effects/motion","off");LquiEffects::invalidate();
+    CHECK(LquiEffects::reducedMotion()&&LquiEffects::motionScale()==0.0); // tier caps the explicit choice
+    CHECK(LquiEffects::setLevel(LquiEffects::Level::Off));
+    CHECK(!LquiEffects::glassMaterial()&&!LquiEffects::gpuAllowed()&&!LquiEffects::liveCapture());
+    writeGlobal("effects/level","turbo");LquiEffects::invalidate();
+    CHECK(LquiEffects::level()==LquiEffects::Level::Full);              // unknown -> today's behaviour
+    // Full tier still honours the fine-tune switches.
+    writeGlobal("effects/level","full");writeGlobal("effects/gpu","off");writeGlobal("effects/motion","on");LquiEffects::invalidate();
+    CHECK(!LquiEffects::gpuAllowed()&&LquiEffects::reducedMotion()&&LquiEffects::motionScale()==0.0);
+    writeGlobal("effects/gpu","auto");writeGlobal("effects/motion","system");writeGlobal("effects/pointerLight",true);LquiEffects::invalidate();
+
     // GUI processes get a callback when another process changes the policy.
     int notified=0;
     LquiEffects::onChanged(&app,[&]{++notified;});

@@ -113,6 +113,7 @@ signals:
     void reduceMotionChanged(bool reduce);
 
 public:
+    bool effectiveFenceLiquidGlass() const { return m_fenceLiquidGlassEnabled && LquiEffects::glassMaterial(); }
     bool effectiveReduceMotion() const { return LquiEffects::reducedMotion(m_reduceMotionOwn); }
 
 public slots:

@@ -1,5 +1,6 @@
 """Cached backdrop cards: one capture per opening, no animated blur or timer."""
 from PyQt5 import QtCore,QtGui,QtWidgets
+import effects_policy
 
 def glyph(name,color='#e6edf7',size=22):
     """Line icon drawn as a vector at whatever device size Qt asks for.
@@ -184,6 +185,7 @@ def diffuse_backdrop(full, size):
     return image.scaled(size,QtCore.Qt.IgnoreAspectRatio,QtCore.Qt.SmoothTransformation)
 
 def blurred_capture(owner,async_native=False):
+    if not (effects_policy.live_capture() and effects_policy.glass_material()):return QtGui.QImage()
     screen=QtWidgets.QApplication.screenAt(owner.geometry().center()) or QtWidgets.QApplication.primaryScreen()
     area=screen.geometry();region=getattr(owner,'backdrop_region',owner.geometry()).intersected(area);offset=region.topLeft()-area.topLeft()
     full=screen.grabWindow(0,offset.x(),offset.y(),region.width(),region.height())

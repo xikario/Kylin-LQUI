@@ -20,6 +20,7 @@ class InstallTest(unittest.TestCase):
         self.root, self.home = self.base / 'repo', self.base / 'home with space'
         self.inputs = ['build/plugins/styles/libukuiliquidpanel.so', 'scripts/ukui-panel-liquid',
                        'scripts/session-start.py', 'scripts/restore.py', 'build/ukui-liquid-effects-trial','build/liblqui-calendar-geometry-bridge.so']
+        self.inputs += ['scripts/lqui-calendar','build/liblqui-panel-dbus-guard.so','build/lqui-panel-material-worker'] + [os.path.relpath(installer.calendar_source(self.root,name),self.root) for name in installer.CALENDAR_FILES]
         for name in self.inputs:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -136,6 +137,7 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(self.targets[2].read_bytes(), b'new ' + self.inputs[0].encode())
         self.assertIn('Exec="' + str(self.targets[1]) + '"', self.targets[0].read_text())
         self.assertIn('Exec="' + str(self.targets[4]) + '"', self.targets[3].read_text())
+        self.assertEqual(self.targets[8].stat().st_mode & 0o777, 0o755)
         self.assertEqual(self.targets[-1].stat().st_mode & 0o777, 0o755)
         before = json.loads((Path(manifest['backup']) / 'before.json').read_text())
         self.assertTrue(Path(before[str(self.targets[-1])]).is_symlink())

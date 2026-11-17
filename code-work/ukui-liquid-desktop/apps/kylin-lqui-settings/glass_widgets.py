@@ -1,16 +1,17 @@
 """Cached backdrop cards: one capture per opening, no animated blur or timer."""
 from PyQt5 import QtCore,QtGui,QtWidgets
-from functools import lru_cache
 
 def glyph(name,color='#e6edf7',size=22):
-    app=QtWidgets.QApplication.instance()
-    if app is not None and not app.property('lquiGlyphCacheCleanup'):
-        app.setProperty('lquiGlyphCacheCleanup',True);app.aboutToQuit.connect(_glyph.cache_clear)
-    return QtGui.QIcon(_glyph(name,color,size))
+    """Line icon drawn as a vector at whatever device size Qt asks for.
 
-@lru_cache(maxsize=96)
-def _glyph(name,color,size):
-    pix=QtGui.QPixmap(size*2,size*2);pix.fill(QtCore.Qt.transparent);p=QtGui.QPainter(pix);p.setRenderHint(QtGui.QPainter.Antialiasing);p.scale(size/24*2,size/24*2);p.setPen(QtGui.QPen(QtGui.QColor(color),1.7,QtCore.Qt.SolidLine,QtCore.Qt.RoundCap,QtCore.Qt.RoundJoin));p.setBrush(QtCore.Qt.NoBrush)
+    `size` is kept for callers; it no longer fixes a bitmap. A fixed 2x bitmap
+    was resampled on 125%/150% screens and looked soft and stepped.
+    """
+    return QtGui.QIcon(_GlyphEngine(name,color))
+
+def _draw_glyph(p,name,color):
+    # Draws in a 24x24 design box; the caller sets the transform.
+    p.setPen(QtGui.QPen(QtGui.QColor(color),1.7,QtCore.Qt.SolidLine,QtCore.Qt.RoundCap,QtCore.Qt.RoundJoin));p.setBrush(QtCore.Qt.NoBrush)
     if name=='wifi':
         for radius in (10,6.8,3.6):p.drawArc(QtCore.QRectF(12-radius,20-radius,radius*2,radius*2),45*16,90*16)
         p.setBrush(QtGui.QColor(color));p.drawEllipse(QtCore.QPointF(12,19),.8,.8)
@@ -40,7 +41,21 @@ def _glyph(name,color,size):
     elif name=='play':p.setBrush(QtGui.QColor(color));p.drawPolygon(QtGui.QPolygonF([QtCore.QPointF(8,5),QtCore.QPointF(18,12),QtCore.QPointF(8,19)]))
     elif name=='chevron':p.drawPolyline(QtGui.QPolygonF([QtCore.QPointF(9,6),QtCore.QPointF(15,12),QtCore.QPointF(9,18)]))
     elif name=='close':p.drawLine(6,6,18,18);p.drawLine(18,6,6,18)
-    p.end();pix.setDevicePixelRatio(2);result=QtGui.QIcon(pix);disabled=QtGui.QPixmap(pix.size());disabled.setDevicePixelRatio(2);disabled.fill(QtCore.Qt.transparent);faded=QtGui.QPainter(disabled);faded.setOpacity(.45);faded.drawPixmap(0,0,pix);faded.end();result.addPixmap(disabled,QtGui.QIcon.Disabled);return result
+
+class _GlyphEngine(QtGui.QIconEngine):
+    def __init__(self,name,color):
+        super().__init__();self.name=name;self.color=color
+    def clone(self):
+        return _GlyphEngine(self.name,self.color)
+    def paint(self,painter,rect,mode,state):
+        painter.save();painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        if mode==QtGui.QIcon.Disabled:painter.setOpacity(.45)
+        painter.translate(rect.topLeft());painter.scale(rect.width()/24,rect.height()/24)
+        _draw_glyph(painter,self.name,self.color);painter.restore()
+    def pixmap(self,size,mode,state):
+        pix=QtGui.QPixmap(size);pix.fill(QtCore.Qt.transparent)
+        painter=QtGui.QPainter(pix);self.paint(painter,QtCore.QRect(QtCore.QPoint(0,0),size),mode,state);painter.end()
+        return pix
 
 class AudioDeviceButton(QtWidgets.QPushButton):
     """A whole-row device choice with wrapping names and confirmed selection."""

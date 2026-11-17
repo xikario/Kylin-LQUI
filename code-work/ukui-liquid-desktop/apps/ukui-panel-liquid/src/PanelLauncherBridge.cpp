@@ -6,6 +6,8 @@
 #include <QDBusConnectionInterface>
 #include <QDBusMessage>
 #include <QDBusServiceWatcher>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QWidget>
 #include <QMouseEvent>
 
@@ -17,8 +19,10 @@ bool nativeButton(QWidget *widget){return widget&&widget->objectName()=="StartMe
 PanelLauncherBridge::PanelLauncherBridge(QObject *parent):QObject(parent) {
     pending.setSingleShot(true);connect(&pending,&QTimer::timeout,this,&PanelLauncherBridge::scan);
     auto bus=QDBusConnection::sessionBus();auto *watch=new QDBusServiceWatcher(contextService,bus,QDBusServiceWatcher::WatchForOwnerChange,this);
-    connect(watch,&QDBusServiceWatcher::serviceOwnerChanged,this,[this](const QString &,const QString &,const QString &owner){contextAvailable=!owner.isEmpty();});
-    if(bus.interface())contextAvailable=bus.interface()->isServiceRegistered(contextService);
+    connect(watch,&QDBusServiceWatcher::serviceOwnerChanged,this,[this](const QString &,const QString &,const QString &owner){++contextRevision;contextAvailable=!owner.isEmpty();});
+    auto query=QDBusMessage::createMethodCall("org.freedesktop.DBus","/org/freedesktop/DBus","org.freedesktop.DBus","NameHasOwner");query<<contextService;
+    auto *call=new QDBusPendingCallWatcher(bus.asyncCall(query,500),this);const auto revision=contextRevision;
+    connect(call,&QDBusPendingCallWatcher::finished,this,[this,call,revision]{QDBusPendingReply<bool> reply=*call;call->deleteLater();if(revision==contextRevision)contextAvailable=!reply.isError()&&reply.value();});
     qApp->installEventFilter(this);pending.start(0);
 }
 PanelLauncherBridge::~PanelLauncherBridge(){if(qApp)qApp->removeEventFilter(this);if(serviceOwned){auto bus=QDBusConnection::sessionBus();bus.unregisterService(service);bus.unregisterObject("/Launcher");}}

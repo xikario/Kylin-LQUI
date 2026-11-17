@@ -73,6 +73,8 @@ public:
 
     void showSettingsPage(const QString &page);
     void saveLayout();
+    QRect screenWorkAreaAt(const QPoint &localPoint) const;
+    virtual QList<QRect> screenAreas(bool available=true) const;
     void loadLayout();
     void exportLayout();
     void importLayout();
@@ -271,8 +273,14 @@ private:
     QPoint nearestLooseIconCell(DesktopIcon *icon, const QPoint &position) const;
     QRect m_iconDropPreview;
     friend struct DesktopPlacementTestAccess;
+    friend struct ScreenLayoutTestAccess;
     void layoutLooseIcons(const QSet<QString> &movingPaths = {});
     QRect desktopIconArea() const;
+    QRect desktopIconArea(const QPoint &) const;
+    void fitScreenLayout();
+    bool m_fittingScreen=false,m_forceIconGrid=false;
+    QList<QRect> m_lastScreenAreas;
+    QList<QRect> m_wallpaperScreenAreas;
     QRect smartSpaceReservedGeometry() const;
     QList<QWidget *> desktopWidgets() const;
     void raiseDesktopWidgets();

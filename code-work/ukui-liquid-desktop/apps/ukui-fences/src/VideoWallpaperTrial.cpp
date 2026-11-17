@@ -1,4 +1,5 @@
 #include "VideoWallpaperTrial.h"
+#include "../../../shared/async-work/AsyncProcessStop.h"
 #include "VideoWallpaperCache.h"
 #include "VideoWallpaperRegion.h"
 #include "../../../shared/async-work/BackgroundTask.h"
@@ -22,20 +23,23 @@ VideoWallpaperTrial::VideoWallpaperTrial(QWidget *canvas,std::function<void(cons
     connect(&geometryTimer,&QTimer::timeout,this,[this]{sendGeometry();});
     watchWidget(canvas);
     for(auto *child:canvas->findChildren<QWidget *>(QString(),Qt::FindDirectChildrenOnly))watchWidget(child);
-    connect(&process,&QProcess::started,this,[this]{sendGeometry();});
-    connect(&process,&QProcess::readyReadStandardOutput,this,[this]{receive();});
-    connect(&process,&QProcess::readyReadStandardError,this,[this]{
-        errorOutput+=process.readAllStandardError();int newline;
+}
+void VideoWallpaperTrial::prepareProcess() {
+    process=new QProcess(this);
+    connect(process,&QProcess::started,this,[this]{sendGeometry();});
+    connect(process,&QProcess::readyReadStandardOutput,this,[this]{receive();});
+    connect(process,&QProcess::readyReadStandardError,this,[this]{
+        errorOutput+=process->readAllStandardError();int newline;
         while((newline=errorOutput.indexOf('\n'))>=0){
             const auto line=errorOutput.left(newline);errorOutput.remove(0,newline+1);
             if(line.startsWith("video X11 error "))qWarning().noquote()<<QString::fromUtf8(line);
         }
         if(errorOutput.size()>4096)errorOutput.clear();
     });
-    connect(&process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this](int code,QProcess::ExitStatus){
+    connect(process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this](int code,QProcess::ExitStatus){
         if(enabled){reason=QString("player exited (%1)").arg(code);stop();state="error";if(changed)changed();}
     });
-    connect(&process,&QProcess::errorOccurred,this,[this](QProcess::ProcessError error){
+    connect(process,&QProcess::errorOccurred,this,[this](QProcess::ProcessError error){
         if(enabled && error==QProcess::FailedToStart){reason="cannot start player";stop();state="error";if(changed)changed();}
     });
 }
@@ -69,19 +73,24 @@ bool VideoWallpaperTrial::start(const QString &path) {
         if(image.isNull()){reason="cannot decode first frame";stop();state="error";if(changed)changed();return;}
         poster(image);state="starting";
         if(changed)changed();
-        auto env=QProcessEnvironment::systemEnvironment();
-        process.setProcessEnvironment(env);
-        // Isolate this system helper from PYTHONHOME/PYTHONPATH and user site
-        // packages without changing the environment of the rest of the desktop.
-        process.start(python,{"-I","-u",helper,"--parent",QString::number(canvas->winId()),"--file",source});
+        auto launch=[this,stamp,python,helper]{
+            if(!enabled || stamp!=revision)return;
+            prepareProcess();process->setProcessEnvironment(QProcessEnvironment::systemEnvironment());
+            process->start(python,{"-I","-u",helper,"--parent",QString::number(canvas->winId()),"--file",source});
+        };
+        if(retiring && retiring->state()!=QProcess::NotRunning)
+            connect(retiring,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[launch]{launch();});
+        else launch();
+
     });
     return true;
 }
 void VideoWallpaperTrial::stop() {
     const bool wasEnabled=enabled;enabled=false;++revision;geometryTimer.stop();
-    if(process.state()!=QProcess::NotRunning){
-        process.write("{\"command\":\"quit\"}\n");process.closeWriteChannel();
-        if(!process.waitForFinished(1200)){process.terminate();if(!process.waitForFinished(1200)){process.kill();process.waitForFinished(500);}}
+    if(process){
+        auto *old=process;process=nullptr;retiring=old;
+        if(old->state()!=QProcess::NotRunning)old->write("{\"command\":\"quit\"}\n");
+        retireProcess(old,this,1200,false);
     }
     output.clear();lastGeometry.clear();errorOutput.clear();state="stopped";
     if(wasEnabled && restore)restore();
@@ -89,13 +98,13 @@ void VideoWallpaperTrial::stop() {
 }
 QString VideoWallpaperTrial::status() const {
     auto result=QJsonObject{{"active",enabled},{"state",state},
-        {"reason",reason},{"loops",loops},{"pid",double(process.processId())},
+        {"reason",reason},{"loops",loops},{"pid",double(process?process->processId():0)},
         {"posterOnlyGlass",true},{"source",source}};
     for(auto it=playback.constBegin();it!=playback.constEnd();++it)result.insert(it.key(),it.value());
     return QString::fromUtf8(QJsonDocument(result).toJson(QJsonDocument::Compact));
 }
 void VideoWallpaperTrial::receive() {
-    output+=process.readAllStandardOutput();if(output.size()>65536){output.clear();return;}
+    output+=process->readAllStandardOutput();if(output.size()>65536){output.clear();return;}
     int newline;
     while((newline=output.indexOf('\n'))>=0){
         const auto line=output.left(newline);output.remove(0,newline+1);
@@ -121,7 +130,7 @@ void VideoWallpaperTrial::watchWidget(QWidget *widget) {
 }
 void VideoWallpaperTrial::scheduleGeometry(){if(enabled&&!geometryTimer.isActive())geometryTimer.start();}
 void VideoWallpaperTrial::sendGeometry() {
-    if(!enabled || process.state()!=QProcess::Running)return;
+    if(!enabled || !process || process->state()!=QProcess::Running)return;
     // Children publish device-pixel regions so fractional scaling keeps their
     // antialiased outline instead of rounding it out to poster-coloured stairs.
     const qreal dpr=canvas->devicePixelRatioF();
@@ -135,7 +144,7 @@ void VideoWallpaperTrial::sendGeometry() {
     const auto geometry=QJsonDocument(QJsonObject{{"command","geometry"},{"width",qRound(canvas->width()*dpr)},
         {"height",qRound(canvas->height()*dpr)},{"visible",canvas->isVisible()&&!canvas->isMinimized()},
         {"rects",rectangles}}).toJson(QJsonDocument::Compact)+'\n';
-    if(geometry!=lastGeometry){lastGeometry=geometry;process.write(geometry);}
+    if(geometry!=lastGeometry){lastGeometry=geometry;process->write(geometry);}
 }
 bool VideoWallpaperTrial::eventFilter(QObject *object,QEvent *event) {
     if(object==canvas && event->type()==QEvent::ChildPolished)

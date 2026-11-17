@@ -1,3 +1,5 @@
+#include "DesktopScreenLayout.h"
+#include "../../../shared/async-work/AsyncProcessStop.h"
 #include <limits>
 #include "LiquidDialog.h"
 #include "VideoWallpaperTrial.h"
@@ -746,6 +748,7 @@ DesktopCanvas::DesktopCanvas(QWidget *parent)
 
     loadLayout();
     traceStartup("layout-ready");
+    QTimer::singleShot(0,this,[this]{fitScreenLayout();});
     // Event-driven: changing wallpaper must also invalidate dependent glass
     // surfaces, even when the settings application does not call refreshAll.
     auto *wallpaperDebounce = new QTimer(this);
@@ -823,16 +826,8 @@ DesktopCanvas::~DesktopCanvas()
     delete m_activityWidget; m_activityWidget = nullptr;
     delete m_activityRecorder; m_activityRecorder = nullptr;
     delete m_clockWidget; m_clockWidget = nullptr;
-    for (auto *monitor : m_wallpaperMonitors)
-        monitor->terminate();
-    for (auto *monitor : m_wallpaperMonitors) {
-        if (monitor->state() == QProcess::NotRunning)
-            continue;
-        if (!monitor->waitForFinished(500)) {
-            monitor->kill();
-            monitor->waitForFinished(500);
-        }
-    }
+    for (auto *monitor : m_wallpaperMonitors)retireProcess(monitor,this,500);
+    m_wallpaperMonitors.clear();
     qDeleteAll(m_hotCornerGuards);
     m_hotCornerGuards.clear();
     saveLayout();
@@ -1240,17 +1235,10 @@ void DesktopCanvas::syncScreenGeometry()
     }
 
     lockToDesktopGeometry();
+    rebuildWallpaperCache();
     updateHotCornerGuards();
 
-    if (m_monitor) {
-        // Match drag/restore bounds: a monitor at y=0 must remain at the edge
-        // when the panel publishes its work area during login.
-        const QPoint bounded(
-            qBound(0, m_monitor->x(), qMax(0, width() - m_monitor->width())),
-            qBound(0, m_monitor->y(), qMax(0, height() - m_monitor->height())));
-        if (m_monitor->pos() != bounded)
-            m_monitor->move(bounded);
-    }
+    fitScreenLayout();
 
     // RandR mode switches let Peony recreate/raise its desktop after ours.
     // Reassert only the desktop-layer order, with bounded settling retries;
@@ -1280,7 +1268,7 @@ void DesktopCanvas::lockToDesktopGeometry()
     // Qt's X11 platform maps a screen-sized QRect one pixel short on the
     // native desktop window. Keep the inclusive edge compensation so the
     // actual X window covers every pixel of a 1920x1080 projector too.
-    const QRect target = screen->geometry().adjusted(0, 0, 1, 1);
+    const QRect target = screen->virtualGeometry().adjusted(0, 0, 1, 1);
     if (geometry() == target)
         return;
 
@@ -1424,7 +1412,8 @@ void DesktopCanvas::rebuildWallpaperCache()
         : devicePixelRatioF();
     const QSize pixelSize(qMax(1, qRound(width() * dpr)),
                           qMax(1, qRound(height() * dpr)));
-    if (m_wallpaperCacheLogicalSize == size() &&
+    const auto wallpaperAreas=screenAreas(false);
+    if (m_wallpaperCacheLogicalSize == size() && m_wallpaperScreenAreas==wallpaperAreas &&
         qFuzzyCompare(m_wallpaperCacheDpr, dpr) &&
         !m_wallpaperCache.isNull()) {
         return;
@@ -1441,53 +1430,59 @@ void DesktopCanvas::rebuildWallpaperCache()
         ? m_wallpaperMode
         : WallpaperMode::Fill;
 
+    for(const auto &screenRect:screenAreas(false)){
+        const QSize tilePixels(qRound(screenRect.width()*dpr),qRound(screenRect.height()*dpr));
+        painter.save();painter.translate(screenRect.x()*dpr,screenRect.y()*dpr);
+        painter.setClipRect(QRect(QPoint(),tilePixels));
     switch (renderMode) {
     case WallpaperMode::Fit: {
-        const QImage scaled = source.scaled(pixelSize,
+        const QImage scaled = source.scaled(tilePixels,
                                            Qt::KeepAspectRatio,
                                            Qt::SmoothTransformation);
-        const QPoint topLeft((pixelSize.width() - scaled.width()) / 2,
-                             (pixelSize.height() - scaled.height()) / 2);
+        const QPoint topLeft((tilePixels.width() - scaled.width()) / 2,
+                             (tilePixels.height() - scaled.height()) / 2);
         painter.drawImage(topLeft, scaled);
         break;
     }
     case WallpaperMode::Stretch: {
-        painter.drawImage(QRect(QPoint(0, 0), pixelSize),
+        painter.drawImage(QRect(QPoint(0, 0), tilePixels),
                           source,
                           source.rect());
         break;
     }
     case WallpaperMode::Tile: {
         painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
-        painter.fillRect(QRect(QPoint(0, 0), pixelSize),
+        painter.fillRect(QRect(QPoint(0, 0), tilePixels),
                          QBrush(QPixmap::fromImage(source)));
         break;
     }
     case WallpaperMode::Center: {
-        const QPoint topLeft((pixelSize.width() - source.width()) / 2,
-                             (pixelSize.height() - source.height()) / 2);
+        const QPoint topLeft((tilePixels.width() - source.width()) / 2,
+                             (tilePixels.height() - source.height()) / 2);
         painter.drawImage(topLeft, source);
         break;
     }
     case WallpaperMode::Fill:
     case WallpaperMode::System:
     default: {
-        const QImage scaled = source.scaled(pixelSize,
+        const QImage scaled = source.scaled(tilePixels,
                                            Qt::KeepAspectRatioByExpanding,
                                            Qt::SmoothTransformation);
-        const int cropX = qMax(0, (scaled.width() - pixelSize.width()) / 2);
-        const int cropY = qMax(0, (scaled.height() - pixelSize.height()) / 2);
+        const int cropX = qMax(0, (scaled.width() - tilePixels.width()) / 2);
+        const int cropY = qMax(0, (scaled.height() - tilePixels.height()) / 2);
         painter.drawImage(QPoint(0, 0),
                           scaled.copy(cropX, cropY,
-                                      pixelSize.width(), pixelSize.height()));
+                                      tilePixels.width(), tilePixels.height()));
         break;
     }
+    }
+        painter.restore();
     }
     painter.end();
 
     m_wallpaperCache = QPixmap::fromImage(result);
     m_wallpaperCache.setDevicePixelRatio(dpr);
-    m_wallpaperCacheLogicalSize = size();
+    m_wallpaperCacheLogicalSize = size();m_wallpaperScreenAreas=wallpaperAreas;
     m_wallpaperCacheDpr = dpr;
     for (auto *fence : m_fences) fence->invalidateGlassCache();
     emit wallpaperChanged();
@@ -2065,7 +2060,7 @@ QRect DesktopCanvas::snappedWidgetResize(QWidget *widget, const QRect &start,
                                            : peer->pos(), peer->size()));
     }
     return WidgetResizeSnap::geometry(start, requested, minimum, maximum,
-                                      rect(), peers, ratio, fixed);
+                                      screenWorkAreaAt(start.center()), peers, ratio, fixed);
 }
 
 void DesktopCanvas::showSettingsDialog()
@@ -2825,7 +2820,7 @@ void DesktopCanvas::applyDesktopGrid(int columns, int rows, qreal iconScale)
     for (auto *icon : m_looseIcons)
         icon->setVisualScale(m_desktopIconScale);
     // Fence 内部维持用户已有设计，不跟随桌面网格的图标档位。
-    layoutLooseIcons();
+    m_forceIconGrid=true;layoutLooseIcons();m_forceIconGrid=false;
     saveLayout();
 }
 
@@ -2894,6 +2889,9 @@ QString DesktopCanvas::desktopWidgetsStatus() const
         }
         result.insert(w->objectName(),status);
     }
+    result["canvas"]=QJsonObject{{"x",x()},{"y",y()},{"width",width()},{"height",height()}};
+    QJsonArray areas;for(const auto &area:screenAreas())areas.append(QJsonArray{area.x(),area.y(),area.width(),area.height()});result["screenAreas"]=areas;
+    QJsonArray fences;for(auto *fence:m_fences)fences.append(QJsonObject{{"id",fence->fenceId()},{"x",fence->x()},{"y",fence->y()},{"width",fence->width()},{"height",fence->height()}});result["fences"]=fences;
     return QString::fromUtf8(QJsonDocument(result).toJson(QJsonDocument::Compact));
 }
 
@@ -3520,22 +3518,69 @@ void DesktopCanvas::disableAutoArrangeForManualPlacement()
     m_autoArrange = false;
 }
 
-QRect DesktopCanvas::desktopIconArea() const
-{
-    QRect area = rect();
-    if (QScreen *screen = QApplication::primaryScreen()) {
-        const QRect available = screen->availableGeometry();
-        const QRect localAvailable = available.translated(-geometry().topLeft());
-        const QRect clipped = localAvailable.intersected(rect());
-        if (clipped.width() > 120 && clipped.height() > 120)
-            area = clipped;
+QList<QRect> DesktopCanvas::screenAreas(bool available) const {
+    QList<QRect> result;
+    for(auto *screen:QGuiApplication::screens()){
+        const QRect area=(available?screen->availableGeometry():screen->geometry()).translated(-geometry().topLeft());
+        if(!area.isValid())continue;
+        bool covered=false;for(const auto &existing:result)if(existing.contains(area)){covered=true;break;}
+        if(covered)continue;
+        for(int i=result.size()-1;i>=0;--i)if(area.contains(result[i]))result.removeAt(i);
+        result.append(area);
+    }
+    if(result.isEmpty())result.append(rect());
+    return result;
+}
+QRect DesktopCanvas::screenWorkAreaAt(const QPoint &point) const {
+    return DesktopScreenLayout::nearestArea(screenAreas(),point);
+}
+QRect DesktopCanvas::desktopIconArea() const {
+    const auto *primary=QGuiApplication::primaryScreen();
+    return desktopIconArea(primary?primary->geometry().center()-geometry().topLeft():rect().center());
+}
+QRect DesktopCanvas::desktopIconArea(const QPoint &point) const {
+    const QRect area=screenWorkAreaAt(point);
+    return area.adjusted(12,area.top()>0?12:48,-12,-16);
+}
+void DesktopCanvas::fitScreenLayout(){
+    if(m_loadingLayout||m_fittingScreen)return;
+    const auto areas=screenAreas();
+    if(areas==m_lastScreenAreas)return;
+    m_lastScreenAreas=areas;m_fittingScreen=true;
+    bool created=false;QSettings settings;
+    auto known=settings.value("desktop/knownExternalScreens").toStringList();
+    const auto primary=QGuiApplication::primaryScreen();
+    for(auto *screen:QGuiApplication::screens()){
+        if(screen==primary || (primary&&screen->geometry().intersects(primary->geometry())) || known.contains(screen->name()))continue;
+        const QRect area=screen->availableGeometry().translated(-geometry().topLeft());
+        bool populated=false;for(auto *fence:m_fences)if(area.contains(DesktopScreenLayout::preferred(fence).center()))populated=true;
+        if(!populated){
+            auto *workspace=createFence("副屏工作区",QRect(area.topLeft()+QPoint(24,48),QSize(qMin(420,area.width()-48),qMin(280,area.height()-96))));
+            workspace->show();created=true;
+        }
+        known.append(screen->name());
     }
 
-    const int topInset = area.top() > 0 ? 12 : 48;
-    area = area.adjusted(12, topInset, -12, -16);
-    if (area.width() < 120 || area.height() < 120)
-        area = rect().adjusted(12, 48, -12, -16);
-    return area;
+    QList<QWidget*> objects;
+    for(auto *widget:desktopWidgets())if(widget&&widget->isVisible())objects.append(widget);
+    for(auto *fence:m_fences)if(fence)objects.append(fence);
+    // Keep fitting objects in place before placing items from a removed/smaller screen.
+    std::stable_sort(objects.begin(),objects.end(),[&](QWidget *a,QWidget *b){
+        const auto ar=DesktopScreenLayout::preferred(a),br=DesktopScreenLayout::preferred(b);
+        const bool af=screenWorkAreaAt(ar.center()).contains(ar),bf=screenWorkAreaAt(br.center()).contains(br);
+        return af&&!bf;
+    });
+    QList<QRect> occupied;
+    for(auto *widget:objects){
+        const auto original=DesktopScreenLayout::preferred(widget);
+        const auto bounds=screenWorkAreaAt(original.topLeft()+QPoint(original.width()/2,20));
+        const auto target=bounds.contains(original)&&original==widget->geometry()?original:DesktopScreenLayout::fit(original,bounds,occupied);
+        DesktopScreenLayout::apply(widget,original,target);occupied.append(widget->geometry());
+    }
+    layoutLooseIcons();m_fittingScreen=false;
+    if(created)saveLayout();
+    settings.setValue("desktop/knownExternalScreens",known);settings.sync();
+    update();
 }
 
 QRect DesktopCanvas::smartSpaceReservedGeometry() const { return {}; }
@@ -3724,12 +3769,13 @@ bool DesktopCanvas::canDragLooseIcon(DesktopIcon *icon, const QPoint &globalPosi
 
 QPoint DesktopCanvas::nearestLooseIconCell(DesktopIcon *icon, const QPoint &position) const
 {
-    const QRect area=desktopIconArea();
-    const int columns=qMax(4,m_gridColumns),rows=qMax(3,m_gridRows);
+    const QRect area=desktopIconArea(position+QPoint(icon->width()/2,icon->height()/2));
+    const int columns=qMax(1,qMin(m_gridColumns,area.width()/qMax(1,icon->width()))),rows=qMax(1,qMin(m_gridRows,area.height()/qMax(1,icon->height())));
     const qreal cellW=area.width()/qreal(columns),cellH=area.height()/qreal(rows);
     QSet<int> occupied;
     for (auto *other:m_looseIcons) if(other && other!=icon) {
-        const QPoint p=m_looseIconPositions.value(other->item().filePath,other->pos());
+        const QPoint p=other->pos();
+        if(!area.contains(p+QPoint(other->width()/2,other->height()/2)))continue;
         const int col=qBound(0,qRound((p.x()+other->width()/2-area.left())/cellW-.5),columns-1);
         const int row=qBound(0,qRound((p.y()+other->height()/2-area.top())/cellH-.5),rows-1);
         occupied.insert(row*columns+col);
@@ -3775,11 +3821,11 @@ void DesktopCanvas::finishLooseIconDrag(DesktopIcon *icon, bool commit)
 
 void DesktopCanvas::layoutLooseIcons(const QSet<QString> &movingPaths)
 {
-    const int columns = qMax(4, m_gridColumns);
-    const int rows = qMax(3, m_gridRows);
-    const QRect area = desktopIconArea();
-    const qreal cellW = area.width() / qreal(columns);
-    const qreal cellH = area.height() / qreal(rows);
+    int columns = qMax(4, m_gridColumns);
+    int rows = qMax(3, m_gridRows);
+    QRect area = desktopIconArea();
+    qreal cellW = area.width() / qreal(columns);
+    qreal cellH = area.height() / qreal(rows);
 
     if (m_autoArrange && m_arrangeMode != ArrangeMode::Manual)
         sortLooseIcons();
@@ -3789,7 +3835,7 @@ void DesktopCanvas::layoutLooseIcons(const QSet<QString> &movingPaths)
         if (fence) fenceRects.append(fence->geometry());
     fenceRects.append(desktopWidgetReservedGeometries());
 
-    QSet<int> occupied;
+    QSet<QString> occupied;QList<QRect> occupiedRects;QString areaKey;QHash<QString,int> screenIndices;
     auto cellPosition = [&](int col, int row, DesktopIcon *icon) {
         const QPoint center(
             qRound(area.left() + (col + 0.5) * cellW),
@@ -3797,13 +3843,13 @@ void DesktopCanvas::layoutLooseIcons(const QSet<QString> &movingPaths)
         return center - QPoint(icon->width() / 2, icon->height() / 2);
     };
     auto validCell = [&](int col, int row, DesktopIcon *icon) {
-        const int key = row * columns + col;
+        const QString key = areaKey+QString::number(row * columns + col);
         if (occupied.contains(key))
             return false;
         const QRect iconRect(cellPosition(col, row, icon), icon->size());
         for (const QRect &fenceRect : fenceRects)
-            if (iconRect.intersects(fenceRect))
-                return false;
+            if (iconRect.intersects(fenceRect))return false;
+        for(const auto &other:occupiedRects)if(iconRect.intersects(other))return false;
         return true;
     };
 
@@ -3821,7 +3867,16 @@ void DesktopCanvas::layoutLooseIcons(const QSet<QString> &movingPaths)
         if (!icon) continue;
 
         const QString path = icon->item().filePath;
-        QPoint preferred = m_looseIconPositions.value(path, area.topLeft());
+        QPoint preferred = m_looseIconPositions.value(path, desktopIconArea().topLeft());
+        const bool projected=icon->property("lquiScreenIconApplied").isValid() && preferred==icon->property("lquiScreenIconApplied").toPoint();
+        if(projected && !movingPaths.contains(path))preferred=icon->property("lquiScreenIconPreferred").toPoint();
+        area=desktopIconArea(preferred+QPoint(icon->width()/2,icon->height()/2));
+        columns=qMax(1,qMin(m_gridColumns,area.width()/qMax(1,icon->width())));
+        rows=qMax(1,qMin(m_gridRows,area.height()/qMax(1,icon->height())));
+        cellW=area.width()/qreal(columns);cellH=area.height()/qreal(rows);
+        areaKey=QString("%1,%2,%3,%4:").arg(area.x()).arg(area.y()).arg(area.width()).arg(area.height());
+        const int screenIndex=screenIndices[areaKey]++;
+
         int preferredCol = qBound(0,
             qRound((preferred.x() + icon->width() / 2 - area.left()) / cellW - 0.5),
             columns - 1);
@@ -3830,8 +3885,8 @@ void DesktopCanvas::layoutLooseIcons(const QSet<QString> &movingPaths)
             rows - 1);
 
         if (m_autoArrange) {
-            preferredCol = index / rows;
-            preferredRow = index % rows;
+            preferredCol = screenIndex / rows;
+            preferredRow = screenIndex % rows;
             preferredCol = qBound(0, preferredCol, columns - 1);
         }
 
@@ -3860,12 +3915,21 @@ void DesktopCanvas::layoutLooseIcons(const QSet<QString> &movingPaths)
             chosenRow = preferredRow;
         }
 
-        occupied.insert(chosenRow * columns + chosenCol);
         QPoint snapped = cellPosition(chosenCol, chosenRow, icon);
+        bool keep=!m_autoArrange&&!m_forceIconGrid&&!movingPaths.contains(path)&&m_looseIconPositions.contains(path)
+            && area.contains(QRect(preferred,icon->size()));
+        for(const auto &other:fenceRects)if(QRect(preferred,icon->size()).intersects(other))keep=false;
+        for(const auto &other:occupiedRects)if(QRect(preferred,icon->size()).intersects(other))keep=false;
+        if(keep){snapped=preferred;chosenCol=preferredCol;chosenRow=preferredRow;}
+        occupied.insert(areaKey+QString::number(chosenRow * columns + chosenCol));
         snapped.setX(qBound(area.left(), snapped.x(),
                             area.right() - icon->width()));
         snapped.setY(qBound(area.top(), snapped.y(),
                             area.bottom() - icon->height()));
+        if((m_fittingScreen || projected || !area.contains(QRect(preferred,icon->size()))) && !movingPaths.contains(path) && preferred!=snapped){
+            icon->setProperty("lquiScreenIconPreferred",preferred);icon->setProperty("lquiScreenIconApplied",snapped);
+        }else{icon->setProperty("lquiScreenIconPreferred",QVariant());icon->setProperty("lquiScreenIconApplied",QVariant());}
+        occupiedRects.append(QRect(snapped,icon->size()));
         m_looseIconPositions[path] = snapped;
         if(icon->isLocalDragging())continue;
         const bool moved=icon->pos()!=snapped;
@@ -3934,7 +3998,7 @@ void DesktopCanvas::finishNewDesktopItem(const QString &filePath,
 
     if (!m_autoArrange) {
         QPoint pos = clickPos - QPoint(icon->width() / 2, 12);
-        const QRect area = desktopIconArea();
+        const QRect area = desktopIconArea(clickPos);
         pos.setX(qBound(area.left(), pos.x(),
                         qMax(area.left(), area.right() - icon->width())));
         pos.setY(qBound(area.top(), pos.y(),
@@ -5292,7 +5356,7 @@ void DesktopCanvas::contextMenuEvent(QContextMenuEvent *e)
 
 void DesktopCanvas::saveLayout()
 {
-    if (m_loadingLayout || m_layoutWriteBlocked)
+    if (m_loadingLayout || m_layoutWriteBlocked || m_fittingScreen)
         return;
 
     QJsonArray fenceArr;
@@ -5300,9 +5364,10 @@ void DesktopCanvas::saveLayout()
         QJsonObject obj;
         obj["id"]        = fence->fenceId();
         obj["title"]     = fence->title();
-        obj["x"]         = fence->x();
-        obj["y"]         = fence->y();
-        obj["w"]         = fence->width();
+        const QRect saved=DesktopScreenLayout::preferred(fence);
+        obj["x"]         = saved.x();
+        obj["y"]         = saved.y();
+        obj["w"]         = saved.width();
         obj["h"]         = fence->collapsed() ? FenceWidget::TITLE_H : fence->expandedHeight();
         obj["expandedHeight"] = fence->expandedHeight();
         obj["color"]     = fence->fenceColor().name(QColor::HexArgb);
@@ -5358,8 +5423,11 @@ void DesktopCanvas::saveLayout()
          it != m_looseIconPositions.constEnd(); ++it) {
         QJsonObject obj;
         obj["path"] = it.key();
-        obj["x"] = it.value().x();
-        obj["y"] = it.value().y();
+        QPoint saved=it.value();
+        for(auto *icon:m_looseIcons)if(icon && icon->item().filePath==it.key() && icon->property("lquiScreenIconApplied").isValid()
+            && icon->property("lquiScreenIconApplied").toPoint()==saved){saved=icon->property("lquiScreenIconPreferred").toPoint();break;}
+        obj["x"] = saved.x();
+        obj["y"] = saved.y();
         loosePosArr.append(obj);
     }
 

@@ -21,6 +21,6 @@ private:
     QPointer<QWidget> pressed;
     Qt::MouseButton pressedButton=Qt::NoButton;
     QElapsedTimer contextTap;
-    quint64 lastPressStamp=0;
+    quint64 lastPressStamp=0,contextRevision=0;
     bool serviceOwned=false,contextAvailable=false;
 };

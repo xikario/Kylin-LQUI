@@ -41,12 +41,10 @@ constexpr const char *kUkuiMenuAliasService = "org.ukui.menu";
 
 bool callExistingInstance(const QString &method)
 {
-    QDBusInterface iface(kOurService, kOurPath, kOurInterface,
-                         QDBusConnection::sessionBus());
-    if (!iface.isValid())
-        return false;
-    iface.call(method);
-    return true;
+    auto request=QDBusMessage::createMethodCall(kOurService,kOurPath,kOurInterface,method);
+    request.setAutoStartService(false);
+    const auto reply=QDBusConnection::sessionBus().call(request,QDBus::Block,1200);
+    return reply.type()!=QDBusMessage::ErrorMessage;
 }
 
 } // namespace

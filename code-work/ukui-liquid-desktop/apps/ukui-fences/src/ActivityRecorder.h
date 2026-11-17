@@ -49,7 +49,8 @@ private:
     QDateTime m_lastWall;
     QTimer m_sampleTimer, m_saveTimer;
     QString m_appId, m_appName;
-    bool m_recording = true, m_locked = false, m_saveOk = true;
+    bool m_recording = true, m_locked = true, m_saveOk = true;
+    quint64 m_lockRevision=0;
     bool m_metricsEnabled=true,m_metricsPending=false;
     int m_metricsInterval=10,m_logRetention=7;quint64 m_metricsRevision=0;
     QTimer m_metricsTimer;

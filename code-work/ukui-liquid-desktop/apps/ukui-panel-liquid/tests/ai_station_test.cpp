@@ -21,6 +21,13 @@
 
 class UKUIPanel:public QWidget { Q_OBJECT public:using QWidget::QWidget; };
 class LunarCalendarWidget:public QWidget { Q_OBJECT public:using QWidget::QWidget; };
+class FakeCalendar:public QObject {
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface","org.kylin.Lqui.Calendar")
+public:int calls=0;QRect anchor;
+public slots:
+    Q_SCRIPTABLE void Toggle(int x,int y,int w,int h){++calls;anchor=QRect(x,y,w,h);}
+};
 class FakeStation:public QObject {
     Q_OBJECT
     Q_CLASSINFO("D-Bus Interface","org.ukui.LiquidCli")
@@ -35,6 +42,23 @@ class StationTest:public QObject {
     Q_OBJECT
     static void write(const QString &path,const QByteArray &data){QDir().mkpath(QFileInfo(path).path());QFile f(path);QVERIFY(f.open(QIODevice::WriteOnly));f.write(data);}
 private slots:
+    void clockUsesIndependentCalendarWithoutNativeActivation(){
+        auto bus=QDBusConnection::sessionBus();FakeCalendar service;
+        QVERIFY(bus.registerService("org.kylin.Lqui.Calendar"));
+        QVERIFY(bus.registerObject("/Calendar",&service,QDBusConnection::ExportAllSlots));
+        UKUIPanel panel;panel.resize(660,48);auto *row=new QHBoxLayout(&panel);
+        auto *wrapper=new QWidget(&panel);wrapper->setObjectName("ukui-panel_plugin_QFrame_calendar");
+        auto *layout=new QHBoxLayout(wrapper);auto *calendar=new QWidget(wrapper);auto *inside=new QHBoxLayout(calendar);
+        auto *button=new QPushButton("clock",calendar);inside->addWidget(button);layout->addWidget(calendar);row->addWidget(wrapper);
+        int nativeCalls=0;connect(button,&QPushButton::clicked,[&]{++nativeCalls;});
+        panel.show();PanelAiStation bridge(&panel);
+        QTRY_VERIFY(button->property("stationMinimalClock").toBool());
+        QTest::mouseClick(button,Qt::LeftButton);QTRY_COMPARE(service.calls,1);QCOMPARE(nativeCalls,0);
+        QVERIFY(service.anchor.width()>0);QTest::qWait(270);
+        QTest::keyClick(button,Qt::Key_Space);QTRY_COMPARE(service.calls,2);QCOMPARE(nativeCalls,0);
+        QVERIFY(bridge.OpenCalendar());QTRY_COMPARE(service.calls,3);
+        bus.unregisterObject("/Calendar");bus.unregisterService("org.kylin.Lqui.Calendar");
+    }
     void calendarIgnoresLateOemRepositionWithoutDpiOscillation(){
         const auto screen=QGuiApplication::primaryScreen()->availableGeometry();
         UKUIPanel panel;panel.setGeometry(screen.left()+100,screen.bottom()-60,650,48);panel.show();PanelAiStation bridge(&panel);

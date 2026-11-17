@@ -5,6 +5,16 @@
 #include <QFileInfo>
 
 struct ActivityMetricsTestAccess {
+    static int stalledLock() {
+        QElapsedTimer elapsed;elapsed.start();ActivityRecorder recorder;
+        check(elapsed.elapsed()<500,"lock-state startup does not wait for external service");
+        recorder.setLocked(true);
+        int ticks=0;QTimer timer;QObject::connect(&timer,&QTimer::timeout,[&]{++ticks;});timer.start(5);
+        settle(900);
+        check(ticks>50,"lock queries leave desktop event loop responsive");
+        check(recorder.m_locked,"late startup reply cannot undo newer lock signal");
+        return failures?1:0;
+    }
     static int run(const QString &root) {
         ProcessMetrics::Snapshot before,after;before.monotonicMs=1000;before.bootTicks=10000;before.cores=8;
         after=before;after.monotonicMs=2000;after.bootTicks=10100;

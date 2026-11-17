@@ -2,6 +2,8 @@
 
 #include <QRect>
 #include <QPoint>
+#include <functional>
+class QObject;
 
 struct TaskbarInfo {
     bool detected = false;
@@ -19,6 +21,7 @@ struct TaskbarInfo {
 class TaskbarDetector {
 public:
     static TaskbarInfo detect();
+    static void onChanged(QObject *context,std::function<void()> callback);
 
 private:
     static TaskbarInfo detectPanelWindow();

@@ -131,6 +131,13 @@ if(BUILD_TESTING)
         target_include_directories(fence-glass-test PRIVATE src ${UKUI_FENCES_X11_INCLUDE_DIR} ${UKUI_FENCES_GL_INCLUDE_DIR})
         target_compile_definitions(fence-glass-test PRIVATE $<TARGET_PROPERTY:ukui-fences,COMPILE_DEFINITIONS>)
         target_link_libraries(fence-glass-test PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::DBus Qt5::Network ZLIB::ZLIB ${UKUI_FENCES_X11_LIBRARY})
+        add_test(NAME desktop-screen-layout COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 3200x1200x24"
+            ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --screen-layout-only)
+        set_tests_properties(desktop-screen-layout PROPERTIES TIMEOUT 25 ENVIRONMENT "UKUI_FENCES_GLASS_NO_GL=1;UKUI_LIQUID_GLASS_NO_GL=1;QT_SCALE_FACTOR=1")
+        add_test(NAME desktop-lock-responsive COMMAND ${XVFB_RUN_EXECUTABLE} -a
+            ${DBUS_RUN_SESSION_EXECUTABLE} -- /usr/bin/python3
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../shared/async-work/tests/delayed_services.py $<TARGET_FILE:fence-glass-test> --lock-async-only)
+        set_tests_properties(desktop-lock-responsive PROPERTIES TIMEOUT 15 ENVIRONMENT "UKUI_LIQUID_GLASS_NO_GL=1;UKUI_FENCES_GLASS_NO_GL=1")
         add_test(NAME desktop_video_trial COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 1920x1200x24"
             ${DBUS_RUN_SESSION_EXECUTABLE} -- $<TARGET_FILE:fence-glass-test> --video-trial-only)
         set_tests_properties(desktop_video_trial PROPERTIES TIMEOUT 25 ENVIRONMENT "QT_SCALE_FACTOR=1.5;QT_FONT_DPI=96")

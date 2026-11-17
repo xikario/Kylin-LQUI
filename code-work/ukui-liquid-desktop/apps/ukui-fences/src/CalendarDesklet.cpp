@@ -1,5 +1,6 @@
 #include "LiquidDialog.h"
 #include "CalendarDesklet.h"
+#include "../../../shared/async-work/AsyncProcessStop.h"
 #include "DesktopCanvas.h"
 #include "LiquidPopup.h"
 #include "LiquidWheelPicker.h"
@@ -235,7 +236,7 @@ CalendarDesklet::~CalendarDesklet(){
     if(!m_agendaCollapsed)QSettings().setValue("desklets/calendar/expandedHeight",height());
     for(auto *process:{m_holidaySync,m_reader,m_writer,m_workRequest}){
         if(!process || process->state()==QProcess::NotRunning)continue;
-        disconnect(process,nullptr,this,nullptr);process->kill();process->waitForFinished(500);
+        retireProcess(process,this,0);
     }
 }
 void CalendarDesklet::rewatch(){

@@ -1,5 +1,6 @@
 #include "PanelAiStation.h"
 #include "CalendarPlacement.h"
+#include "CalendarLauncher.h"
 #include "LiquidPopup.h"
 #include "../../../shared/icon-style/IconPolicy.h"
 #include "ControlCenterLauncher.h"
@@ -287,7 +288,7 @@ public:
         calendarMin=date->minimumSize();calendarMax=date->maximumSize();buttonMin=button->minimumSize();buttonMax=button->maximumSize();
         const QFontMetrics small(metricFont(10)),large(metricFont(12,true));
         const int width=qMax(small.horizontalAdvance("12/30 周四"),large.horizontalAdvance("23:59"))+4;
-        button->setFixedSize(width,36);date->setFixedSize(width,36);button->setProperty("stationMinimalClock",true);button->installEventFilter(this);refresh();
+        button->setFixedSize(width,36);date->setFixedSize(width,36);button->setProperty("stationMinimalClock",true);button->installEventFilter(this);button->setToolTip("日历 · 待办 · 农历与节假日");refresh();
     }
     void restore() {
         if(button){button->removeEventFilter(this);button->setProperty("stationMinimalClock",false);button->setMinimumSize(buttonMin);button->setMaximumSize(buttonMax);}
@@ -300,6 +301,23 @@ public:
     }
 protected:
     bool eventFilter(QObject *,QEvent *event) override {
+        if(!button)return false;
+        // Consume the complete activation sequence before the OEM button's
+        // handlers. The native calendar must never be opened as a fallback.
+        if(event->type()==QEvent::MouseButtonPress||event->type()==QEvent::MouseButtonRelease||event->type()==QEvent::MouseButtonDblClick){
+            auto *mouse=static_cast<QMouseEvent*>(event);
+            if(mouse->button()==Qt::LeftButton){
+                if(event->type()==QEvent::MouseButtonRelease && button->rect().contains(mouse->pos()))openCalendar();
+                event->accept();return true;
+            }
+        }
+        if(event->type()==QEvent::KeyPress||event->type()==QEvent::KeyRelease){
+            auto *key=static_cast<QKeyEvent*>(event);
+            if(key->key()==Qt::Key_Space||key->key()==Qt::Key_Return||key->key()==Qt::Key_Enter){
+                if(event->type()==QEvent::KeyRelease&&!key->isAutoRepeat())openCalendar();
+                event->accept();return true;
+            }
+        }
         if(event->type()!=QEvent::Paint||!button)return false;
         QPainter p(button);p.setRenderHint(QPainter::TextAntialiasing);const int top=(button->height()-28)/2;
         p.setFont(metricFont(12,true));p.setPen(QColor("#e2e8f0"));p.drawText(QRect(0,top,button->width(),15),Qt::AlignRight|Qt::AlignVCenter,time);
@@ -307,6 +325,13 @@ protected:
         return true;
     }
 private:
+    void openCalendar(){
+        if(lastCalendarOpen.isValid()&&lastCalendarOpen.elapsed()<250)return;
+        lastCalendarOpen.start();
+        if(!LquiCalendar::open(QRect(button->mapToGlobal(QPoint()),button->size())))
+            button->setToolTip("独立日历尚未安装或无法启动，请重新安装 LQ UI 日历组件。");
+    }
+    QElapsedTimer lastCalendarOpen;
     QPointer<QWidget> calendar,button;QSize calendarMin,calendarMax,buttonMin,buttonMax;QString time,dateText;
 };
 class Readout final : public QWidget {
@@ -638,6 +663,7 @@ QString PanelAiStation::State() const {
 }
 
 bool PanelAiStation::OpenCalendar(){
-    for(auto *widget:QApplication::allWidgets())if(widget->inherits("CalendarButton"))return QMetaObject::invokeMethod(widget,"pressShowHideCalendar",Qt::QueuedConnection);
+    for(auto *widget:QApplication::allWidgets())if(widget->property("stationMinimalClock").toBool())
+        return LquiCalendar::open(QRect(widget->mapToGlobal(QPoint()),widget->size()));
     return false;
 }

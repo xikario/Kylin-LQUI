@@ -57,13 +57,10 @@ QIcon appIcon()
 
 bool callExistingInstance(const QString &method)
 {
-    QDBusInterface iface(kDbusService, kDbusPath, kDbusInterface,
-                         QDBusConnection::sessionBus());
-    if (!iface.isValid())
-        return false;
-
-    const QDBusMessage reply = iface.call(method);
-    return reply.type() != QDBusMessage::ErrorMessage;
+    auto request=QDBusMessage::createMethodCall(kDbusService,kDbusPath,kDbusInterface,method);
+    request.setAutoStartService(false);
+    const auto reply=QDBusConnection::sessionBus().call(request,QDBus::Block,1200);
+    return reply.type()!=QDBusMessage::ErrorMessage;
 }
 
 void setupTrayIcon(DesktopCanvas &canvas, const QIcon &icon)

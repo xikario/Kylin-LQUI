@@ -72,6 +72,7 @@ static QImage wallpaper(QSize logical, qreal dpr)
 #include "monitor_placement_test.h"
 #include "monitor_resources_test.h"
 #include "activity_metrics_test.h"
+#include "screen_layout_test.h"
 #include "startup_wallpaper_test.h"
 #include "video_trial_test.h"
 #include "menu_shortcut_test.h"
@@ -184,6 +185,10 @@ int main(int argc, char **argv)
         return SystemMonitorTestAccess::run();
     if (app.arguments().contains("--activity-metrics-only"))
         return ActivityMetricsTestAccess::run(isolated.path());
+    if (app.arguments().contains("--screen-layout-only"))
+        return ScreenLayoutTestAccess::run(isolated.path());
+    if (app.arguments().contains("--lock-async-only"))
+        return ActivityMetricsTestAccess::stalledLock();
     if (app.arguments().contains("--review-async-only"))
         return runReviewAsyncTest(isolated.path());
     if (app.arguments().contains("--icon-damage-only"))

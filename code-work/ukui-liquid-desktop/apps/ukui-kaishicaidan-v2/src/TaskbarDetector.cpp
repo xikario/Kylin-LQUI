@@ -5,6 +5,11 @@
 #include <QDebug>
 #include <QtDBus/QDBusInterface>
 #include <QtDBus/QDBusReply>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
+#include <QDBusServiceWatcher>
+#include <QElapsedTimer>
+#include <QPointer>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <cstring>
@@ -368,37 +373,54 @@ TaskbarInfo TaskbarDetector::detectFromStrut()
     return info;
 }
 
-bool TaskbarDetector::queryPanelDbus(TaskbarInfo &info)
-{
-    QDBusInterface iface("org.ukui.panel", "/panel/position",
-                         "org.ukui.panel",
-                         QDBusConnection::sessionBus());
-    if (!iface.isValid())
-        return false;
-
-    QDBusReply<QString> posReply = iface.call("GetPanelPosition");
-    if (posReply.isValid()) {
-        const QString pos = posReply.value();
-        if (pos == "bottom") info.edge = 3;
-        else if (pos == "top") info.edge = 2;
-        else if (pos == "left") info.edge = 0;
-        else if (pos == "right") info.edge = 1;
+namespace {
+struct PanelQueryCache : QObject {
+    explicit PanelQueryCache():QObject(qApp) {
+        auto *watch=new QDBusServiceWatcher("org.ukui.panel",QDBusConnection::sessionBus(),QDBusServiceWatcher::WatchForOwnerChange,this);
+        connect(watch,&QDBusServiceWatcher::serviceOwnerChanged,this,[this]{
+            ++revision;pending=0;hasEdge=false;screen={};age.invalidate();notify();
+        });
     }
-
-    QDBusReply<QVariantList> geomReply = iface.call("GetPrimaryScreenGeometry");
-    if (geomReply.isValid()) {
-        const QVariantList v = geomReply.value();
-        if (v.size() >= 4) {
-            info.screenGeometry = QRect(v[0].toInt(), v[1].toInt(),
-                                        v[2].toInt(), v[3].toInt());
+    int edge=3,pending=0;bool hasEdge=false;QRect screen;quint64 revision=0;QElapsedTimer age;
+    QList<QPair<QPointer<QObject>,std::function<void()>>> listeners;
+    void notify(){for(const auto &listener:listeners)if(listener.first)listener.second();}
+    void request() {
+        if(pending || (age.isValid()&&age.elapsed()<5000))return;
+        pending=2;const auto token=++revision;
+        for(const QString &method:{QStringLiteral("GetPanelPosition"),QStringLiteral("GetPrimaryScreenGeometry")}){
+            auto message=QDBusMessage::createMethodCall("org.ukui.panel","/panel/position","org.ukui.panel",method);
+            message.setAutoStartService(false);
+            auto *call=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(message,500),this);
+            connect(call,&QDBusPendingCallWatcher::finished,this,[this,call,token,method]{
+                const auto reply=call->reply();call->deleteLater();if(token!=revision)return;
+                if(reply.type()==QDBusMessage::ReplyMessage && !reply.arguments().isEmpty()){
+                    if(method=="GetPanelPosition"){
+                        const auto value=reply.arguments().first().toString();
+                        hasEdge=value=="bottom"||value=="top"||value=="left"||value=="right";
+                        edge=value=="bottom"?3:value=="top"?2:value=="right"?1:0;
+                    }else{
+                        const auto values=qdbus_cast<QVariantList>(reply.arguments().first());
+                        if(values.size()>=4)screen=QRect(values[0].toInt(),values[1].toInt(),values[2].toInt(),values[3].toInt());
+                    }
+                }
+                if(--pending==0){age.start();notify();}
+            });
         }
     }
-
-    if (info.geometry.isValid()) {
-        info.panelCenter = QPoint(info.geometry.center().x(),
-                                  info.geometry.center().y());
-    }
-    return true;
+};
+PanelQueryCache *panelQuery(){static QPointer<PanelQueryCache> cache;if(!cache)cache=new PanelQueryCache;return cache;}
+}
+void TaskbarDetector::onChanged(QObject *context,std::function<void()> callback) {
+    auto *cache=panelQuery();
+    for(int i=cache->listeners.size()-1;i>=0;--i)if(!cache->listeners[i].first)cache->listeners.removeAt(i);
+    cache->listeners.append(qMakePair(QPointer<QObject>(context),std::move(callback)));
+}
+bool TaskbarDetector::queryPanelDbus(TaskbarInfo &info)
+{
+    auto *cache=panelQuery();cache->request();
+    if(cache->hasEdge)info.edge=cache->edge;
+    if(cache->screen.isValid())info.screenGeometry=cache->screen;
+    return cache->hasEdge||cache->screen.isValid();
 }
 
 TaskbarInfo TaskbarDetector::fallback()

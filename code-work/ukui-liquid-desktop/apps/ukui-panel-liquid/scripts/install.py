@@ -10,6 +10,15 @@ import tempfile
 import fcntl
 import base64
 
+CALENDAR_FILES = ('calendar_popup.py', 'calendar_data.py', 'calendar_snapshot.py',
+                  'chinese_calendar.py', 'holiday_sync.py', 'lunar_hko_reference.json', 'china_holidays_2026.json',
+                  'calendar_appearance.py', 'glass_widgets.py', 'native_glass.py', 'liblqui-glass-bridge.so')
+
+def calendar_source(root, name):
+    if name in ('calendar_popup.py','calendar_data.py','calendar_appearance.py'):return root / 'scripts' / name
+    if name in ('glass_widgets.py','native_glass.py'):return root.parent / 'kylin-lqui-settings' / name
+    if name=='liblqui-glass-bridge.so':return root / 'build' / name
+    return root.parent / 'ukui-fences/scripts' / name
 
 def destinations(home):
     return [
@@ -21,7 +30,10 @@ def destinations(home):
         home / '.local/bin/ukui-panel-liquid-restore',
         home / '.local/bin/ukui-liquid-effects-trial',
         home / '.local/lib/ukui-panel-liquid/liblqui-calendar-geometry-bridge.so',
-    ]
+    ] + [home / '.local/bin/lqui-calendar'] + [
+        home / '.local/lib/ukui-panel-liquid/calendar' / name for name in CALENDAR_FILES] + [
+        home / '.local/lib/ukui-panel-liquid/liblqui-panel-dbus-guard.so',
+        home / '.local/lib/ukui-panel-liquid/lqui-panel-material-worker']
 
 
 def desktop_exec(path):
@@ -42,6 +54,10 @@ def prepare(root, home, system_desktop, system_binary):
     restore = (root / 'scripts/restore.py').read_bytes()
     effects_trial = (root / 'build/ukui-liquid-effects-trial').read_bytes()
     calendar_bridge = (root / 'build/liblqui-calendar-geometry-bridge.so').read_bytes()
+    dbus_guard = (root / 'build/liblqui-panel-dbus-guard.so').read_bytes()
+    material_worker = (root / 'build/lqui-panel-material-worker').read_bytes()
+    calendar_launcher = (root / 'scripts/lqui-calendar').read_bytes()
+    calendar_files = [calendar_source(root,name).read_bytes() for name in CALENDAR_FILES]
     template = system_desktop.read_text()
     binary_hash = hashlib.sha256(system_binary.read_bytes()).hexdigest()
     host={str(system_binary):binary_hash}
@@ -51,6 +67,7 @@ def prepare(root, home, system_desktop, system_binary):
     wrapper=wrapper.replace(b'@LQUI_HOST_MANIFEST@',base64.b64encode(json.dumps(host,sort_keys=True).encode()))
     wrapper=wrapper.replace(b'@LQUI_PLUGIN_SHA256@',hashlib.sha256(plugin).hexdigest().encode())
     wrapper=wrapper.replace(b'@LQUI_CALENDAR_BRIDGE_SHA256@',hashlib.sha256(calendar_bridge).hexdigest().encode())
+    wrapper=wrapper.replace(b'@LQUI_DBUS_GUARD_SHA256@',hashlib.sha256(dbus_guard).hexdigest().encode())
     lines = template.splitlines()
     section = ''
     found = False
@@ -72,8 +89,8 @@ def prepare(root, home, system_desktop, system_binary):
         'Exec=' + desktop_exec(paths[4]) + '\nTerminal=false\nOnlyShowIn=UKUI;\nNoDisplay=true\n'
         'X-UKUI-Autostart-Phase=Application\nX-UKUI-AutoRestart=false\nX-LiquidPanel-Managed=true\n'
     ).encode()
-    return list(zip(paths, [panel_entry, wrapper, plugin, session_entry, session, restore, effects_trial,calendar_bridge],
-                    [0o644, 0o755, 0o755, 0o644, 0o755, 0o755, 0o755,0o755])), binary_hash
+    return list(zip(paths, [panel_entry, wrapper, plugin, session_entry, session, restore, effects_trial,calendar_bridge,calendar_launcher]+calendar_files+[dbus_guard,material_worker],
+                    [0o644, 0o755, 0o755, 0o644, 0o755, 0o755, 0o755,0o755,0o755]+[0o644]*len(calendar_files)+[0o755,0o755])), binary_hash
 
 
 def mkdir_tracked(directory, created):

@@ -1,3 +1,5 @@
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include "../../../shared/desktop-launch/DesktopEntryFile.h"
 #include "ActivityRecorder.h"
 #include "../../../shared/async-work/BackgroundTask.h"
@@ -92,11 +94,25 @@ ActivityRecorder::ActivityRecorder(QObject *parent) : QObject(parent), m_native(
             if (changed) sample();
         });
     }
+    struct InitialLock {int pending=4;bool active=false,ukuiValid=false,ukuiLocked=false;};
+    auto initial=std::make_shared<InitialLock>();const auto lockRevision=m_lockRevision;
+    auto queryLock=[this,initial,lockRevision](const QString &service,const QString &path,const QString &method,bool authoritative){
+        auto request=QDBusMessage::createMethodCall(service,path,service,method);request.setAutoStartService(false);
+        auto *call=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(request,600),this);
+        connect(call,&QDBusPendingCallWatcher::finished,this,[this,call,initial,lockRevision,authoritative]{
+            QDBusPendingReply<bool> result=*call;call->deleteLater();
+            if(!result.isError()){
+                if(authoritative){initial->ukuiValid=true;initial->ukuiLocked=result.value();}
+                else initial->active=initial->active||result.value();
+            }
+            if(--initial->pending==0 && lockRevision==m_lockRevision)
+                setLocked(initial->ukuiValid?initial->ukuiLocked:initial->active);
+        });
+    };
     for (const QString &service : {QStringLiteral("org.freedesktop.ScreenSaver"),QStringLiteral("org.ukui.ScreenSaver"),QStringLiteral("org.gnome.ScreenSaver")}) {
         const QString path = service == "org.freedesktop.ScreenSaver" ? "/ScreenSaver" : "/org/"+service.section('.',1,1)+"/ScreenSaver";
         QDBusConnection::sessionBus().connect(service,path,service,"ActiveChanged",this,SLOT(setLocked(bool)));
-        QDBusInterface iface(service,path,service,QDBusConnection::sessionBus());
-        if (iface.isValid()) { QDBusReply<bool> active = iface.call("GetActive"); if (active.isValid() && active.value()) m_locked=true; }
+        queryLock(service,path,"GetActive",false);
     }
     // This UKUI release exports its lock service at / with parameterless
     // lock/unlock signals, not the freedesktop ActiveChanged interface.
@@ -104,11 +120,7 @@ ActivityRecorder::ActivityRecorder(QObject *parent) : QObject(parent), m_native(
     for (const QString &signal : {QStringLiteral("lock"), QStringLiteral("prepareForLock"), QStringLiteral("ScreenSaverLock")})
         bus.connect("org.ukui.ScreenSaver", "/", "org.ukui.ScreenSaver", signal, this, SLOT(sessionLocked()));
     bus.connect("org.ukui.ScreenSaver", "/", "org.ukui.ScreenSaver", "unlock", this, SLOT(sessionUnlocked()));
-    QDBusInterface ukuiLock("org.ukui.ScreenSaver", "/", "org.ukui.ScreenSaver", bus);
-    if (ukuiLock.isValid()) {
-        QDBusReply<bool> locked = ukuiLock.call("GetLockState");
-        if (locked.isValid()) m_locked = locked.value();
-    }
+    queryLock("org.ukui.ScreenSaver","/","GetLockState",true);
     m_elapsed.start(); m_lastWall = QDateTime::currentDateTime();
     connect(&m_sampleTimer,&QTimer::timeout,this,&ActivityRecorder::sample); m_sampleTimer.start(5000);
     connect(&m_saveTimer,&QTimer::timeout,this,&ActivityRecorder::flush); m_saveTimer.start(60000);
@@ -121,7 +133,7 @@ void ActivityRecorder::setRecording(bool enabled) {
     sample(); m_recording=enabled; QSettings().setValue("desklets/activity/recording",enabled);
     syncResourceSampling();sample(); flush(); emit changed();
 }
-void ActivityRecorder::setLocked(bool locked) { sample(); m_locked=locked;syncResourceSampling();sample();flush(); }
+void ActivityRecorder::setLocked(bool locked) { ++m_lockRevision;sample(); m_locked=locked;syncResourceSampling();sample();flush(); }
 void ActivityRecorder::sample() {
     const auto now = QDateTime::currentDateTime();
     const qint64 elapsed = m_elapsed.restart();

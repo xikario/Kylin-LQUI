@@ -50,4 +50,5 @@ private:
     QMenu *m_contextMenu = nullptr;
     bool m_nativeMode=false,m_screenHooks=false;
     quint64 m_contextCount=0,m_toggleCount=0;
+    quint64 m_bridgeRevision=0;
 };

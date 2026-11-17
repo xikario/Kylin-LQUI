@@ -7,6 +7,7 @@
 #include <QSet>
 #include <QJsonObject>
 #include <QTimer>
+#include <QPointer>
 #include <functional>
 class QWidget;
 // X11 player lifecycle. DesktopCanvas owns saved wallpaper selection.
@@ -22,12 +23,12 @@ public:
     std::function<void()> changed;
 protected:bool eventFilter(QObject *,QEvent *) override;
 private:
-    void scheduleGeometry();void sendGeometry();void receive();void watchWidget(QWidget *);
+    void prepareProcess();void scheduleGeometry();void sendGeometry();void receive();void watchWidget(QWidget *);
     QWidget *canvas;
     std::function<void(const QImage &)> poster;
     std::function<void()> restore;
     std::function<QRegion()> overlay;
-    QProcess process;QTimer geometryTimer;QByteArray output,lastGeometry,errorOutput;
+    QProcess *process=nullptr;QPointer<QProcess> retiring;QTimer geometryTimer;QByteArray output,lastGeometry,errorOutput;
     QJsonObject playback;
     QHash<QObject *,QRegion> lastMasks;QRegion lastOverlay;
     QSet<QObject *> watchedWidgets;

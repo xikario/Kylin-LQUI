@@ -146,6 +146,10 @@ if(BUILD_TESTING AND XVFB_RUN_EXECUTABLE AND DBUS_RUN_SESSION_EXECUTABLE)
     target_compile_definitions(launcher-pointer-test PRIVATE UKUI_KAISHICAIDAN_V2=1)
     target_include_directories(launcher-pointer-test PRIVATE src ${X11_INCLUDE_DIR} ${KAISHICAIDAN_GL_INCLUDE_DIR} ../../shared/async-work)
     target_link_libraries(launcher-pointer-test PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::DBus ${X11_LIBRARY} ${XTST_LIBRARY} ukui-liquid-popup ukui-liquid-optics lqui-settings-bridge)
+    add_test(NAME launcher-ipc-responsive COMMAND dbus-run-session -- /usr/bin/python3
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../shared/async-work/tests/delayed_services.py $<TARGET_FILE:launcher-pointer-test> --ipc-stall)
+    set_tests_properties(launcher-ipc-responsive PROPERTIES TIMEOUT 12
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;UKUI_LIQUID_GLASS_NO_GL=1")
     foreach(SCALE 1 1.5 2)
         add_test(NAME launcher-pointer-${SCALE}
             COMMAND ${XVFB_RUN_EXECUTABLE} -a -s "-screen 0 2880x1800x24"

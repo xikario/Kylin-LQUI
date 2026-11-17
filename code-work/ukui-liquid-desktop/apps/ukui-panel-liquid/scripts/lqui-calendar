@@ -1,0 +1,3 @@
+#!/bin/sh
+# User-local independent calendar. Never loads the OEM calendar plugin.
+exec /usr/bin/python3 "$HOME/.local/lib/ukui-panel-liquid/calendar/calendar_popup.py" "$@"

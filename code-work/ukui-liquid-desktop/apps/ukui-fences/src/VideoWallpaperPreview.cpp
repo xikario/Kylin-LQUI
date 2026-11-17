@@ -1,4 +1,5 @@
 #include "VideoWallpaperPreview.h"
+#include "../../../shared/async-work/AsyncProcessStop.h"
 #include "VideoWallpaperCache.h"
 #include <QRandomGenerator>
 #include <QSaveFile>
@@ -21,6 +22,7 @@
 
 VideoWallpaperPreview::VideoWallpaperPreview(QWidget *parent) : QWidget(parent)
 {
+    m_process=new QProcess(this);
     setObjectName("videoWallpaperFrames");
     auto *layout = new QVBoxLayout(this);layout->setContentsMargins(0,0,0,0);
     m_animatedImage=new QLabel(this);m_animatedImage->setFixedSize(320,180);
@@ -46,17 +48,16 @@ VideoWallpaperPreview::VideoWallpaperPreview(QWidget *parent) : QWidget(parent)
     m_debounce.setSingleShot(true);m_debounce.setInterval(250);
     m_deadline.setSingleShot(true);m_deadline.setInterval(5000);
     connect(&m_debounce,&QTimer::timeout,this,&VideoWallpaperPreview::begin);
-    connect(&m_deadline,&QTimer::timeout,this,[this]{m_timedOut=true;m_process.kill();});
-    connect(&m_process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,&VideoWallpaperPreview::completed);
-    connect(&m_process,&QProcess::errorOccurred,this,[this](QProcess::ProcessError error){
+    connect(&m_deadline,&QTimer::timeout,this,[this]{m_timedOut=true;m_process->kill();});
+    connect(m_process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,&VideoWallpaperPreview::completed);
+    connect(m_process,&QProcess::errorOccurred,this,[this](QProcess::ProcessError error){
         if(error==QProcess::FailedToStart) {m_deadline.stop();fail("无法生成预览，请检查 FFmpeg/ffprobe 是否可用。");}
     });
-    connect(&m_process,&QProcess::readyReadStandardError,this,[this]{m_process.readAllStandardError();});
+    connect(m_process,&QProcess::readyReadStandardError,this,[this]{m_process->readAllStandardError();});
 }
 VideoWallpaperPreview::~VideoWallpaperPreview()
 {
-    m_process.disconnect(this);
-    if(m_process.state()!=QProcess::NotRunning){m_process.kill();m_process.waitForFinished(500);}
+    retireProcess(m_process,this,0);m_process=nullptr;
 }
 void VideoWallpaperPreview::setFile(const QString &path)
 {
@@ -68,7 +69,7 @@ void VideoWallpaperPreview::setFile(const QString &path)
     m_animatedImage->setText(m_path.isEmpty()?"未选择视频":"正在生成预览…");
     m_cacheDirectory=VideoWallpaperCache::directory(m_path);setProperty("cacheHit",false);
     m_cancelled=true;
-    if(m_process.state()!=QProcess::NotRunning)m_process.kill();
+    if(m_process->state()!=QProcess::NotRunning)m_process->kill();
     setProperty("frameCount",0);setProperty("previewState",m_path.isEmpty()?"empty":"loading");
     for(int i=0;i<3;++i)m_images[i]->setText(m_path.isEmpty()?"未选择视频":"正在提取…");
     m_hint->clear();m_hint->hide();
@@ -76,20 +77,20 @@ void VideoWallpaperPreview::setFile(const QString &path)
 }
 void VideoWallpaperPreview::begin()
 {
-    if(m_process.state()!=QProcess::NotRunning){m_debounce.start();return;}
+    if(m_process->state()!=QProcess::NotRunning){m_debounce.start();return;}
     if(m_path.isEmpty())return;
     if(loadCache())return; // Another page may have confirmed during the debounce.
     if(!QFileInfo(m_path).isFile()){fail("视频文件不存在，无法预览。");return;}
     m_cancelled=false;m_timedOut=false;m_probing=true;m_frame=0;m_duration=0;
-    m_process.readAllStandardOutput();
-    m_process.start("ffprobe",{"-v","error","-show_entries","format=duration","-of","json",m_path});
+    m_process->readAllStandardOutput();
+    m_process->start("ffprobe",{"-v","error","-show_entries","format=duration","-of","json",m_path});
     m_deadline.start();
 }
 void VideoWallpaperPreview::extract()
 {
     m_probing=false;m_timedOut=false;
     const double position=m_positions[m_frame];
-    m_process.start("ffmpeg",{"-hide_banner","-loglevel","error","-nostdin","-threads","1",
+    m_process->start("ffmpeg",{"-hide_banner","-loglevel","error","-nostdin","-threads","1",
         // Seek to the preceding keyframe; passthrough timestamps avoid decoding
         // and discarding a whole 4K GOP just to create a small still preview.
         "-noaccurate_seek","-ss",QString::number(position,'f',3),"-i",m_path,"-an","-sn","-dn","-frames:v","1","-vsync","0",
@@ -99,7 +100,7 @@ void VideoWallpaperPreview::extract()
 }
 void VideoWallpaperPreview::completed(int code,QProcess::ExitStatus status)
 {
-    m_deadline.stop();const auto output=m_process.readAllStandardOutput();
+    m_deadline.stop();const auto output=m_process->readAllStandardOutput();
     if(m_cancelled){if(!m_path.isEmpty())m_debounce.start();return;}
     if(m_timedOut || code!=0 || status!=QProcess::NormalExit){fail("无法生成预览，仍可通过“应用”检查此视频。");return;}
     if(m_probing){

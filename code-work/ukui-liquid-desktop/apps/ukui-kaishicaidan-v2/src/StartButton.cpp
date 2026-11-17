@@ -23,6 +23,8 @@
 #include <QDBusInterface>
 #include <QDBusReply>
 #include <QDBusServiceWatcher>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <initializer_list>
@@ -66,11 +68,20 @@ StartButton::StartButton(StartMenu *menu,bool nativeIntegration)
     setWindowTitle("开始菜单按钮");
     if(nativeIntegration) {
         const QString service="org.ukui.LiquidPanelLauncher";auto bus=QDBusConnection::sessionBus();
-        auto update=[this,service]{QDBusInterface bridge(service,"/Launcher",service,QDBusConnection::sessionBus());bridge.setTimeout(500);const QDBusReply<bool> ready=bridge.call("Available");setNativeMode(ready.isValid()&&ready.value());};
+        auto update=[this,service]{
+            const auto revision=++m_bridgeRevision;
+            auto request=QDBusMessage::createMethodCall(service,"/Launcher",service,"Available");request.setAutoStartService(false);
+            auto *pending=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(request,500),this);
+            connect(pending,&QDBusPendingCallWatcher::finished,this,[this,pending,revision]{
+                QDBusPendingReply<bool> reply=*pending;pending->deleteLater();
+                if(revision==m_bridgeRevision)setNativeMode(!reply.isError()&&reply.value());
+            });
+        };
         auto *watch=new QDBusServiceWatcher(service,bus,QDBusServiceWatcher::WatchForOwnerChange,this);
-        connect(watch,&QDBusServiceWatcher::serviceOwnerChanged,this,[this,update](const QString &,const QString &,const QString &owner){if(owner.isEmpty())setNativeMode(false);else update();});
-        if(bus.interface()&&bus.interface()->isServiceRegistered(service))update();
+        connect(watch,&QDBusServiceWatcher::serviceOwnerChanged,this,[this,update](const QString &,const QString &,const QString &owner){if(owner.isEmpty()){++m_bridgeRevision;setNativeMode(false);}else update();});
+        update();
     }
+    TaskbarDetector::onChanged(this,[this]{if(!m_nativeMode)positionOnTaskbar();});
     if(!m_nativeMode){watchTaskbar();positionOnTaskbar();}
 }
 

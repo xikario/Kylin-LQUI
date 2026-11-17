@@ -1,11 +1,19 @@
 #!/usr/bin/python3
 """Version-gated style launcher with a per-session crash circuit breaker."""
-import base64,hashlib,json,os,signal,subprocess,sys,tempfile
+import base64,hashlib,json,os,signal,socket,subprocess,sys,tempfile,time,datetime
 from pathlib import Path
 HOST_MANIFEST_B64='@LQUI_HOST_MANIFEST@'
 PLUGIN_SHA256='@LQUI_PLUGIN_SHA256@'
 CALENDAR_BRIDGE_SHA256='@LQUI_CALENDAR_BRIDGE_SHA256@'
+DBUS_GUARD_SHA256='@LQUI_DBUS_GUARD_SHA256@'
 PANEL=Path('/usr/bin/ukui-panel')
+X11_SOCKET_DIR='/tmp/.X11-unix'
+# A recorded crash only keeps the liquid panel off for this long. The marker
+# lives in XDG_RUNTIME_DIR and otherwise survives logout until reboot.
+FAILURE_TTL_SECONDS=1800
+# After an unrequested stop, wait this long for the session or a tool to start a
+# replacement panel before the native one is restored.
+EXTERNAL_STOP_GRACE=3.0
 
 def digest(path):
     h=hashlib.sha256()
@@ -19,37 +27,127 @@ def compatible():
         return bool(expected) and all(digest(path)==value for path,value in expected.items())
     except (OSError,ValueError):return False
 
+def matches(path,expected):
+    try:return path.is_file() and digest(path)==expected
+    except OSError:return False
+
+def x_alive():
+    # False only when DISPLAY names a local server whose socket cannot be
+    # reached, i.e. the session is being torn down and there is nothing to
+    # fall back to. Anything uncertain counts as alive (previous behaviour).
+    display=os.environ.get('DISPLAY','')
+    host,_,rest=display.rpartition(':')
+    if host not in ('','unix') or not rest.split('.')[0].isdigit():return True
+    number=rest.split('.')[0]
+    for address in (str(Path(X11_SOCKET_DIR)/('X'+number)),'\0'+X11_SOCKET_DIR+'/X'+number):
+        probe=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);probe.settimeout(1.0)
+        try:probe.connect(address);return True
+        except OSError:pass
+        finally:probe.close()
+    return False
+
+def panel_running(exclude_pid=None):
+    # Any panel of this user on this display, except the one that just exited.
+    display=('DISPLAY='+os.environ.get('DISPLAY','')).encode()
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit() or int(proc.name) in (os.getpid(),exclude_pid):continue
+        try:
+            if proc.stat().st_uid!=os.getuid() or os.readlink(proc/'exe')!=str(PANEL):continue
+            if display in (proc/'environ').read_bytes().split(b'\0'):return True
+        except OSError:continue
+    return False
+
+def failure_marker_active(marker):
+    try:data=json.loads(marker.read_text())
+    except (OSError,ValueError):return False
+    if data.get('plugin')!=PLUGIN_SHA256:return False
+    stamp=data.get('time')
+    return not isinstance(stamp,(int,float)) or time.time()-stamp<FAILURE_TTL_SECONDS
+
+def record_event(event,**details):
+    # The runtime crash marker disappears at reboot; preserve the actual
+    # fallback reason independently of stdout inherited by launched apps.
+    try:
+        folder=Path.home()/'.local/state/ukui-panel-liquid';folder.mkdir(parents=True,exist_ok=True)
+        path=folder/'launcher-events.jsonl'
+        if path.exists() and path.stat().st_size>256*1024:os.replace(path,path.with_suffix('.jsonl.1'))
+        fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600)
+        with os.fdopen(fd,'w') as stream:
+            stream.write(json.dumps(dict(time=datetime.datetime.now().astimezone().isoformat(),pid=os.getpid(),event=event,**details))+'\n')
+    except OSError:pass
+
+def native_fallback(args,reason,guard=None):
+    env=dict(os.environ)
+    private=Path.home()/'.local/lib/ukui-panel-liquid'
+    retained=[p for p in env.get('LD_PRELOAD','').split(':') if p and p not in
+              (str(private/'liblqui-calendar-geometry-bridge.so'),str(private/'liblqui-panel-dbus-guard.so'))]
+    if retained:env['LD_PRELOAD']=':'.join(retained)
+    else:env.pop('LD_PRELOAD',None)
+    if guard:
+        env['LD_PRELOAD']=':'.join([str(guard)]+[p for p in env.get('LD_PRELOAD','').split(':') if p and p!=str(guard)])
+    record_event('native-fallback',reason=reason,dbus_guard=bool(guard))
+    os.execve(str(PANEL),[str(PANEL)]+args,env)
+
 def main():
     args=sys.argv[1:];plugin=Path.home()/'.local/lib/ukui-panel-liquid/plugins'
     calendar_bridge=plugin.parent/'liblqui-calendar-geometry-bridge.so'
+    dbus_guard=plugin.parent/'liblqui-panel-dbus-guard.so'
     runtime=Path(os.environ.get('XDG_RUNTIME_DIR','/run/user/'+str(os.getuid())))
     marker=runtime/'kylin-lqui-panel-failed.json'
     if '--retry-liquid' in args:
         args.remove('--retry-liquid')
         try:marker.unlink()
         except FileNotFoundError:pass
-    try:failed=json.loads(marker.read_text()).get('plugin')==PLUGIN_SHA256
-    except (OSError,ValueError):failed=False
-    usable=compatible() and (plugin/'styles/libukuiliquidpanel.so').is_file() and calendar_bridge.is_file() and digest(calendar_bridge)==CALENDAR_BRIDGE_SHA256 and not failed
+    failed=failure_marker_active(marker)
+    host_ok=compatible();plugin_ok=matches(plugin/'styles/libukuiliquidpanel.so',PLUGIN_SHA256)
+    bridge_ok=matches(calendar_bridge,CALENDAR_BRIDGE_SHA256);guard_ok=matches(dbus_guard,DBUS_GUARD_SHA256)
+    usable=host_ok and plugin_ok and bridge_ok and guard_ok and not failed
     if '--check-compatibility' in args:return 0 if usable else 1
-    if '--original' in args:args.remove('--original');usable=False
-    if not usable:os.execv(str(PANEL),[str(PANEL)]+args)
+    if '--original' in args:
+        args.remove('--original');native_fallback(args,'explicit-original');return
+    if not usable:
+        reason='crash-circuit-breaker' if failed else 'host-mismatch' if not host_ok else 'plugin-mismatch' if not plugin_ok else 'calendar-bridge-mismatch' if not bridge_ok else 'dbus-guard-mismatch'
+        native_fallback(args,reason,dbus_guard if host_ok and guard_ok else None);return
     env=dict(os.environ,QT_PLUGIN_PATH=str(plugin)+(os.pathsep+os.environ['QT_PLUGIN_PATH'] if os.environ.get('QT_PLUGIN_PATH') else ''))
-    env['LD_PRELOAD']=':'.join([str(calendar_bridge)]+[p for p in env.get('LD_PRELOAD','').split(':') if p and p!=str(calendar_bridge)])
-    child=subprocess.Popen([str(PANEL),'-style','ukuiliquidpanel']+args,env=env)
-    stopping=[False]
+    env['LD_PRELOAD']=':'.join([str(dbus_guard),str(calendar_bridge)]+[p for p in env.get('LD_PRELOAD','').split(':') if p and p not in (str(calendar_bridge),str(dbus_guard))])
+    stopping=[False];running=[None]
     def stop(signum,_):
         stopping[0]=True
-        if child.poll() is None:child.send_signal(signum)
-    signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
+        child=running[0]
+        if child is not None and child.poll() is None:child.send_signal(signum)
+    # Installed before the child exists: a signal in between must neither kill
+    # the launcher with the default action nor orphan the panel.
+    for name in ('SIGTERM','SIGINT','SIGHUP','SIGQUIT'):signal.signal(getattr(signal,name),stop)
+    child=subprocess.Popen([str(PANEL),'-style','ukuiliquidpanel']+args,env=env);running[0]=child
+    record_event('liquid-start',child_pid=child.pid,dbus_guard=True)
+    if stopping[0] and child.poll() is None:child.send_signal(signal.SIGTERM)
     code=child.wait()
-    if stopping[0] or code in (0,-signal.SIGTERM,-signal.SIGINT):return 0
+    details=dict(child_pid=child.pid,exit_code=code,requested_stop=stopping[0])
+    if code<0:
+        try:details['signal']=signal.Signals(-code).name
+        except ValueError:pass
+    record_event('liquid-exit',**details)
+    if stopping[0]:return 0
+    if not x_alive():
+        # Logout or shutdown: Qt exits 1 when the X connection disappears. That
+        # is not a crash, and no panel could start without a display anyway.
+        record_event('session-ended',child_pid=child.pid,exit_code=code);return 0
+    if code in (0,-signal.SIGTERM,-signal.SIGINT,-signal.SIGHUP):
+        # Ended from outside (session manager, settings daemon, a tool). Not a
+        # crash, so no circuit breaker; but never leave the desktop without a
+        # taskbar if nothing takes over.
+        deadline=time.monotonic()+EXTERNAL_STOP_GRACE
+        while True:
+            if panel_running(child.pid):return 0
+            if time.monotonic()>=deadline:break
+            time.sleep(0.25)
+        native_fallback(args,'external-stop-no-panel',dbus_guard);return
     try:
         fd,name=tempfile.mkstemp(prefix='.lqui-panel-',dir=str(runtime))
-        with os.fdopen(fd,'w') as f:json.dump({'plugin':PLUGIN_SHA256,'exitCode':code},f)
+        with os.fdopen(fd,'w') as f:json.dump({'plugin':PLUGIN_SHA256,'exitCode':code,'time':time.time()},f)
         os.replace(name,marker)
     except OSError:pass
     # Exec clears the private plugin environment. A subsequent session-manager
     # restart also sees the circuit breaker and retains the system panel.
-    os.execv(str(PANEL),[str(PANEL)]+args)
+    native_fallback(args,'liquid-exit-'+str(code),dbus_guard)
 if __name__=='__main__':sys.exit(main())

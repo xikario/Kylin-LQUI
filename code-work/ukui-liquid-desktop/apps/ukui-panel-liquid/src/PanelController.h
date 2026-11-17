@@ -12,7 +12,7 @@
 #include <QTimer>
 class QWidget;
 class QMenu;
-namespace LiquidMaterial { class Preparation; }
+class PanelMaterialJob;
 class PanelController final : public QObject {
 public:
     explicit PanelController(QObject *parent);
@@ -52,10 +52,9 @@ private:
     bool m_pendingMaterial=false;
     QHash<QWidget *,QPointF> m_pointers;
     QHash<QWidget *,QRegion> m_pointerDamage;
-    LiquidOpticsRenderer m_optics;
     QHash<QWidget *,QImage> m_cache;
     QSet<QWidget *> m_materialDirty;
-    QHash<QWidget *,LiquidMaterial::Preparation *> m_preparations;
+    QHash<QWidget *,PanelMaterialJob *> m_preparations;
     QHash<QWidget *,QRegion> m_originalMasks;
     QPointer<QDialog> m_dialog;
     quint64 m_paints=0, m_builds=0, m_dirtyPixels=0;

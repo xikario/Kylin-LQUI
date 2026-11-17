@@ -1,3 +1,4 @@
+#include "DesktopScreenLayout.h"
 #include "DesktopWidgets.h"
 #include "../../../shared/liquid-glass/src/CohesiveGlass.h"
 #include "DesktopCanvas.h"
@@ -83,7 +84,8 @@ LiquidDesklet::LiquidDesklet(DesktopCanvas *canvas, const QString &key, const QS
             }
         move(selected);
     }
-    constrainToCanvas();
+    const QRect preferred=geometry();constrainToCanvas();
+    if(saved.isValid()&&preferred!=geometry())DesktopScreenLayout::apply(this,preferred,geometry());
     VideoWallpaperRegion::publish(this,VideoWallpaperRegion::rounded(QRectF(rect()),16,devicePixelRatioF()));
     m_materialTimer.setSingleShot(true); m_materialTimer.setInterval(100);
     connect(&m_materialTimer,&QTimer::timeout,this,[this]{if(isVisible())rebuildMaterial();});
@@ -115,10 +117,10 @@ void LiquidDesklet::setEditMode(bool enabled) {
     setCursor(Qt::ArrowCursor);
     update();
 }
-void LiquidDesklet::savePlacement(){if(m_ready){QSettings s;s.setValue("desklets/"+m_key+"/geometry",geometry());s.sync();}}
+void LiquidDesklet::savePlacement(){if(m_ready){QSettings s;s.setValue("desklets/"+m_key+"/geometry",DesktopScreenLayout::preferred(this));s.sync();}}
 QPoint LiquidDesklet::boundedPosition(const QPoint &position, bool snap) const {
     // Child widgets use the same full desktop bounds as the older desklets.
-    const QRect bounds=m_canvas->rect();
+    const QRect bounds=m_canvas->screenWorkAreaAt(position+QPoint(width()/2,height()/2));
     const int maxX=qMax(bounds.left(),bounds.right()-width()+1);
     const int maxY=qMax(bounds.top(),bounds.bottom()-height()+1);
     QPoint result(qBound(bounds.left(),position.x(),maxX),

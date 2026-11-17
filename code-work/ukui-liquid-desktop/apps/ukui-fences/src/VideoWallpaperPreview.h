@@ -25,7 +25,7 @@ private:
     void completed(int code, QProcess::ExitStatus status);
     void fail(const QString &message);
     QString m_path, m_identity;
-    QProcess m_process;
+    QProcess *m_process=nullptr;
     QTimer m_debounce, m_deadline, m_animation;
     QVector<QImage> m_frames;
     QVector<double> m_positions;

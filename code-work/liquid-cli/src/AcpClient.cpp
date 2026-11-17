@@ -1,4 +1,5 @@
 #include "AcpClient.h"
+#include "AsyncProcessStop.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
@@ -322,7 +323,7 @@ void AcpClient::finishTurn(const QString &state,const QString &error) {
 }
 void AcpClient::processGone(const QString &reason) {
     const bool existed=phase!=Stopped;phase=Stopped;idle.stop();replies.clear();buffer.clear();cancelPermissions();
-    if(process){process->disconnect(this);process->deleteLater();process=nullptr;}
+    if(process){auto *retired=process;process=nullptr;retireProcess(retired,this);}
     if(guard){guard->close();guard->deleteLater();guard=nullptr;}
     if(server){server->close();server->deleteLater();server=nullptr;}
     if(!socketPath.isEmpty()){QLocalServer::removeServer(socketPath);socketPath.clear();}
@@ -333,6 +334,6 @@ void AcpClient::processGone(const QString &reason) {
 }
 void AcpClient::stop() {
     if(phase==Stopped)return;cancelPermissions();
-    if(process){process->disconnect(this);process->closeWriteChannel();process->terminate();if(!process->waitForFinished(1500))process->kill();}
+    if(process){auto *retired=process;process=nullptr;retireProcess(retired,this);}
     processGone("会话已断开");
 }

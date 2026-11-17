@@ -1,3 +1,4 @@
+#include "DesktopScreenLayout.h"
 #include "PointerEffect.h"
 #include <QPaintEvent>
 #include "../../../shared/async-work/BackgroundTask.h"
@@ -1555,7 +1556,7 @@ void SystemMonitor::saveSettings() const
 {
     QSettings settings;
     settings.beginGroup(QStringLiteral("systemMonitor"));
-    settings.setValue(QStringLiteral("position"), pos());
+    settings.setValue(QStringLiteral("position"), DesktopScreenLayout::preferred(const_cast<SystemMonitor*>(this)).topLeft());
     settings.setValue(QStringLiteral("compact"), m_compact);
     settings.setValue(QStringLiteral("skin"), static_cast<int>(m_skin));
     settings.setValue(QStringLiteral("scale"), m_scale);

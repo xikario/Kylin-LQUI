@@ -1,4 +1,6 @@
 #include "StartMenu.h"
+#include "StartButton.h"
+#include "TaskbarDetector.h"
 #include "SettingsDialog.h"
 #include <QFontComboBox>
 #include <QGroupBox>
@@ -379,6 +381,15 @@ int main(int argc, char **argv)
     app.setOrganizationName("kylin"); app.setApplicationName("ukui-kaishicaidan-v2");
     BackgroundTask::ApplicationScope tasks;
     LiquidPopup::install(app); LiquidPopup::installMenuGlyphStyle(app);
+    if(app.arguments().contains("--ipc-stall")) {
+        QElapsedTimer elapsed;elapsed.start();
+        StartButton button(nullptr,true);TaskbarDetector::detect();
+        if(elapsed.elapsed()>200){qCritical()<<"IPC blocked constructor"<<elapsed.elapsed();return 1;}
+        int ticks=0;QTimer timer;QObject::connect(&timer,&QTimer::timeout,[&]{++ticks;});timer.start(5);
+        settle(1100);
+        if(ticks<50){qCritical()<<"IPC blocked event loop"<<ticks;return 2;}
+        qInfo()<<"PASS: unavailable panel and bridge do not block launcher"<<ticks;return 0;
+    }
     const QString applications = root.path() + "/data/applications";
     QFile emptyIcon(applications + "/empty-icon.png");
     emptyIcon.open(QIODevice::WriteOnly);emptyIcon.close();

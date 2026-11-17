@@ -32,13 +32,18 @@ int main(int argc,char **argv) {
         for(const auto &v:values){bool ok=false;const int n=v.toInt(&ok);if(!ok)return 2;anchor.append(n);}
     }
     const QString service="org.ukui.LiquidCli";auto bus=QDBusConnection::sessionBus();
+    auto remote=[&](const QString &method,const QList<QVariant> &arguments=QList<QVariant>{}){
+        auto request=QDBusMessage::createMethodCall(service,"/Cli",service,method);request.setArguments(arguments);request.setAutoStartService(false);
+        return bus.call(request,QDBus::Block,1200);
+    };
     // Read-only/control invocations must never temporarily own the service name:
     // --state racing a cold launch used to make the real UI instance exit.
     if(parser.isSet("state")||parser.isSet("quit")||parser.isSet("hide")||parser.isSet("reload")){
-        QDBusInterface existing(service,"/Cli","org.ukui.LiquidCli",bus);
-        if(!existing.isValid())return parser.isSet("state")?1:0;
-        const auto reply=existing.call(parser.isSet("state")?"State":parser.isSet("quit")?"Quit":parser.isSet("reload")?"Reload":"Hide");
-        if(reply.type()==QDBusMessage::ErrorMessage)return 1;
+        const auto reply=remote(parser.isSet("state")?"State":parser.isSet("quit")?"Quit":parser.isSet("reload")?"Reload":"Hide");
+        if(reply.type()==QDBusMessage::ErrorMessage){
+            if(!parser.isSet("state") && (reply.errorName()=="org.freedesktop.DBus.Error.ServiceUnknown" || reply.errorName()=="org.freedesktop.DBus.Error.NameHasNoOwner"))return 0;
+            return 1;
+        }
         if(parser.isSet("state")&&!reply.arguments().isEmpty())std::puts(reply.arguments().first().toString().toUtf8().constData());
         return 0;
     }
@@ -48,21 +53,18 @@ int main(int argc,char **argv) {
             const auto a=anchor.size()==4?anchor:QList<int>{0,0,0,0};
             const bool drop=parser.isSet("drop");
             for(int attempt=0;attempt<30;++attempt) {
-                QDBusInterface existing(service,"/Cli","org.ukui.LiquidCli",bus);
-                if(existing.isValid()) {
-                    const auto reply=drop?existing.call("ImportDropAt",parser.value("drop"),a[0],a[1],a[2],a[3])
-                                         :existing.call("CaptureAt",a[0],a[1],a[2],a[3]);
-                    if(reply.type()!=QDBusMessage::ErrorMessage)return !drop||!StationDrop::owns(parser.value("drop"))?0:1;
-                    if(reply.errorName()!="org.freedesktop.DBus.Error.UnknownObject")return 1;
-                }
+                const auto reply=drop?remote("ImportDropAt",{parser.value("drop"),a[0],a[1],a[2],a[3]})
+                                     :remote("CaptureAt",{a[0],a[1],a[2],a[3]});
+                if(reply.type()!=QDBusMessage::ErrorMessage)return !drop||!StationDrop::owns(parser.value("drop"))?0:1;
+                if(reply.errorName()!="org.freedesktop.DBus.Error.UnknownObject")return 1;
                 QEventLoop settle;QTimer::singleShot(100,&settle,&QEventLoop::quit);settle.exec();
             }
             return 1;
         }
-        QDBusInterface existing(service,"/Cli","org.ukui.LiquidCli",bus);
-        if(anchor.size()==4)existing.call(parser.isSet("settings")?"PreferencesAt":"ToggleAt",anchor[0],anchor[1],anchor[2],anchor[3]);
-        else existing.call(parser.isSet("settings")?"Preferences":parser.isSet("toggle")?"Toggle":"Show");
-        return existing.isValid()?0:1;
+        const auto reply=anchor.size()==4
+            ?remote(parser.isSet("settings")?"PreferencesAt":"ToggleAt",{anchor[0],anchor[1],anchor[2],anchor[3]})
+            :remote(parser.isSet("settings")?"Preferences":parser.isSet("toggle")?"Toggle":"Show");
+        return reply.type()!=QDBusMessage::ErrorMessage?0:1;
     }
     Drawer drawer(Settings::load());
     auto *settingsBridge=new LquiSettings::Bridge("ai",[&drawer](const QString &){return drawer.settingsBridgeRoot();},[]{return QJsonArray{QJsonObject{{"id","general"},{"title","AI 小站"},{"group","AI"}}};},&drawer);settingsBridge->registerOnSession();

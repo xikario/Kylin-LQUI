@@ -1,3 +1,4 @@
+#include "DesktopScreenLayout.h"
 #include "LiquidDialog.h"
 #include <QPointer>
 #include "PointerEffect.h"
@@ -1128,10 +1129,10 @@ QRect FenceWidget::computeSnappedGeometry(const QRect &proposed) const
         siblingRects.append(sibling->geometry());
     }
 
-    if (siblingRects.isEmpty()) return proposed;
 
     // 屏幕边缘也作为吸附目标
-    const QRect screenRect = canvas->rect();
+    const auto desktop=qobject_cast<DesktopCanvas *>(canvas);
+    const QRect screenRect = desktop?desktop->screenWorkAreaAt(proposed.topLeft()+QPoint(proposed.width()/2,20)):canvas->rect();
     siblingRects.append(screenRect);
 
     QRect snapped = proposed;
@@ -1231,7 +1232,7 @@ QRect FenceWidget::computeSnappedGeometry(const QRect &proposed) const
         }
     }
 
-    return snapped;
+    return DesktopScreenLayout::fit(snapped,screenRect);
 }
 
 QRect FenceWidget::applyWallpaperMagnet(const QRect &proposed)

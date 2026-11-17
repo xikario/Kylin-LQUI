@@ -1,6 +1,7 @@
 #include "LiquidDialog.h"
 #include "../../../shared/async-work/BackgroundTask.h"
 #include "PanelController.h"
+#include "PanelMaterialJob.h"
 #include "CohesiveGlass.h"
 #include "SettingsBridge.h"
 #include "PanelAiStation.h"
@@ -227,7 +228,7 @@ void PanelController::attach(QWidget *w) {
     new PanelLayoutCompat(w,configFile(),w);
     new PanelDockCompat(w);
     m_cache.insert(w,{});
-    m_preparations.insert(w,new LiquidMaterial::Preparation(this));
+    m_preparations.insert(w,new PanelMaterialJob(this));
     m_originalMasks.insert(w,w->mask());
     connect(w,&QObject::destroyed,this,[this,w]{delete m_preparations.take(w);m_cache.remove(w);m_materialDirty.remove(w);m_pointers.remove(w);m_pointerDamage.remove(w);m_originalMasks.remove(w);});
     syncOutline(w);
@@ -599,19 +600,16 @@ bool PanelController::eventFilter(QObject *obj,QEvent *e) {
                 const QPointer<QWidget> guard(w);
                 const QRect requested(w->mapToGlobal(QPoint()),w->size());
                 const qreal dpr=w->devicePixelRatioF();
-                m_preparations[w]->request(source,[this,guard,requested,dpr](const LiquidMaterial::Prepared &material){
+                const QJsonObject options{{"finish",m_materialStyle},{"refraction",m_refraction},
+                    {"opacity",m_surface.opacity},{"highlight",m_surface.highlight},{"chroma",m_chroma},
+                    {"clarity",m_clarity},{"strength",m_liquidStrength},{"radius",m_surface.radius}};
+                m_preparations[w]->request(source,options,[this,guard,requested,dpr](const QImage &rendered,bool gpu){
                     if(!guard || !m_enabled)return;
                     if(!sameMaterialRect(requested,QRect(guard->mapToGlobal(QPoint()),guard->size())) || !qFuzzyCompare(dpr,guard->devicePixelRatioF())){
-                        if(qEnvironmentVariableIsSet("UKUI_LIQUID_PANEL_MATERIAL_TRACE"))qInfo()<<"material stale completion"<<requested<<guard->geometry();
                         invalidateMaterial(guard);guard->update();return;
                     }
-                    m_optics.setFinish(m_materialStyle=="soft"?LiquidOpticsRenderer::Finish::Soft:
-                        m_materialStyle=="frosted"?LiquidOpticsRenderer::Finish::Frosted:LiquidOpticsRenderer::Finish::Liquid);
-                    m_optics.setOptics(m_refraction,m_surface.opacity,m_surface.highlight,m_chroma);
-                    m_optics.setMaterial(m_clarity,m_liquidStrength);
-                    m_optics.setPreparedWallpaper(material);
-                    m_cache[guard]=m_optics.renderPanel(QRect(QPoint(),requested.size()),m_surface.radius);
-                    guard->setProperty("liquidOpticalGpu",m_optics.usedGpu());
+                    if(!rendered.isNull())m_cache[guard]=rendered;
+                    guard->setProperty("liquidOpticalGpu",gpu&&!rendered.isNull());
                     guard->setProperty("liquidMaterialReady",true);
                     syncOutline(guard);guard->update();
                 });

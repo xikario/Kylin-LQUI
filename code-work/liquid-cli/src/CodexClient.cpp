@@ -1,5 +1,6 @@
 #include "CodexClient.h"
 #include "CodexOptions.h"
+#include "AsyncProcessStop.h"
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
@@ -358,7 +359,7 @@ void CodexClient::processGone(const QString &reason) {
     const bool wasRunning=phase!=Stopped;
     phase=Stopped;replies.clear();buffer.clear();idle.stop();closeApprovals();
     if(discoveryOnly){discoveryOnly=false;emit modelsFailed(reason);}
-    if(process){process->disconnect(this);process->deleteLater();process=nullptr;}
+    if(process){auto *retired=process;process=nullptr;retireProcess(retired,this);}
     if(guard){guard->close();guard->deleteLater();guard=nullptr;}
     if(server){server->close();server->deleteLater();server=nullptr;}
     if(!socketPath.isEmpty()){QLocalServer::removeServer(socketPath);socketPath.clear();}
@@ -371,8 +372,7 @@ void CodexClient::processGone(const QString &reason) {
 void CodexClient::stop() {
     if(phase==Stopped)return;
     if(process) {
-        process->disconnect(this);process->closeWriteChannel();process->terminate();
-        if(!process->waitForFinished(1500))process->kill();
+        auto *retired=process;process=nullptr;retireProcess(retired,this);
     }
     // Closing the guard socket makes the helper stop the whole scope.
     processGone(QStringLiteral("会话已断开"));

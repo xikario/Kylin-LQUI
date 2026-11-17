@@ -1,5 +1,6 @@
 #include "LiquidMaterial.h"
 #include "LiquidOpticsRenderer.h"
+#include "../../effects/EffectsPolicy.h"
 #include <QDebug>
 #include <QCoreApplication>
 #include <QThread>
@@ -397,7 +398,7 @@ QImage LiquidOpticsRenderer::renderSurface(const QRect &logicalRect, qreal radiu
     // Radius must fit collapsed title-only fences too.
     radius = qMin(radius, qMin(logicalRect.width(), logicalRect.height())/2.0);
     QImage result;
-    if (!qEnvironmentVariableIsSet("UKUI_LIQUID_GLASS_NO_GL")) {
+    if (!gpuDisabled()) {
         if (!m_backend) m_backend = Backend::acquire();
         if (!shape.isEmpty() && (m_shapeField.isNull() || m_cachedShape != shape ||
             m_shapeSize != pixels.size() || !qFuzzyCompare(m_shapeDpr, dpr))) {
@@ -496,4 +497,9 @@ QImage LiquidOpticsRenderer::renderSurface(const QRect &logicalRect, qreal radiu
     }
     result.setDevicePixelRatio(dpr);
     return result;
+}
+
+bool LiquidOpticsRenderer::gpuDisabled()
+{
+    return qEnvironmentVariableIsSet("UKUI_LIQUID_GLASS_NO_GL") || !LquiEffects::gpuAllowed();
 }

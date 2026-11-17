@@ -1,4 +1,5 @@
 #pragma once
+#include "../../../shared/effects/EffectsPolicy.h"
 #include "IconAppearance.h"
 
 #include <QWidget>
@@ -111,6 +112,9 @@ signals:
     void glassFinishChanged();
     void reduceMotionChanged(bool reduce);
 
+public:
+    bool effectiveReduceMotion() const { return LquiEffects::reducedMotion(m_reduceMotionOwn); }
+
 public slots:
     Q_SCRIPTABLE void setFenceLiquidGlassEnabled(bool enabled);
     Q_SCRIPTABLE void setWallpaperMagnetEnabled(bool enabled);
@@ -198,6 +202,7 @@ private slots:
     void refreshDesktopIcons();
 
 private:
+    bool m_reduceMotionOwn=false;
     VideoWallpaperTrial *m_videoTrial=nullptr;
     QString m_pendingVideoWallpaper;
     void videoWallpaperStateChanged();

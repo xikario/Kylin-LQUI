@@ -8,6 +8,7 @@ from audio_events import AudioEvents
 from volume_feedback import VolumeFeedback
 from fusion_view import FusionView,FUSION_STYLE
 from low_cost_effects import attach_button
+import effects_policy
 from glass_widgets import GlassCard,GlassStatusLabel,ReadableTooltips,PageTransition,glyph
 
 class Signals(QtCore.QObject):finished=QtCore.pyqtSignal(object)
@@ -341,7 +342,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
         self.update()
     @staticmethod
     def reduced_motion():
-        return QtCore.QSettings('org.ukui','style').value('reduceAnimation',False,type=bool) or QtCore.QSettings(str(Path.home()/'.config/ukui/liquid-panel.ini'),QtCore.QSettings.IniFormat).value('appearance/reducedMotion',False,type=bool)
+        return effects_policy.reduced_motion(QtCore.QSettings(str(Path.home()/'.config/ukui/liquid-panel.ini'),QtCore.QSettings.IniFormat).value('appearance/reducedMotion',False,type=bool))
     def maybe_scan_wifi(self):
         if not self.auto_scan_pending or self.page!='wifi' or not self.isVisible() or 'wifi' not in self.data:return
         if self.is_busy('wifi'):return

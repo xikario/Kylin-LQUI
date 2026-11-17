@@ -1,6 +1,7 @@
 #include "../../../shared/desktop-launch/DesktopEntryFile.h"
 #include "LiquidDialog.h"
 #include "../../../shared/icon-style/IconPolicy.h"
+#include "../../../shared/effects/EffectsPolicy.h"
 #include <QImageReader>
 #include <QtMath>
 #include "../../../shared/async-work/BackgroundTask.h"
@@ -1549,6 +1550,8 @@ StartMenu::StartMenu(QWidget *parent)
     // Observe, but never consume, pointer events delivered to our descendants.
     // The timer animates towards an event-provided target; it does not poll X11.
     qApp->installEventFilter(this);
+    // Global effects (settings overview) changed: drop the pointer light at once.
+    LquiEffects::onChanged(this,[this]{if(!LquiEffects::pointerLight()&&m_glassLightTimer){m_glassLightTimer->stop();update();}});
     setupClipboardHistory();
     applyFontToChildren();
     setupAppWatcher();
@@ -1610,7 +1613,7 @@ QRegion StartMenu::glassReflectionDamage(const QPointF &position) const
 
 void StartMenu::queueGlassPointer(const QPointF &position, QWidget *control)
 {
-    if (!isVisible() || m_skin != Skin::EcoLiquid || !m_glassLightTimer)
+    if (!isVisible() || m_skin != Skin::EcoLiquid || !m_glassLightTimer || !LquiEffects::pointerLight())
         return;
     if (position == m_glassLightTarget && control == m_lastGlassControl)
         return;
@@ -1643,7 +1646,7 @@ void StartMenu::queueGlassPointer(const QPointF &position, QWidget *control)
 
 void StartMenu::advanceGlassPointer()
 {
-    if (!isVisible() || m_skin != Skin::EcoLiquid) {
+    if (!isVisible() || m_skin != Skin::EcoLiquid || !LquiEffects::pointerLight()) {
         m_glassLightTimer->stop();
         m_glassControlDirty = {};
         return;
@@ -3616,8 +3619,7 @@ void StartMenu::hideMenu()
 void StartMenu::animatePopup(bool opening)
 {
     m_popupMotion.stop();
-    const bool reduced=QSettings("org.ukui","style").value("reduceAnimation",false).toBool()
-        || QSettings(QDir::homePath()+"/.config/ukui/liquid-panel.ini",QSettings::IniFormat).value("appearance/reducedMotion",false).toBool();
+    const bool reduced=LquiEffects::reducedMotion(QSettings(QDir::homePath()+"/.config/ukui/liquid-panel.ini",QSettings::IniFormat).value("appearance/reducedMotion",false).toBool());
     const qreal end=opening?1.:0.;
     if(reduced){m_popupProgress=end;DockPopupMotion::apply(this,m_popupTarget,m_popupEdge,end);if(!opening)hide();return;}
     DockPopupMotion::apply(this,m_popupTarget,m_popupEdge,m_popupProgress);

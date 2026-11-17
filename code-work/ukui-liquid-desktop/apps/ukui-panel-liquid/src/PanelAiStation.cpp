@@ -3,6 +3,7 @@
 #include "CalendarLauncher.h"
 #include "LiquidPopup.h"
 #include "../../../shared/icon-style/IconPolicy.h"
+#include "../../../shared/effects/EffectsPolicy.h"
 #include "ControlCenterLauncher.h"
 #include <QKeyEvent>
 #include "StationMetrics.h"
@@ -38,6 +39,7 @@
 #include <QVariantAnimation>
 #include <QMouseEvent>
 #include <QSettings>
+#include <QStandardPaths>
 #include <QXmlStreamReader>
 #include <QRegularExpression>
 #include <QDragEnterEvent>
@@ -105,7 +107,7 @@ protected:
 private:
     void play(bool click) {
         QSettings appearance(QDir::homePath()+"/.config/ukui/liquid-panel.ini",QSettings::IniFormat);
-        if(QSettings("org.ukui","style").value("reduceAnimation",false).toBool()||appearance.value("appearance/reducedMotion",false).toBool())return;
+        if(LquiEffects::reducedMotion(appearance.value("appearance/reducedMotion",false).toBool()))return;
         clicked=click;motion.stop();progress=0;setGeometry(button->rect());show();raise();frame.start();setProperty("animating",true);motion.start();
     }
     QWidget *button;QVariantAnimation motion;QElapsedTimer frame;qreal progress=0;bool clicked=false;
@@ -613,7 +615,7 @@ bool PanelAiStation::eventFilter(QObject *o,QEvent *e) {
             auto *motion=guard->findChild<QVariantAnimation*>("lquiCalendarMotion");
             if(!motion){motion=new QVariantAnimation(guard);motion->setObjectName("lquiCalendarMotion");}
             motion->stop();motion->disconnect();
-            if(QSettings("org.ukui","style").value("reduceAnimation",false).toBool()){
+            if(LquiEffects::reducedMotion(QSettings(QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)+"/ukui/liquid-panel.ini",QSettings::IniFormat).value("appearance/reducedMotion",false).toBool())){
                 positionCalendar(guard,position);guard->setWindowOpacity(1);return;
             }
             positionCalendar(guard,position);

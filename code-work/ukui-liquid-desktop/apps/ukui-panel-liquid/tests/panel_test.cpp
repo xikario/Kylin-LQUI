@@ -143,10 +143,17 @@ int main(int argc,char **argv) {
                 QMouseEvent event(QEvent::MouseMove,label.mapFromGlobal(global),global,Qt::NoButton,Qt::NoButton,Qt::NoModifier);
                 QApplication::sendEvent(&label,&event);
             };
-            motion(QPoint(100,30));wait(100);probe.paints=0;
-            for(int i=0;i<50;++i){motion(QPoint(100+i*9,30));wait(4);}
-            wait(100);qInfo()<<"pointer frame paints"<<probe.paints;
-            check(probe.paints>0 && probe.paints<=12,"child pointer motion merges old/new damage once per 32ms frame");
+            auto sweep=[&]{
+                motion(QPoint(100,30));wait(100);probe.paints=0;
+                for(int i=0;i<50;++i){motion(QPoint(100+i*9,30));wait(4);}
+                wait(100);return probe.paints;
+            };
+            // Pointer light defaults to 0: moving the pointer must not repaint at all.
+            const int idle=sweep();qInfo()<<"pointer paints with light off"<<idle;
+            check(idle==0,"pointer motion costs no repaint while the pointer light is off");
+            check(setField("material","liquidPanelPointerHighlight",60),"pointer light can be enabled from unified settings");settle();
+            const int lit=sweep();qInfo()<<"pointer frame paints"<<lit;
+            check(lit>0 && lit<=12,"child pointer motion merges old/new damage once per 32ms frame");
             if(QGuiApplication::platformName()=="xcb") {
                 const QImage partial=QApplication::primaryScreen()->grabWindow(panel.winId()).toImage();
                 panel.update();wait(80);

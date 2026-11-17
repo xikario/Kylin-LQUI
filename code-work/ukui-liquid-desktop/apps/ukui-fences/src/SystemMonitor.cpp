@@ -1,5 +1,6 @@
 #include "DesktopScreenLayout.h"
 #include "PointerEffect.h"
+#include "../../../shared/effects/EffectsPolicy.h"
 #include <QPaintEvent>
 #include "../../../shared/async-work/BackgroundTask.h"
 #include "LiquidPopup.h"
@@ -164,7 +165,8 @@ SystemMonitor::SystemMonitor(QWidget *parent)
         if (!damage.isEmpty()) update(damage);
         return false;
     }, 16);
-    m_liquidPointerEffect->setEnabled(m_skin == Skin::Liquid);
+    m_liquidPointerEffect->setEnabled(m_skin == Skin::Liquid && LquiEffects::pointerLight());
+    LquiEffects::onChanged(this,[this]{ m_liquidPointerEffect->setEnabled(m_skin == Skin::Liquid && LquiEffects::pointerLight()); });
     refreshStats();
 
     m_timer.setTimerType(Qt::VeryCoarseTimer);
@@ -1407,7 +1409,7 @@ void SystemMonitor::setSkin(Skin skin)
         return;
     m_skin = skin;
     publishVideoCutout();
-    m_liquidPointerEffect->setEnabled(skin == Skin::Liquid);
+    m_liquidPointerEffect->setEnabled(skin == Skin::Liquid && LquiEffects::pointerLight());
     if (skin == Skin::Wallpaper)
         refreshWallpaperTheme();
     saveSettings();
@@ -1439,7 +1441,7 @@ void SystemMonitor::resetVisualDefaults(QWidget *settingsPage)
     resize(baseSize());
     move(boundedPosition(savedPosition));
     publishVideoCutout();
-    if(m_liquidPointerEffect)m_liquidPointerEffect->setEnabled(true);
+    if(m_liquidPointerEffect)m_liquidPointerEffect->setEnabled(LquiEffects::pointerLight());
     if(settingsPage) {
         if(auto *skin=settingsPage->findChild<QComboBox *>("monitorSkin"))skin->setCurrentIndex(int(Skin::Liquid));
         if(auto *title=settingsPage->findChild<QLineEdit *>("monitorTitle"))title->setText(m_widgetTitle);

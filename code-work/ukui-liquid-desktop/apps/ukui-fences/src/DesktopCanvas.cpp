@@ -622,7 +622,14 @@ DesktopCanvas::DesktopCanvas(QWidget *parent)
     m_wallpaperMagnetEnabled = appearanceSettings.value("appearance/wallpaperMagnetEnabled", true).toBool();
     GlassFinish::setScrim(GlassFinish::scrimFromIndex(
         appearanceSettings.value("appearance/glassScrim", int(GlassFinish::Scrim::Balanced)).toInt()));
-    LiquidPopup::theme().reducedMotion = appearanceSettings.value("appearance/reduceMotion", false).toBool();
+    m_reduceMotionOwn = appearanceSettings.value("appearance/reduceMotion", false).toBool();
+    LiquidPopup::theme().reducedMotion = effectiveReduceMotion();
+    // Global effects (settings overview) changed in any process: re-apply.
+    LquiEffects::onChanged(this,[this]{
+        const bool reduce=effectiveReduceMotion();
+        if(LiquidPopup::theme().reducedMotion!=reduce){LiquidPopup::theme().reducedMotion=reduce;emit reduceMotionChanged(reduce);}
+        for(auto *fence:findChildren<FenceWidget*>())fence->update();
+    });
     setWindowFlags(Qt::FramelessWindowHint | Qt::Window);
     // UKUI's style treats the top 48 logical pixels of a window as a drag
     // handle and sends an X11 ButtonRelease when moving it. This is a desktop
@@ -1510,16 +1517,18 @@ int DesktopCanvas::glassScrim() const
 
 bool DesktopCanvas::reduceMotion() const
 {
-    return LiquidPopup::theme().reducedMotion;
+    return m_reduceMotionOwn;
 }
 
 void DesktopCanvas::setReduceMotion(bool reduce)
 {
-    if (LiquidPopup::theme().reducedMotion == reduce) return;
-    LiquidPopup::theme().reducedMotion = reduce;
+    if (m_reduceMotionOwn == reduce) return;
+    m_reduceMotionOwn = reduce;
+    const bool effective = effectiveReduceMotion();
+    LiquidPopup::theme().reducedMotion = effective;
     QSettings settings;
     settings.setValue("appearance/reduceMotion", reduce);
-    emit reduceMotionChanged(reduce);
+    emit reduceMotionChanged(effective);
 }
 
 void DesktopCanvas::setGlassScrim(int preset)

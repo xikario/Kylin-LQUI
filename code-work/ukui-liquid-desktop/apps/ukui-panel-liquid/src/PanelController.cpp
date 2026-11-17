@@ -61,6 +61,7 @@ static bool sameMaterialRect(const QRect &a,const QRect &b) {
 }
 #include <QButtonGroup>
 #include <QSignalBlocker>
+#include "../../../shared/effects/EffectsPolicy.h"
 
 namespace {
 void addPanelLayoutSettings(QFormLayout *form, QWidget *dialog, QWidget *panel,
@@ -155,7 +156,7 @@ PanelController::PanelController(QObject *parent):QObject(parent) {
     m_surface.highlight=qBound(0.,s.value("appearance/highlight",CohesiveGlass::Highlight).toDouble(),1.);
     LiquidPopup::install(*qApp);
     LiquidPopup::setEnabled(m_enabled);
-    LiquidPopup::theme().reducedMotion=m_reducedMotion;
+    LiquidPopup::theme().reducedMotion=effectiveReducedMotion();
     LiquidPopup::theme().highlight=m_surface.highlight;
     QTimer::singleShot(0, this, [this] { refreshBackdrop(true); });
     m_wallpaperRefresh.setSingleShot(true);m_wallpaperRefresh.setInterval(250);
@@ -176,6 +177,12 @@ PanelController::PanelController(QObject *parent):QObject(parent) {
             if(i.key()->isVisible()) i.key()->update(i.value());
     });
     qApp->installEventFilter(this);
+    // Global effects (settings overview) changed in any process: re-apply.
+    LquiEffects::onChanged(this,[this]{
+        LiquidPopup::theme().reducedMotion=effectiveReducedMotion();
+        if(!LquiEffects::pointerLight()){m_pointers.clear();m_pointerDamage.clear();m_hoverRefresh.stop();}
+        flushPreview();
+    });
     qApp->setProperty("liquidSystemControlsEnabled",s.value("controls/compact",true).toBool());
     new PanelSystemControls(this);
     qApp->setProperty("liquidNotificationHistory",s.value("controls/notificationHistory",true).toBool());
@@ -222,9 +229,9 @@ void PanelController::attach(QWidget *w) {
     if (!w || !w->inherits("UKUIPanel") || w->property("liquidPanelAttached").toBool()) return;
     w->setProperty("liquidPanelAttached",true);
     w->setProperty("liquidPanelEnabled",m_enabled);
-    w->setProperty("liquidDockEnabled",m_enabled&&m_dockAdaptive);w->setProperty("liquidDockClickFeedback",m_dockClickFeedback&&!m_reducedMotion);
-    w->setProperty("liquidDockReducedMotion",m_reducedMotion);
-    w->setProperty("liquidDockHoverMagnification",m_dockMagnification&&!m_reducedMotion);
+    w->setProperty("liquidDockEnabled",m_enabled&&m_dockAdaptive);w->setProperty("liquidDockClickFeedback",m_dockClickFeedback&&!effectiveReducedMotion());
+    w->setProperty("liquidDockReducedMotion",effectiveReducedMotion());
+    w->setProperty("liquidDockHoverMagnification",m_dockMagnification&&!effectiveReducedMotion());
     new PanelLayoutCompat(w,configFile(),w);
     new PanelDockCompat(w);
     m_cache.insert(w,{});
@@ -239,7 +246,7 @@ void PanelController::attach(QWidget *w) {
     w->update();
 }
 void PanelController::apply(bool materialChanged) {
-    LiquidPopup::theme().reducedMotion=m_reducedMotion;
+    LiquidPopup::theme().reducedMotion=effectiveReducedMotion();
     LiquidPopup::theme().highlight=m_surface.highlight;
     LiquidPopup::setEnabled(m_enabled);
     m_pendingMaterial|=materialChanged;
@@ -253,9 +260,9 @@ void PanelController::flushPreview() {
     for(auto it=m_cache.begin();it!=m_cache.end();++it) {
         if(rebuild)invalidateMaterial(it.key());
         it.key()->setProperty("liquidPanelEnabled",m_enabled);syncOutline(it.key());it.key()->update();
-        it.key()->setProperty("liquidDockEnabled",m_enabled&&m_dockAdaptive);it.key()->setProperty("liquidDockClickFeedback",m_dockClickFeedback&&!m_reducedMotion);
-        it.key()->setProperty("liquidDockReducedMotion",m_reducedMotion);
-        it.key()->setProperty("liquidDockHoverMagnification",m_dockMagnification&&!m_reducedMotion);
+        it.key()->setProperty("liquidDockEnabled",m_enabled&&m_dockAdaptive);it.key()->setProperty("liquidDockClickFeedback",m_dockClickFeedback&&!effectiveReducedMotion());
+        it.key()->setProperty("liquidDockReducedMotion",effectiveReducedMotion());
+        it.key()->setProperty("liquidDockHoverMagnification",m_dockMagnification&&!effectiveReducedMotion());
     }
 }
 void PanelController::saveConfiguration() {
@@ -531,7 +538,7 @@ bool PanelController::eventFilter(QObject *obj,QEvent *e) {
         attach(w);
         if(auto *menu=qobject_cast<QMenu *>(w))addMenu(menu);
     }
-    if(m_enabled && (e->type()==QEvent::MouseMove || e->type()==QEvent::Enter || e->type()==QEvent::Leave)) {
+    if(m_enabled && m_pointerHighlight>0 && LquiEffects::pointerLight() && (e->type()==QEvent::MouseMove || e->type()==QEvent::Enter || e->type()==QEvent::Leave)) {
         QWidget *panel=w;
         while(panel && !m_cache.contains(panel))panel=panel->parentWidget();
         if(panel && m_cache.contains(panel)) {
@@ -624,7 +631,7 @@ bool PanelController::eventFilter(QObject *obj,QEvent *e) {
         // KWin composites windows behind us, with no screenshots or blur request.
         p.setOpacity(m_seeThrough?1.-m_transparency:1.);
         if(resizing||image.size()/image.devicePixelRatio()!=w->size())p.drawImage(w->rect(),image);else p.drawImage(QPoint(),image);
-        if(m_pointerHighlight>0 && m_pointers.contains(w)) {
+        if(m_pointerHighlight>0 && LquiEffects::pointerLight() && m_pointers.contains(w)) {
             const QPointF pos=m_pointers.value(w);
             const QRectF body=QRectF(w->rect()).adjusted(.75,.75,-.75,-.75);
             const qreal radius=qMin(m_surface.radius,qMin(body.width(),body.height())/2);

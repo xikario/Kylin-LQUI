@@ -12,6 +12,7 @@ from design import STYLE, COLORS, DESCRIPTIONS, NavigationDelegate, Switch, Mate
 from ui_tokens import COLORS as UI_COLORS, application_scale, build_settings_style, sidebar_width
 from ui_schema import normalize_page, structural_signature, searchable_text, field_visible, presentation_rows, navigation_pages, pinned_page_row
 from ui_components import SettingsGroup, SettingRow, ActionRow, DisclosureRow, PluginRow, WallpaperPreview, WallpaperFileRow, PathView, StatusLabel, SettingSlider, ActionButton, HelpBubble, RadioChoice, ModeChoiceRow, ProfileColumns, label
+from effects_card import GlobalEffectsCard
 import sip
 
 _OBSERVED_EVENTS=frozenset((QtCore.QEvent.MouseButtonPress,QtCore.QEvent.KeyPress,QtCore.QEvent.Wheel,QtCore.QEvent.InputMethod,QtCore.QEvent.ApplicationFontChange,QtCore.QEvent.Resize,QtCore.QEvent.FocusIn))
@@ -885,6 +886,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
         rebuild=self.signature!=str(ids)
         if rebuild:
             widget=QtWidgets.QWidget();layout=QtWidgets.QVBoxLayout(widget);layout.setContentsMargins(0,0,6,0);layout.setSpacing(12);self.overview_rows={}
+            # One switchboard for every module's liquid effects (input method stays separate).
+            self.effects_card=GlobalEffectsCard();layout.addWidget(self.effects_card)
             for item in components:
                 box=self.card(layout);header=QtWidgets.QHBoxLayout();name=QtWidgets.QLabel(item['name']);name.setProperty('section',True);header.addWidget(name,1)
                 label=QtWidgets.QLabel();header.addWidget(label);box.addLayout(header)
@@ -897,6 +900,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             memory=item.get('pssKiB');parts=['功能：'+item.get('enabledState','由模块配置'), '登录启动：'+item.get('startupState','未确认')]
             if running:parts.append('PSS：'+('%.1f MB'%(memory/1024) if memory is not None else '未知'))
             info.setText('   ·   '.join(parts)+''.join('\n'+feature['name']+'：'+('启用' if feature['enabled'] else '关闭')+' · '+('登录自动开启' if feature['autoStart'] else '手动开启') for feature in item.get('features',[])));pids.setText('PID  '+', '.join(str(p['pid']) for p in item.get('processes',[])));pids.setVisible(running)
+        if getattr(self,'effects_card',None) is not None and not sip.isdeleted(self.effects_card):self.effects_card.refresh()
         self.description.setText('查看各模块状态，管理你的桌面。')
 
     def render_integration(self,result):

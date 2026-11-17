@@ -2,6 +2,7 @@
 #include "LiquidDialog.h"
 #include <QPointer>
 #include "PointerEffect.h"
+#include "../../../shared/effects/EffectsPolicy.h"
 #include <QPaintEvent>
 #include <memory>
 #include "FenceWidget.h"
@@ -178,7 +179,8 @@ FenceWidget::FenceWidget(const QString &title,
         }
         return next != target;
     });
-    m_glassPointerEffect->setEnabled(m_liquidGlassEnabled);
+    m_glassPointerEffect->setEnabled(m_liquidGlassEnabled && LquiEffects::pointerLight());
+    LquiEffects::onChanged(this,[this]{ m_glassPointerEffect->setEnabled(m_liquidGlassEnabled && LquiEffects::pointerLight()); });
     m_reorderTimer=new QTimer(this);m_reorderTimer->setSingleShot(true);m_reorderTimer->setInterval(180);
     connect(m_reorderTimer,&QTimer::timeout,this,[this]{
         if(m_reorderTarget<0)return;
@@ -191,7 +193,7 @@ void FenceWidget::setLiquidGlassEnabled(bool enabled)
 {
     m_liquidGlassEnabled = enabled;
     if (!enabled) m_glassHover = 0;
-    m_glassPointerEffect->setEnabled(enabled);
+    m_glassPointerEffect->setEnabled(enabled && LquiEffects::pointerLight());
     updateShapeMask();
     invalidateGlassCache();
 }

@@ -9,6 +9,11 @@
 #include <cmath>
 
 namespace {
+// Start-menu glass honours its legacy switch and the global effects setting.
+bool glassGpuDisabled(){return qEnvironmentVariableIsSet("KAISHICAIDAN_GLASS_NO_GL")||LiquidOpticsRenderer::gpuDisabled();}
+}
+
+namespace {
 // Body diffusion (~7 logical pixels). Keep colour and large features intact.
 // The optical rim gets a separate, nearly clear texture below.
 using LiquidMaterial::diffuse;
@@ -20,7 +25,7 @@ NextKdeGlassView::~NextKdeGlassView() = default;
 
 void NextKdeGlassView::prepareGpu()
 {
-    if (m_optics || qEnvironmentVariableIsSet("KAISHICAIDAN_GLASS_NO_GL")
+    if (m_optics || glassGpuDisabled()
             || qEnvironmentVariableIsSet("KAISHICAIDAN_GLASS_FAST")) return;
     QElapsedTimer timer;
     timer.start();
@@ -71,7 +76,7 @@ void NextKdeGlassView::setBackdrop(const QImage &source)
     const qreal dpr=source.devicePixelRatio();
     const QSize logical(qMax(1,qRound(source.width()/dpr)),
                         qMax(1,qRound(source.height()/dpr)));
-    if (qEnvironmentVariableIsSet("KAISHICAIDAN_GLASS_NO_GL")) {
+    if (glassGpuDisabled()) {
         setBackdropFast(source);
         return;
     }
@@ -181,7 +186,7 @@ void NextKdeGlassView::setBackdropAsync(const QImage &source, bool fast, std::fu
 {
     // A click arriving during identical hover preparation attaches its ready
     // callback to the same job, rather than decoding/blurring it a second time.
-    const bool requestedFast = fast || qEnvironmentVariableIsSet("KAISHICAIDAN_GLASS_NO_GL");
+    const bool requestedFast = fast || glassGpuDisabled();
     if (m_backdropPending && !source.isNull() && requestedFast == m_requestedFast
         && source.devicePixelRatio() == m_requestedBackdrop.devicePixelRatio()
         && source == m_requestedBackdrop) {
@@ -190,7 +195,7 @@ void NextKdeGlassView::setBackdropAsync(const QImage &source, bool fast, std::fu
     }
     ++m_backdropRevision;
     m_requestedBackdrop=source;
-    m_requestedFast=fast || qEnvironmentVariableIsSet("KAISHICAIDAN_GLASS_NO_GL");
+    m_requestedFast=fast || glassGpuDisabled();
     m_backdropReady=std::move(ready);
     if(source.isNull()){m_image={};m_controls.clear();m_controlRenderCount=0;m_usedGpu=false;m_lastRenderMs=0;m_backdropReady={};return;}
     startBackdropPreparation();
@@ -250,7 +255,7 @@ QImage NextKdeGlassView::controlImage(const QRectF &rect, qreal radius, bool pre
         .arg(radius).arg(pressed);
     if(auto *cached=m_controls.object(key)) return *cached;
     QImage result;
-    if(m_usedGpu && !qEnvironmentVariableIsSet("KAISHICAIDAN_GLASS_NO_GL"))
+    if(m_usedGpu && !glassGpuDisabled())
         result=m_controlOptics.renderControl(rect.toRect(),radius,pressed);
     if(result.isNull()) {
         QImage crop=m_image.copy(pixels);

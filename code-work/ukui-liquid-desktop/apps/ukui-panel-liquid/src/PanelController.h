@@ -8,6 +8,7 @@
 #include "LiquidSurface.h"
 #include "LiquidOpticsRenderer.h"
 #include "WallpaperBackdrop.h"
+#include "../../../shared/effects/EffectsPolicy.h"
 #include <QFileSystemWatcher>
 #include <QTimer>
 class QWidget;
@@ -33,6 +34,7 @@ private:
     void updatePointer(QWidget *,const QPointF &);
     void invalidateMaterial(QWidget *);
     QString configFile() const;
+    bool effectiveReducedMotion() const { return LquiEffects::reducedMotion(m_reducedMotion); }
     bool m_enabled=true, m_reducedMotion=false, m_followWallpaper=true;
     bool m_dockAdaptive=true,m_dockClickFeedback=true,m_dockMagnification=false;
     LiquidPopup::SurfaceStyle m_surface;

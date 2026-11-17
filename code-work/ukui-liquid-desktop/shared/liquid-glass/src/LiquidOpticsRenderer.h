@@ -28,6 +28,9 @@ public:
     QImage renderPanel(const QRect &logicalRect, qreal radius, const QPainterPath &shape = {});
     QImage renderControl(const QRect &logicalRect, qreal radius, bool pressed=false);
     bool usedGpu() const { return m_usedGpu; }
+    // True when the CPU path must be used: the UKUI_LIQUID_GLASS_NO_GL test switch
+    // or the global effects setting gpu=off (~/.config/kylin-lqui/appearance.ini).
+    static bool gpuDisabled();
     int preparationCount() const { return m_preparationCount; }
 private:
     QImage renderSurface(const QRect &, qreal, const QPainterPath &, int control);

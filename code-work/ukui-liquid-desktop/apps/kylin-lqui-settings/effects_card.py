@@ -16,7 +16,9 @@ LEVEL_HELP = {
     'lite': '轻量：玻璃改用 CPU 绘制，不再截屏取背景，关闭动画。适合显卡较弱、投屏或卡顿时。',
     'off': '关闭：不绘制液态玻璃，使用纯色底板，关闭动画。最省资源。',
 }
-MOTION_OPTIONS = (('跟随系统', 'system'), ('开启', 'on'), ('关闭', 'off'))
+# Stored values keep their meaning ('on' = reduce motion); only the labels
+# say what the user gets, so the choice cannot be read backwards.
+MOTION_OPTIONS = (('跟随系统', 'system'), ('完整', 'off'), ('关闭', 'on'))
 
 
 class GlobalEffectsCard(SettingsGroup):
@@ -34,10 +36,10 @@ class GlobalEffectsCard(SettingsGroup):
 
         self.motion = RadioChoice([text for text, _ in MOTION_OPTIONS])
         for button, (text, _) in zip(self.motion.buttons, MOTION_OPTIONS):
-            button.setAccessibleName('减弱动画：' + text)
+            button.setAccessibleName('动画：' + text)
         self.motion.activated.connect(self.save_motion)
-        self.motion_row = SettingRow('减弱动画', self.motion,
-            '跟随系统时，UKUI「减少动画」或各模块自己的开关任一开启即生效；选择开启或关闭则统一覆盖所有模块。')
+        self.motion_row = SettingRow('动画', self.motion,
+            '跟随系统：UKUI「减少动画」或各模块自己的开关任一开启时不播放动画。完整或关闭则统一覆盖所有模块。')
         self.add_row(self.motion_row)
 
         self.gpu = Switch('GPU 渲染液态玻璃')

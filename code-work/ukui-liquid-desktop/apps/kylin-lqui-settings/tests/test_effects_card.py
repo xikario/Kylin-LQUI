@@ -30,7 +30,7 @@ class EffectsCardTest(unittest.TestCase):
         self.assertTrue(self.card.pointer.isChecked())
 
     def test_user_changes_are_saved_globally(self):
-        self.card.motion.buttons[1].click()                        # 开启
+        self.card.motion.buttons[2].click()                        # 关闭 (reduce motion)
         self.card.gpu.click(); self.card.pointer.click(); app.processEvents()
         self.assertEqual(E.motion(), 'on')
         self.assertFalse(E.gpu_allowed())
@@ -39,7 +39,7 @@ class EffectsCardTest(unittest.TestCase):
     def test_external_change_is_reflected_on_refresh(self):
         E.set_motion('off'); E.set_gpu_allowed(False); E.set_pointer_light(False)
         self.card.refresh()
-        self.assertEqual(self.card.motion.currentIndex(), 2)
+        self.assertEqual(self.card.motion.currentIndex(), 1)   # 'off' = 完整
         self.assertFalse(self.card.gpu.isChecked())
         self.assertFalse(self.card.pointer.isChecked())
 
@@ -50,7 +50,7 @@ class EffectsCardTest(unittest.TestCase):
 
     def test_accessible_names_describe_each_control(self):
         names = [b.accessibleName() for b in self.card.motion.buttons]
-        self.assertEqual(names, ['减弱动画：跟随系统', '减弱动画：开启', '减弱动画：关闭'])
+        self.assertEqual(names, ['动画：跟随系统', '动画：完整', '动画：关闭'])
         self.assertEqual(self.card.gpu.accessibleName(), 'GPU 渲染液态玻璃')
         self.assertEqual(self.card.pointer.accessibleName(), '鼠标追光')
 
@@ -92,6 +92,12 @@ class EffectsCardTest(unittest.TestCase):
         self.card.casting_switch.click(); app.processEvents()
         self.assertFalse(E.casting_lite()); self.assertTrue(self.card.health_row.isHidden())
         E.set_casting(False, '')
+
+    def test_motion_labels_say_what_the_user_gets(self):
+        self.card.motion.buttons[1].click(); app.processEvents()   # 完整
+        self.assertEqual(E.motion(), 'off'); self.assertFalse(E.reduced_motion(True))
+        self.card.motion.buttons[2].click(); app.processEvents()   # 关闭
+        self.assertEqual(E.motion(), 'on'); self.assertTrue(E.reduced_motion())
 
     def test_input_method_is_not_part_of_global(self):
         texts = ' '.join(w.text() for w in self.card.findChildren(QtWidgets.QLabel))

@@ -154,6 +154,9 @@ int main(int argc,char **argv) {
             check(setField("material","liquidPanelPointerHighlight",60),"pointer light can be enabled from unified settings");settle();
             const int lit=sweep();qInfo()<<"pointer frame paints"<<lit;
             check(lit>0 && lit<=12,"child pointer motion merges old/new damage once per 32ms frame");
+            // Later checks compare two snapshots taken apart in time; keep the
+            // default (light off) so a fading highlight cannot differ between them.
+            check(setField("material","liquidPanelPointerHighlight",0),"pointer light can be turned off again");settle();
             if(QGuiApplication::platformName()=="xcb") {
                 const QImage partial=QApplication::primaryScreen()->grabWindow(panel.winId()).toImage();
                 panel.update();wait(80);

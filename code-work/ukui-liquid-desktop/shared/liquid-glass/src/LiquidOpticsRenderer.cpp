@@ -99,6 +99,10 @@ public:
     }
 
     static constexpr qint64 SlowFrameMs = 1500;
+    // The first frames compile shaders and upload textures; on weak GPUs and
+    // software GL they routinely exceed SlowFrameMs without any driver stall.
+    static constexpr int WarmupFrames = 3;
+    int renderedFrames = 0;
     // Only real desktop sessions report; offscreen/minimal test platforms never
     // touch the health file (it is also per-DISPLAY, see EffectsPolicy.h).
     static void reportTrouble(const char *kind, bool severe) {
@@ -120,7 +124,8 @@ public:
         const QImage result=draw(body,clear,logical,radius,shape,refraction,shade,highlight,chroma,liquidStrength,control,finish,lightSurface,smoke);
         context.doneCurrent(); // textures were released by draw() before this
         if (result.isNull()) reportTrouble("gpu-render-failed", false);
-        else if (frame.elapsed() > SlowFrameMs) reportTrouble("gpu-slow", false); // driver stall
+        else if (++renderedFrames > WarmupFrames && frame.elapsed() > SlowFrameMs)
+            reportTrouble("gpu-slow", false); // driver stall after warm-up
         return result;
     }
 

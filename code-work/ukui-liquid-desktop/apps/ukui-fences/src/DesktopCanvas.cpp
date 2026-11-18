@@ -3534,8 +3534,13 @@ void DesktopCanvas::disableAutoArrangeForManualPlacement()
 QList<QRect> DesktopCanvas::screenAreas(bool available) const {
     QList<QRect> result;
     for(auto *screen:QGuiApplication::screens()){
-        const QRect area=(available?screen->availableGeometry():screen->geometry()).translated(-geometry().topLeft());
+        QRect area=(available?screen->availableGeometry():screen->geometry()).translated(-geometry().topLeft());
         if(!area.isValid())continue;
+        // The canvas carries a one-pixel X11 edge compensation (see
+        // lockToDesktopGeometry). Screens touching that outer edge get the
+        // pixel too, so widgets still sit flush with the visible edge.
+        if(area.right()==rect().right()-1)area.setRight(rect().right());
+        if(area.bottom()==rect().bottom()-1)area.setBottom(rect().bottom());
         bool covered=false;for(const auto &existing:result)if(existing.contains(area)){covered=true;break;}
         if(covered)continue;
         for(int i=result.size()-1;i>=0;--i)if(area.contains(result[i]))result.removeAt(i);
@@ -3558,12 +3563,14 @@ QRect DesktopCanvas::desktopIconArea(const QPoint &point) const {
 void DesktopCanvas::fitScreenLayout(){
     if(m_loadingLayout||m_fittingScreen)return;
     const auto areas=screenAreas();
-    if(areas==m_lastScreenAreas)return;
+    // Topology work (secondary-screen workspace) only when screens change;
+    // clamping widgets back inside a screen is idempotent and runs every sync.
+    const bool topologyChanged=areas!=m_lastScreenAreas;
     m_lastScreenAreas=areas;m_fittingScreen=true;
     bool created=false;QSettings settings;
     auto known=settings.value("desktop/knownExternalScreens").toStringList();
     const auto primary=QGuiApplication::primaryScreen();
-    for(auto *screen:QGuiApplication::screens()){
+    for(auto *screen:topologyChanged?QGuiApplication::screens():QList<QScreen*>{}){
         if(screen==primary || (primary&&screen->geometry().intersects(primary->geometry())) || known.contains(screen->name()))continue;
         const QRect area=screen->availableGeometry().translated(-geometry().topLeft());
         bool populated=false;for(auto *fence:m_fences)if(area.contains(DesktopScreenLayout::preferred(fence).center()))populated=true;
@@ -3592,7 +3599,7 @@ void DesktopCanvas::fitScreenLayout(){
     }
     layoutLooseIcons();m_fittingScreen=false;
     if(created)saveLayout();
-    settings.setValue("desktop/knownExternalScreens",known);settings.sync();
+    if(topologyChanged){settings.setValue("desktop/knownExternalScreens",known);settings.sync();}
     update();
 }
 

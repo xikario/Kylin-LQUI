@@ -68,6 +68,23 @@ static int runFenceReorderTest(const QString &root)
     fence.previewIconReorder(&mime,QPoint(0,0));fence.removeItem(paths[3]);settle(400);
     check(!order().contains(paths[3]),"file removal cancels pending preview without stale icon pointers");
 
+    {
+        // Dropping on the CENTRE of another folder in the same fence means "put it
+        // inside" (the edges keep meaning "insert here"). The drop must therefore
+        // not be swallowed by the reorder preview/commit.
+        const QStringList before=order();const int savesBefore=saves;
+        auto *target=fence.icons().at(1);const QString dragged=before.last();
+        QMimeData inside;mimeFor({dragged},inside);
+        const QPoint centre(target->width()/2,target->height()/3);
+        QDragEnterEvent centreEnter(centre,Qt::MoveAction,&inside,Qt::LeftButton,Qt::NoModifier);
+        QApplication::sendEvent(target,&centreEnter);settle(300);
+        check(!fence.findChild<QPropertyAnimation *>("fenceReorderAnimation")
+              || fence.findChild<QPropertyAnimation *>("fenceReorderAnimation")->state()!=QAbstractAnimation::Running,
+              "hovering a folder's centre shows no reorder gap");
+        QDropEvent centreDrop(QPointF(centre),Qt::MoveAction,&inside,Qt::LeftButton,Qt::NoModifier);
+        QApplication::sendEvent(target,&centreDrop);settle(200);
+        check(order()==before && saves==savesBefore,"centre drop on a folder is not committed as a reorder");
+    }
     DesktopIcon loose(DesktopItem::fromPath(paths.last()),&host);loose.show();
     QDragEnterEvent looseEnter(QPoint(2,20),Qt::MoveAction,&mime,Qt::LeftButton,Qt::NoModifier);
     QApplication::sendEvent(&loose,&looseEnter);

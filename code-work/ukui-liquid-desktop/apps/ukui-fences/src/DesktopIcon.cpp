@@ -1174,13 +1174,6 @@ void DesktopIcon::contextMenuEvent(QContextMenuEvent *e)
 // ── 回收站拖放支持 ─────────────────────────────────────
 
 namespace {
-FenceWidget *reorderFence(DesktopIcon *icon, const QMimeData *mime, QObject *source)
-{
-    for(QWidget *parent=icon->parentWidget();parent;parent=parent->parentWidget())
-        if(auto *fence=qobject_cast<FenceWidget *>(parent))
-            return fence->acceptsIconReorder(mime,source) ? fence : nullptr;
-    return nullptr;
-}
 bool dropsOntoSelf(DesktopIcon *icon,const QMimeData *mime)
 {
     if(!mime->hasFormat(kInternalFileDragMime))return false;
@@ -1192,11 +1185,38 @@ bool dropsOntoSelf(DesktopIcon *icon,const QMimeData *mime)
     }
     return false;
 }
+// Centre of a real folder icon: dropping here means "put it inside". The outer
+// band keeps meaning "insert at this position" so same-fence sorting still works.
+bool overFolderCore(DesktopIcon *icon, const QPoint &position)
+{
+    const auto &item=icon->item();
+    if(!item.isDir || item.isSystemIcon)return false;
+    const QRect box=icon->rect();
+    const QRect core(box.x()+box.width()/4,box.y()+box.height()/8,box.width()/2,box.height()*5/8);
+    return core.contains(position);
+}
+FenceWidget *iconFence(DesktopIcon *icon)
+{
+    for(QWidget *parent=icon->parentWidget();parent;parent=parent->parentWidget())
+        if(auto *fence=qobject_cast<FenceWidget *>(parent))return fence;
+    return nullptr;
+}
+FenceWidget *reorderFence(DesktopIcon *icon, const QMimeData *mime, QObject *source, const QPoint &position)
+{
+    auto *fence=iconFence(icon);
+    if(!fence || !fence->acceptsIconReorder(mime,source))return nullptr;
+    // A different folder's centre is a transfer target, not a sort position.
+    if(overFolderCore(icon,position) && !dropsOntoSelf(icon,mime)) {
+        fence->leaveIconReorder();
+        return nullptr;
+    }
+    return fence;
+}
 }
 
 void DesktopIcon::dragEnterEvent(QDragEnterEvent *e)
 {
-    if(auto *fence=reorderFence(this,e->mimeData(),e->source())) {
+    if(auto *fence=reorderFence(this,e->mimeData(),e->source(),e->pos())) {
         fence->previewIconReorder(e->mimeData(),fence->mapFromGlobal(mapToGlobal(e->pos())));
         e->setDropAction(Qt::MoveAction);e->accept();return;
     }
@@ -1229,7 +1249,8 @@ void DesktopIcon::dragEnterEvent(QDragEnterEvent *e)
 
 void DesktopIcon::dragMoveEvent(QDragMoveEvent *e)
 {
-    if(auto *fence=reorderFence(this,e->mimeData(),e->source())) {
+    if(auto *fence=reorderFence(this,e->mimeData(),e->source(),e->pos())) {
+        if(m_hovered){m_hovered=false;update();}
         fence->previewIconReorder(e->mimeData(),fence->mapFromGlobal(mapToGlobal(e->pos())));
         e->setDropAction(Qt::MoveAction);e->accept();return;
     }
@@ -1251,6 +1272,7 @@ void DesktopIcon::dragMoveEvent(QDragMoveEvent *e)
         e->setDropAction(action == Qt::IgnoreAction
             ? Qt::MoveAction : action);
         e->accept();
+        if(!m_hovered){m_hovered=true;update();}
         return;
     }
     e->ignore();
@@ -1270,7 +1292,7 @@ void DesktopIcon::dragLeaveEvent(QDragLeaveEvent *e)
 
 void DesktopIcon::dropEvent(QDropEvent *e)
 {
-    if(auto *fence=reorderFence(this,e->mimeData(),e->source())) {
+    if(auto *fence=reorderFence(this,e->mimeData(),e->source(),e->pos())) {
         m_hovered=false;update();
         // Qt can retain a child drop target while it slides away under the
         // pointer. The last child-local drag position is then stale.

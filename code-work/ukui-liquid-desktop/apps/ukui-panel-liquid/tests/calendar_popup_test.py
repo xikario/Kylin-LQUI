@@ -168,6 +168,34 @@ class CalendarTests(unittest.TestCase):
             if previous is None:os.environ.pop('LQUI_PANEL_MATERIAL_WORKER',None)
             else:os.environ['LQUI_PANEL_MATERIAL_WORKER']=previous
 
+    def test_reopen_starts_from_last_glass_and_crossfades(self):
+        runtime=self.home/'runtime';runtime.mkdir(mode=0o700,exist_ok=True)
+        previous_runtime=os.environ.get('XDG_RUNTIME_DIR');os.environ['XDG_RUNTIME_DIR']=str(runtime)
+        script=self.home/'stalled-material-cache'
+        script.write_text('#!/usr/bin/python3\nimport sys,time\nsys.stdin.buffer.read()\ntime.sleep(20)\n');script.chmod(0o700)
+        previous=os.environ.get('LQUI_PANEL_MATERIAL_WORKER');os.environ['LQUI_PANEL_MATERIAL_WORKER']=str(script)
+        try:
+            window=self.window;window.hide();anchor=popup.C.QRect(1100,850,70,38)
+            window.toggle(anchor);QtTest.QTest.qWait(50);window.hide()
+            dpr=window.devicePixelRatioF();expected=popup.C.QSize(round(window.width()*dpr),round(window.height()*dpr))
+            cached=popup.G.QImage(expected,popup.G.QImage.Format_ARGB32_Premultiplied);cached.fill(popup.G.QColor(200,30,30,220))
+            path=window.surface_cache(expected,dpr);path.parent.mkdir(parents=True,exist_ok=True);self.assertTrue(cached.save(str(path),'PNG'))
+            window.surface=popup.G.QImage()                       # as in a freshly started calendar process
+            window.toggle(anchor);QtTest.QTest.qWait(50)
+            centre=window.surface.pixelColor(expected.width()//2,expected.height()//2)
+            self.assertGreater(centre.red(),150,'reopening shows the cached glass, not the flat placeholder')
+            fresh=popup.G.QImage(expected,popup.G.QImage.Format_ARGB32_Premultiplied);fresh.fill(popup.G.QColor(30,30,200,220))
+            window.show()                                  # no WM under Xvfb: keep it visible for the fade
+            window.show_surface(fresh)
+            self.assertFalse(window.fade_from.isNull(),'a new glass crossfades over the visible one')
+            QtTest.QTest.qWait(400)
+            self.assertTrue(window.fade_from.isNull());self.assertTrue(window.material_ready)
+        finally:
+            self.window.hide()
+            for key,value in (('LQUI_PANEL_MATERIAL_WORKER',previous),('XDG_RUNTIME_DIR',previous_runtime)):
+                if value is None:os.environ.pop(key,None)
+                else:os.environ[key]=value
+
     def test_real_single_instance_close_reopen_and_crash_recovery(self):
         bus=popup.D.QDBusConnection.sessionBus()
         processes=[]

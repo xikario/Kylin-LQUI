@@ -120,6 +120,27 @@ class Material:
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         self.owner=self;self.radius=28;self.native_glass=None;self.backdrop=G.QImage();self.surface=G.QImage()
         self.material_builds=0;self.material_ready=False
+        self.fade_from=G.QImage();self.fade=C.QVariantAnimation(self);self.fade.setStartValue(0.0);self.fade.setEndValue(1.0)
+        self.fade.valueChanged.connect(lambda _value:self.update());self.fade.finished.connect(self.end_fade)
+
+    def end_fade(self):
+        self.fade_from=G.QImage();self.update()
+
+    def surface_cache(self,size,dpr):
+        """Last finished glass of this size, kept for this login only. A fresh
+        calendar process starts from it instead of a flat placeholder."""
+        base=C.QStandardPaths.writableLocation(C.QStandardPaths.RuntimeLocation)
+        if not base:return None
+        return Path(base)/'kylin-lqui'/('calendar-surface-%dx%d@%d.png'%(size.width(),size.height(),round(dpr*100)))
+
+    def show_surface(self,image):
+        """Crossfade a newly finished glass over the one on screen."""
+        duration=round(180*effects_policy.motion_scale())
+        if self.isVisible() and not self.surface.isNull() and duration>0:
+            self.fade.stop();self.fade_from=self.surface;self.fade.setDuration(duration);self.surface=image;self.fade.start()
+        else:
+            self.fade.stop();self.fade_from=G.QImage();self.surface=image
+        self.material_ready=True;self.update()
 
     def cancel_material(self):
         self.material_revision=getattr(self,'material_revision',0)+1
@@ -135,6 +156,10 @@ class Material:
         captured=screen.grabWindow(0,offset.x(),offset.y(),region.width(),region.height())
         self.material_builds+=1
         dpr=self.devicePixelRatioF();expected=C.QSize(round(self.width()*dpr),round(self.height()*dpr))
+        if self.surface.isNull() or self.surface.size()!=expected:
+            cache=self.surface_cache(expected,dpr);cached=G.QImage(str(cache)) if cache and cache.is_file() else G.QImage()
+            if not cached.isNull() and cached.size()==expected:
+                cached=cached.convertToFormat(G.QImage.Format_ARGB32_Premultiplied);cached.setDevicePixelRatio(dpr);self.surface=cached
         if self.surface.isNull() or self.surface.size()!=expected:
             self.surface=G.QImage(expected,G.QImage.Format_ARGB32_Premultiplied);self.surface.setDevicePixelRatio(dpr);self.surface.fill(C.Qt.transparent)
             painter=G.QPainter(self.surface);painter.setRenderHint(G.QPainter.Antialiasing);painter.setBrush(G.QColor('#16232e'));painter.setPen(G.QColor('#536573'))
@@ -167,7 +192,11 @@ class Material:
                     reader=C.QDataStream(data);reader.setVersion(C.QDataStream.Qt_5_12)
                     magic=reader.readUInt32();reader.readBool();image=G.QImage();reader >> image
                     if magic==0x4c514d31 and reader.status()==C.QDataStream.Ok and image.size()==expected:
-                        image.setDevicePixelRatio(dpr);self.surface=image;self.material_ready=True;self.update()
+                        image.setDevicePixelRatio(dpr);self.show_surface(image)
+                        cache=self.surface_cache(expected,dpr)
+                        if cache:
+                            try:cache.parent.mkdir(parents=True,exist_ok=True);image.save(str(cache),'PNG')
+                            except OSError:pass
             worker.deleteLater()
         worker.finished.connect(complete)
         worker.errorOccurred.connect(lambda error:complete() if error==C.QProcess.FailedToStart else None)
@@ -177,7 +206,12 @@ class Material:
     def paintEvent(self,event):
         painter=G.QPainter(self);painter.setCompositionMode(G.QPainter.CompositionMode_Source)
         painter.fillRect(self.rect(),C.Qt.transparent)
-        if not self.surface.isNull():painter.drawImage(self.rect(),self.surface)
+        if not self.surface.isNull():
+            if not self.fade_from.isNull() and self.fade.state()==C.QAbstractAnimation.Running:
+                progress=float(self.fade.currentValue() or 0.0)
+                painter.drawImage(self.rect(),self.fade_from)
+                painter.setCompositionMode(G.QPainter.CompositionMode_SourceOver);painter.setOpacity(progress)
+            painter.drawImage(self.rect(),self.surface)
         else:
             painter.setRenderHint(G.QPainter.Antialiasing);painter.setBrush(G.QColor('#16232e'));painter.setPen(G.QColor('#536573'))
             painter.drawRoundedRect(C.QRectF(self.rect()).adjusted(.5,.5,-.5,-.5),28,28)

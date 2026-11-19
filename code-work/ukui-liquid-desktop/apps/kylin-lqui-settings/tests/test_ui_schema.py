@@ -3,11 +3,32 @@ from pathlib import Path
 import sys
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from ui_schema import normalize_page, structural_signature, searchable_text, stable_key, field_visible
+from ui_schema import normalize_page, structural_signature, searchable_text, stable_key, field_visible, pinned_page_row
 
 
 def field(fid, **values):
     return {**dict(id=fid, name='field' + fid, kind='text', label='字段' + fid, value=''), **values}
+
+
+def _actions(*labels):
+    return {'fields':[{'kind':'action','label':label} for label in labels],'actions':True,'attachments':[],'entity':''}
+
+
+class PinnedRows(unittest.TestCase):
+    def test_page_commands_are_pinned(self):
+        self.assertTrue(pinned_page_row(_actions('保存设置')))
+        self.assertTrue(pinned_page_row(_actions('恢复默认', '应用')))
+
+    def test_mixed_rows_stay_with_their_fields(self):
+        # AI 空间: 保存设置 used to drag 添加…/移除 to the page top.
+        self.assertFalse(pinned_page_row(_actions('保存设置', '添加…', '移除')))
+        self.assertFalse(pinned_page_row(_actions('添加排除…', '恢复索引')))
+        self.assertFalse(pinned_page_row(_actions('系统与默认图标…', '从图片文件选择…', '清除分区图标…', '恢复颜色、材质与标题图标默认值')))
+
+    def test_actions_under_a_section_heading_stay_in_the_section(self):
+        self.assertFalse(pinned_page_row(_actions('恢复显示'), '左栏隐藏文件夹（仍可搜索）'))
+        self.assertFalse(pinned_page_row(_actions('应用所选配色'), '主题配色'))
+        self.assertTrue(pinned_page_row(_actions('恢复显示')))
 
 
 class Schema(unittest.TestCase):

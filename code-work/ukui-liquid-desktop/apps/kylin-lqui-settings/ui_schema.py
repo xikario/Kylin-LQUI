@@ -279,12 +279,17 @@ def presentation_rows(row):
     return result
 
 
-def pinned_page_row(row):
-    """Page commands stay reachable; contextual pickers/presets stay by fields."""
+def pinned_page_row(row, section_title=''):
+    """Page commands stay reachable; contextual pickers/presets stay by fields.
+
+    Only a row made entirely of page commands, outside a titled section, is
+    pinned. A row such as 添加… / 移除 or 恢复显示 under a list's heading acts on
+    that list and must stay next to it, even if one button says 保存/恢复."""
     fields=row['fields']
     if row.get('entity') or row.get('attachments'):return False
     if row['actions'] and all(f['kind']=='action' for f in fields):
-        return any(re.match(r'^(应用|保存|恢复|还原|重置|清空|关闭|取消|确定|完成|导入配置|导出配置)',str(f.get('label','')).replace('&','').strip()) for f in fields)
+        if section_title:return False
+        return all(re.match(r'^(应用|保存|恢复|还原|重置|清空|关闭|取消|确定|完成|导入配置|导出配置)',str(f.get('label','')).replace('&','').strip()) for f in fields)
     return bool(fields) and all(f['kind']=='note' and (f['_role']=='status' or f.get('name')=='settingsNote' and f.get('label')=='settingsNote') for f in fields)
 
 

@@ -465,16 +465,26 @@ void Drawer::reveal(bool activate) {
     unread=false;edge->refresh();
 }
 void Drawer::prepareResident() {
+    if(!warmTimer.isActive()&&!warmTimer.property("wired").toBool()) {
+        // While hidden, follow orb moves (tray icons appearing) and wallpaper
+        // changes; refreshGlass() is a no-op when nothing changed.
+        warmTimer.setProperty("wired",true);warmTimer.setInterval(45000);warmTimer.setTimerType(Qt::VeryCoarseTimer);
+        connect(&warmTimer,&QTimer::timeout,this,&Drawer::prepareResident);warmTimer.start();
+    }
     if(opened)return;
     auto call=QDBusMessage::createMethodCall("org.ukui.AiStationPanel","/AiStation","org.ukui.AiStationPanel","State");
     auto *request=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call,1200),this);
     connect(request,&QDBusPendingCallWatcher::finished,this,[this](QDBusPendingCallWatcher *w){
         const QDBusPendingReply<QString> reply=*w;w->deleteLater();if(opened)return;
+        bool found=false;
         if(!reply.isError())for(const auto &v:QJsonDocument::fromJson(reply.value().toUtf8()).object().value("orbs").toArray()) {
             const auto orb=v.toObject();const QRect anchor(orb["x"].toInt(),orb["y"].toInt(),orb["width"].toInt(),orb["height"].toInt());
-            if(orb["visible"].toBool()&&QGuiApplication::screenAt(anchor.center())){panelAnchor=anchor;break;}
+            if(orb["visible"].toBool()&&QGuiApplication::screenAt(anchor.center())){panelAnchor=anchor;found=true;break;}
         }
-        refreshGlass();
+        // At login the taskbar may not be up yet: retry instead of warming the
+        // glass for a guessed position the first click would have to rebuild.
+        if(!found&&!warmedOnce&&warmAttempts<10){++warmAttempts;QTimer::singleShot(3000,this,&Drawer::prepareResident);return;}
+        warmAttempts=0;warmedOnce=true;refreshGlass();
     });
 }
 void Drawer::Show(){reveal(true);}

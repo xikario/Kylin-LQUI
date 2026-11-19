@@ -98,6 +98,9 @@ private:
     QVBoxLayout *notices=nullptr;
     QPointer<QWidget> compactNotice;
     QTimer hideTimer,wallpaperTimer;
+    // Keeps the hidden drawer's glass matched to the orb, so opening never
+    // has to build it synchronously (290-420 ms on the FTG340).
+    QTimer warmTimer;int warmAttempts=0;bool warmedOnce=false;
     QVariantAnimation motion;
     QPointer<QDialog> preferences;
     QImage material;

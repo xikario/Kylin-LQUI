@@ -1,3 +1,4 @@
+#include <QDBusConnection>
 #include "Drawer.h"
 #include "SettingsBridge.h"
 #include "CodexClient.h"
@@ -67,6 +68,18 @@ QFrame *notice(Drawer &d,const QString &kind={}) {
 }
 QPushButton *buttonText(QWidget *root,const QString &text){for(auto *b:root->findChildren<QPushButton*>())if(b->text()==text)return b;return nullptr;}
 }
+// Stands in for the liquid taskbar's AI station service (orb geometry).
+class FakeStationPanel:public QObject {
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface","org.ukui.AiStationPanel")
+public:
+    QRect orb;
+public slots:
+    Q_SCRIPTABLE QString State(){
+        return QString::fromUtf8(QJsonDocument(QJsonObject{{"orbs",QJsonArray{QJsonObject{{"x",orb.x()},{"y",orb.y()},{"width",orb.width()},{"height",orb.height()},{"visible",true}}}}}).toJson(QJsonDocument::Compact));
+    }
+};
+
 class CliTest:public QObject {
     Q_OBJECT
     QTemporaryDir root;
@@ -186,6 +199,24 @@ private slots:
         for(int i=0;i<10;i++){d.Hide();d.Show();QCoreApplication::processEvents();}
         QCOMPARE(d.glassBuilds(),builds);QVERIFY(!QWidget::mouseGrabber());
         const auto artifacts=qEnvironmentVariable("LIQUID_CLI_ARTIFACT_DIR");if(!artifacts.isEmpty()){QDir().mkpath(artifacts);d.grab().save(artifacts+"/empty.png");}
+    }
+    void residentWarmupWaitsForTaskbarOrb(){
+        // At login the taskbar may start after the AI station. The warm-up must
+        // wait for the real orb instead of building glass for a guessed spot
+        // that the first click would rebuild synchronously (a visible delay).
+        QString marker;Drawer d(config(&marker),folder());QCoreApplication::processEvents();
+        const int before=d.glassBuilds();
+        d.prepareResident();QTest::qWait(1200);
+        QCOMPARE(d.glassBuilds(),before);
+        const QRect screen=QGuiApplication::primaryScreen()->availableGeometry();
+        FakeStationPanel panel;panel.orb=QRect(screen.right()-220,screen.bottom()-46,44,44);
+        auto bus=QDBusConnection::sessionBus();
+        QVERIFY(bus.registerService("org.ukui.AiStationPanel"));QVERIFY(bus.registerObject("/AiStation",&panel,QDBusConnection::ExportScriptableSlots));
+        QTRY_VERIFY_WITH_TIMEOUT(d.glassBuilds()>before,6000);
+        const int warmed=d.glassBuilds();
+        d.ToggleAt(panel.orb.x(),panel.orb.y(),panel.orb.width(),panel.orb.height());
+        QCOMPARE(d.glassBuilds(),warmed);   // opening at the warmed orb reuses the glass
+        d.Hide();bus.unregisterObject("/AiStation");bus.unregisterService("org.ukui.AiStationPanel");
     }
     void floatMotionReversesAndFades(){
         auto s=config();s.animation="float";s.animationMs=480;Drawer d(s,folder());d.Show();
@@ -676,6 +707,12 @@ private slots:
         }
     }
     void residentWarmupKeepsBackendStopped(){
+        // With the taskbar's orb on the bus (the normal case once logged in).
+        const QRect screen=QGuiApplication::primaryScreen()->availableGeometry();
+        FakeStationPanel panel;panel.orb=QRect(screen.right()-220,screen.bottom()-46,44,44);
+        auto bus=QDBusConnection::sessionBus();
+        QVERIFY(bus.registerService("org.ukui.AiStationPanel"));QVERIFY(bus.registerObject("/AiStation",&panel,QDBusConnection::ExportScriptableSlots));
+        struct Unregister{QDBusConnection bus;~Unregister(){bus.unregisterObject("/AiStation");bus.unregisterService("org.ukui.AiStationPanel");}} unregister{bus};
         QString marker;Drawer d(config(&marker),folder());
         d.prepareResident();QTRY_VERIFY_WITH_TIMEOUT(d.glassBuilds()>0,5000);
         QVERIFY(!d.expanded());QVERIFY(!d.client()->running());QVERIFY(!QFileInfo::exists(marker));

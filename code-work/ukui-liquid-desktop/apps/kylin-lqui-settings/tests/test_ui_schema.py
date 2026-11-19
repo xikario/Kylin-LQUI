@@ -30,6 +30,9 @@ class PinnedRows(unittest.TestCase):
         self.assertFalse(pinned_page_row(_actions('应用所选配色'), '主题配色'))
         self.assertTrue(pinned_page_row(_actions('恢复显示')))
 
+    def test_destructive_clear_is_never_pinned(self):
+        self.assertFalse(pinned_page_row(_actions('恢复外观与日常设置默认值', '清空聊天记录并开始新对话…', '应用')))
+
 
 class Schema(unittest.TestCase):
     def page(self, fields, **ui):

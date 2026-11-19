@@ -206,6 +206,12 @@ QJsonObject Bridge::snapshot(const QString &page) {
             const QString title=plain(button->text());
             if(title.isEmpty()&&button->toolTip().isEmpty()&&button->accessibleName().isEmpty())continue;
             if(title=="关闭"||title=="Close"||title=="取消"||title=="Cancel"||title=="×"||title=="−")continue;
+            // A host dialog's own close buttons (保存并关闭, 关闭（不保存预览）) have
+            // nothing to close once the page is embedded in the settings app.
+            if(auto *box=qobject_cast<QDialogButtonBox*>(button->parentWidget())){
+                const auto role=box->buttonRole(button);
+                if(role==QDialogButtonBox::AcceptRole||role==QDialogButtonBox::RejectRole)continue;
+            }
             if(button->property("color").isValid())field["label"]=field["label"].toString()+" · "+title;
             field["kind"]=button->isCheckable()?"toggle":"action";field["value"]=button->isChecked();
         } else if(auto *text=qobject_cast<QLabel*>(w)) {

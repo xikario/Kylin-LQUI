@@ -1,6 +1,8 @@
 #pragma once
 #include <QKeyEvent>
 #include <QPointer>
+#include <QClipboard>
+#include "FileClipboard.h"
 
 struct DesktopRefreshTestAccess {
     static bool sampleFeedback(DesktopIcon *icon){
@@ -57,6 +59,12 @@ static int runDesktopRefreshTest(const QString &root)
     QApplication::sendEvent(loose, &release);
     settle(300);
     check(loose->isSelected(), "real click selects loose icon before refresh");
+    FileClipboard::writeFiles({loosePath, fencePath}, true); settle(300);
+    check(loose->isCut() && fenced->isCut(), "cut dims loose and fenced icons");
+    settle(4500);
+    check(loose->isCut() && fenced->isCut(), "cut icons stay dimmed while the clipboard still holds the cut");
+    QApplication::clipboard()->clear(); settle(300);
+    check(!loose->isCut() && !fenced->isCut(), "clearing the clipboard restores cut icons");
     const QPoint loosePos = loose->pos(), fencePos = fenced->pos();
     int wallpaperChanges = 0;
     QObject::connect(&canvas, &DesktopCanvas::wallpaperChanged, &canvas, [&] { ++wallpaperChanges; });

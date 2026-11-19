@@ -3418,12 +3418,8 @@ void DesktopCanvas::syncCutVisualState()
             : QDateTime::currentMSecsSinceEpoch();
     }
 
-    const bool staleCutVisual =
-        !cutPaths.isEmpty() &&
-        m_cutClipboardStartedMs > 0 &&
-        QDateTime::currentMSecsSinceEpoch() - m_cutClipboardStartedMs > 3500;
-    if (staleCutVisual)
-        cutPaths.clear();
+    // A cut stays dimmed for as long as the clipboard holds it. Items already
+    // moved elsewhere drop out above through the existence check.
 
     updateCutPathWatches(watchedCutPaths);
 

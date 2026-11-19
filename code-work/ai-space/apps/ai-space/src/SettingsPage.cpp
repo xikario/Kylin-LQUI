@@ -209,15 +209,18 @@ QWidget *SmartSpaceWidget::createSettingsPage(QWidget *parent)
     auto *indexLayout = new QVBoxLayout(indexPage);
     indexLayout->setContentsMargins(12, 12, 12, 12);
     indexLayout->setSpacing(8);
-    auto *addRoot = new QPushButton(QStringLiteral("添加…"), indexPage);
-    auto *removeRoot = new QPushButton(QStringLiteral("移除"), indexPage);
-    addRoot->setProperty("settingsGroupAction", true);
-    removeRoot->setProperty("settingsGroupAction", true);
+    // Create each section heading before its buttons: the settings bridge
+    // exports widgets in creation order, so buttons created first were shown
+    // under the previous section (and pinned to the page top).
     auto *rootHeadingRow = new QHBoxLayout;
     rootHeadingRow->setContentsMargins(0, 0, 0, 0);
     rootHeadingRow->setSpacing(6);
     auto *rootHeading = new QLabel(QStringLiteral("索引目录"), indexPage);
     rootHeading->setProperty("settingsSectionTitle", true);
+    auto *addRoot = new QPushButton(QStringLiteral("添加…"), indexPage);
+    auto *removeRoot = new QPushButton(QStringLiteral("移除"), indexPage);
+    addRoot->setProperty("settingsGroupAction", true);
+    removeRoot->setProperty("settingsGroupAction", true);
     rootHeadingRow->addWidget(rootHeading);
     rootHeadingRow->addStretch(1);
     rootHeadingRow->addWidget(addRoot);
@@ -232,15 +235,15 @@ QWidget *SmartSpaceWidget::createSettingsPage(QWidget *parent)
     rootList->setFixedHeight(82);
     indexLayout->addWidget(rootList);
 
-    auto *addExclude = new QPushButton(QStringLiteral("添加排除…"), indexPage);
-    auto *restoreExclude = new QPushButton(QStringLiteral("恢复索引"), indexPage);
-    addExclude->setProperty("settingsGroupAction", true);
-    restoreExclude->setProperty("settingsGroupAction", true);
     auto *excludeHeadingRow = new QHBoxLayout;
     excludeHeadingRow->setContentsMargins(0, 0, 0, 0);
     excludeHeadingRow->setSpacing(6);
     auto *excludeHeading = new QLabel(QStringLiteral("排除文件夹（不进入索引）"), indexPage);
     excludeHeading->setProperty("settingsSectionTitle", true);
+    auto *addExclude = new QPushButton(QStringLiteral("添加排除…"), indexPage);
+    auto *restoreExclude = new QPushButton(QStringLiteral("恢复索引"), indexPage);
+    addExclude->setProperty("settingsGroupAction", true);
+    restoreExclude->setProperty("settingsGroupAction", true);
     excludeHeadingRow->addWidget(excludeHeading);
     excludeHeadingRow->addStretch(1);
     excludeHeadingRow->addWidget(addExclude);
@@ -251,13 +254,13 @@ QWidget *SmartSpaceWidget::createSettingsPage(QWidget *parent)
     excludeList->setFixedHeight(66);
     excludeList->setToolTip(QStringLiteral("增量、快速全量和 OCR 补全都会跳过这些文件夹及子项"));
     indexLayout->addWidget(excludeList);
-    auto *restoreHidden = new QPushButton(QStringLiteral("恢复显示"), indexPage);
-    restoreHidden->setProperty("settingsGroupAction", true);
     auto *hiddenHeadingRow = new QHBoxLayout;
     hiddenHeadingRow->setContentsMargins(0, 0, 0, 0);
     hiddenHeadingRow->setSpacing(6);
     auto *hiddenHeading = new QLabel(QStringLiteral("左栏隐藏文件夹（仍可搜索）"), indexPage);
     hiddenHeading->setProperty("settingsSectionTitle", true);
+    auto *restoreHidden = new QPushButton(QStringLiteral("恢复显示"), indexPage);
+    restoreHidden->setProperty("settingsGroupAction", true);
     hiddenHeadingRow->addWidget(hiddenHeading);
     hiddenHeadingRow->addStretch(1);
     hiddenHeadingRow->addWidget(restoreHidden);

@@ -2,7 +2,7 @@
 import json, os, sys, unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from PyQt5 import QtWidgets,QtCore,QtTest
+from PyQt5 import QtWidgets,QtCore,QtGui,QtTest
 from main import SettingsWindow
 from design import navigation_text
 
@@ -51,6 +51,18 @@ class UiTest(unittest.TestCase):
         self.assertIn(('ai','Set',['general','2',json.dumps({'value':False},ensure_ascii=False)]),self.fixture.calls)
         self.window.fields['5']['control'].click();QtTest.QTest.qWait(20)
         self.assertIn(('ai','Activate',['general','5']),self.fixture.calls)
+    def test_native_resolution_preview_is_never_enlarged(self):
+        from ui_components import WallpaperPreview
+        image=QtGui.QImage(600,150,QtGui.QImage.Format_ARGB32);image.fill(QtGui.QColor('#336699'))
+        buffer=QtCore.QBuffer();buffer.open(QtCore.QIODevice.WriteOnly);image.save(buffer,'PNG')
+        data=bytes(buffer.data().toBase64()).decode()
+        preview=WallpaperPreview(data,'',scale=1.0)                 # device pixels, drawn 1:1
+        dpr=max(1.0,preview.canvas.devicePixelRatioF())
+        self.assertEqual(preview.canvas.height(),round(150/dpr)+16)   # box fits the true size
+        self.assertEqual(preview.canvas.true_size().width(),600/dpr)
+        legacy=WallpaperPreview(data,'')                            # no scale: old fit-to-box behaviour
+        self.assertEqual(legacy.canvas.height(),160)
+
     def test_page_actions_stay_at_top_while_scrolling_and_searching(self):
         fields=[{'id':str(i),'name':'row_'+str(i),'kind':'text','label':'选项 '+str(i),'value':'内容'} for i in range(30)]
         # 清空 is destructive: it stays in the page, never in the pinned command bar.

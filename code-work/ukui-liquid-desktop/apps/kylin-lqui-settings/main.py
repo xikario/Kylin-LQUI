@@ -544,7 +544,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
         elif kind in ('note','heading'):
             control=PathView(field.get('value','')) if field['_ui'].get('component')=='file-picker' else label(field.get('value',''),kind=='note')
             control.setProperty('warning',field['_role']=='warning')
-        elif kind=='preview':control=WallpaperPreview(field.get('value',''),field.get('previewStatus','') or ('随参数更新的示例预览' if key.startswith('input:') else ''),field['_ui'].get('alt') or name)
+        elif kind=='preview':control=WallpaperPreview(field.get('value',''),field.get('previewStatus','') or ('随参数更新的示例预览' if key.startswith('input:') else ''),field['_ui'].get('alt') or name,field.get('previewScale'))
         elif kind in ('action','toggle'):
             control=ActionButton(name)
             control.setCheckable(kind=='toggle');control.setChecked(bool(field.get('value')))
@@ -759,7 +759,7 @@ class SettingsWindow(QtWidgets.QMainWindow):
             if kind=='heading' and entry.get('header') is not None:entry['header'].setText(str(value or ''))
         elif kind=='multiline' and not control.document().isModified():control.setPlainText(str(value or ''))
         elif kind=='list':self.populate_list(control,field)
-        elif kind=='preview':control.set_data(value or '',field.get('previewStatus','') or ('随参数更新的示例预览' if self.current.startswith('input:') else ''))
+        elif kind=='preview':control.set_data(value or '',field.get('previewStatus','') or ('随参数更新的示例预览' if self.current.startswith('input:') else ''),field.get('previewScale'))
         del blocker
         self._deferred_fields.discard(field['id']);return True
 

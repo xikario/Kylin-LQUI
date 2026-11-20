@@ -190,7 +190,14 @@ QJsonObject Bridge::snapshot(const QString &page) {
             }
             field["value"]=encoded;field["previewStatus"]=status;
         }
-        else if(w->objectName()=="settingsPreview") {field["kind"]="preview";field["label"]="候选窗预览";QByteArray bytes;QBuffer buffer(&bytes);buffer.open(QIODevice::WriteOnly);w->grab().toImage().scaled(680,200,Qt::KeepAspectRatio,Qt::SmoothTransformation).save(&buffer,"PNG");field["value"]=QString::fromLatin1(bytes.toBase64());}
+        else if(w->objectName()=="settingsPreview") {field["kind"]="preview";field["label"]="候选窗预览";QByteArray bytes;QBuffer buffer(&bytes);buffer.open(QIODevice::WriteOnly);QImage image=w->grab().toImage();const qreal dpr=qMax<qreal>(1,image.devicePixelRatio());const int nativeWidth=qMax(1,image.width());
+            // Grabbed in device pixels; the settings app draws it 1:1 on device
+            // pixels. previewScale = image pixels per device pixel (<1 only when
+            // shrunk to fit the size limit). Pre-shrinking to 680 px and then
+            // enlarging it again in the page made the preview blurry.
+            if(image.width()>1360||image.height()>800)image=image.scaled(1360,800,Qt::KeepAspectRatio,Qt::SmoothTransformation);
+            image.save(&buffer,"PNG");field["value"]=QString::fromLatin1(bytes.toBase64());
+            Q_UNUSED(dpr);field["previewScale"]=qreal(image.width())/nativeWidth;}
         else if(auto *check=qobject_cast<QCheckBox*>(w)){field["kind"]="boolean";field["value"]=check->isChecked();}
         else if(auto *radio=qobject_cast<QRadioButton*>(w)){field["kind"]="boolean";field["value"]=radio->isChecked();}
         else if(auto *slider=qobject_cast<QSlider*>(w)){field["kind"]="number";field["value"]=slider->value();field["min"]=slider->minimum();field["max"]=slider->maximum();field["step"]=slider->singleStep();field["suffix"]=slider->property("settingsSuffix").toString();field["valueLabels"]=QJsonArray::fromStringList(slider->property("settingsValueLabels").toStringList());}

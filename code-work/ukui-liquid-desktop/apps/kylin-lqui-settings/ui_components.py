@@ -252,24 +252,39 @@ class DisclosureRow(QtWidgets.QWidget):
 
 class PreviewCanvas(QtWidgets.QWidget):
     def __init__(self):
-        super().__init__();self.image=QtGui.QImage();self.setMinimumWidth(0);self.setFixedHeight(160)
+        super().__init__();self.image=QtGui.QImage();self.scale=0.0;self.setMinimumWidth(0);self.setFixedHeight(160)
+    def set_scale(self,scale):
+        """Image pixels per device pixel of a device-resolution preview
+        (0 = unknown). Known: drawn 1:1 on device pixels (true on-screen size),
+        only ever shrinking, in a box fitted to it; never enlarged."""
+        self.scale=float(scale) if isinstance(scale,(int,float)) and 0<scale<=1 else 0.0
+        if self.scale and not self.image.isNull():self.setFixedHeight(min(260,round(self.true_size().height())+16))
+        else:self.setFixedHeight(160)
+        self.update()
+    def true_size(self):
+        factor=self.scale*max(1.0,self.devicePixelRatioF())
+        return QtCore.QSizeF(self.image.width()/factor,self.image.height()/factor)
     def paintEvent(self,event):
         painter=QtGui.QPainter(self);painter.setRenderHint(QtGui.QPainter.Antialiasing)
         painter.setPen(QtGui.QColor(COLORS['border']));painter.setBrush(QtGui.QColor('#F0F3F8'));painter.drawRoundedRect(QtCore.QRectF(self.rect()).adjusted(.5,.5,-.5,-.5),6,6)
         if self.image.isNull():painter.setPen(QtGui.QColor(COLORS['secondary']));painter.drawText(self.rect(),QtCore.Qt.AlignCenter,'暂无预览')
         else:
-            size=self.image.size();size.scale(self.size()-QtCore.QSize(8,8),QtCore.Qt.KeepAspectRatio)
+            room=self.size()-QtCore.QSize(8,8)
+            if self.scale:
+                size=self.true_size().toSize()
+                if size.width()>room.width() or size.height()>room.height():size.scale(room,QtCore.Qt.KeepAspectRatio)
+            else:size=self.image.size();size.scale(room,QtCore.Qt.KeepAspectRatio)
             rect=QtCore.QRect(QtCore.QPoint((self.width()-size.width())//2,(self.height()-size.height())//2),size)
             painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform);painter.drawImage(rect,self.image)
 
 
 class WallpaperPreview(QtWidgets.QWidget):
-    def __init__(self,data='',status='',alt=''):
+    def __init__(self,data='',status='',alt='',scale=None):
         super().__init__();self._data=None;self.decode_count=0;self._error=''
         box=QtWidgets.QVBoxLayout(self);box.setContentsMargins(0,0,0,0);box.setSpacing(4)
         self.canvas=PreviewCanvas();self.status=label('',True);box.addWidget(self.canvas);box.addWidget(self.status)
-        self.setAccessibleName(alt or '壁纸预览');self.set_data(data,status)
-    def set_data(self,data,status=''):
+        self.setAccessibleName(alt or '壁纸预览');self.set_data(data,status,scale)
+    def set_data(self,data,status='',scale=None):
         error=''
         if data!=self._data:
             self._data=data;self.canvas.image=QtGui.QImage()
@@ -287,6 +302,7 @@ class WallpaperPreview(QtWidgets.QWidget):
                 except (ValueError,TypeError):error='预览不可用：图片损坏或超过限制。'
             self.canvas.update()
             self._error=error
+        self.canvas.set_scale(scale)
         self.status.setText(self._error or status or ('真实静态预览' if not self.canvas.image.isNull() else '尚未提供预览'))
         self.status.setVisible(bool(self.status.text()))
 

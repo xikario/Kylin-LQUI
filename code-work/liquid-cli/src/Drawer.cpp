@@ -1,5 +1,6 @@
 #include "Drawer.h"
 #include "DockPopupMotion.h"
+#include "PopupStyle.h"
 #include "LiquidPopup.h"
 #include "StationDrop.h"
 #include "UiColors.h"
@@ -23,7 +24,6 @@
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QCloseEvent>
-#include <QFileSystemWatcher>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QFile>
@@ -66,7 +66,7 @@ protected:
         painter.drawText(contentsRect(),Qt::AlignLeft|Qt::AlignVCenter,fontMetrics().elidedText(text(),Qt::ElideRight,contentsRect().width()));
     }
 };
-constexpr int kFloatDistance=34;     // "float" glides in from just off its resting place
+constexpr int kCrossfadeMs=180;
 constexpr int kEdgeWidth=36,kEdgeHeight=36;
 constexpr int kDismissStepTokens=32000;
 QString configRoot(){return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);}
@@ -166,14 +166,12 @@ Drawer::Drawer(Settings config,QString conversationFolder):QWidget(nullptr,Qt::T
     connect(panelWatcher,&QDBusServiceWatcher::serviceOwnerChanged,this,[this]{syncPanelEntry();if(panelHosted&&!opened)QTimer::singleShot(150,this,&Drawer::prepareResident);});
     syncPanelEntry();
     for(auto *screen:QGuiApplication::screens())
-        connect(screen,&QScreen::availableGeometryChanged,this,[this]{positionEdge();if(opened){motion.stop();place(1);materialKey.clear();refreshGlass();}});
+        connect(screen,&QScreen::availableGeometryChanged,this,[this]{positionEdge();if(opened){motion.stop();place(1);rebuildGlass();}});
     connect(qApp,&QGuiApplication::screenAdded,this,[this]{positionEdge();});
-    connect(qApp,&QGuiApplication::screenRemoved,this,[this]{positionEdge();if(opened){motion.stop();place(1);refreshGlass();}});
-    watcher=new QFileSystemWatcher(this);
-    for(const auto &dir:QStringList{configRoot()+"/kyfences",configRoot()+"/kylin"})if(QDir(dir).exists())watcher->addPath(dir);
-    wallpaperTimer.setSingleShot(true);wallpaperTimer.setInterval(400);
-    connect(watcher,&QFileSystemWatcher::directoryChanged,this,[this]{wallpaperTimer.start();});
-    connect(&wallpaperTimer,&QTimer::timeout,this,[this]{if(opened)refreshGlass();else materialKey.clear();});
+    connect(qApp,&QGuiApplication::screenRemoved,this,[this]{positionEdge();if(opened){motion.stop();place(1);rebuildGlass();}});
+    // Crossfade from the instant stand-in to the rendered glass.
+    connect(&fadeAnimation,&QVariantAnimation::valueChanged,this,[this](const QVariant &v){fade=v.toReal();update();});
+    connect(&fadeAnimation,&QVariantAnimation::finished,this,[this]{fade=1;previousMaterial=QImage();update();});
     qApp->installEventFilter(this);
 }
 Drawer::~Drawer(){quitting=true;delete preferences.data();backend->disconnect(this);backend->stop();persist();delete edge;}
@@ -383,7 +381,7 @@ QRect Drawer::targetGeometry() const {
     const QSize size(qMin(settings.width,qMax(280,available.width()-20)),qMin(settings.height,qMax(240,height)));
     if(panelAnchor.isValid()) {
         const int x=qBound(available.left()+8,panelAnchor.right()-size.width()+1,available.right()-size.width()-7);
-        const int y=qBound(available.top()+8,below?panelAnchor.bottom()+8:panelAnchor.top()-size.height()-8,available.bottom()-size.height()-7);
+        const int y=qBound(available.top()+8,below?panelAnchor.bottom()+PopupStyle::Gap:panelAnchor.top()-size.height()-PopupStyle::Gap,available.bottom()-size.height()-7);
         return QRect(QPoint(x,y),size);
     }
     return QRect(QPoint(available.right()-size.width()-9,available.center().y()-size.height()/2),size);
@@ -397,36 +395,53 @@ void Drawer::positionEdge() {
     const auto target=targetGeometry();const auto *screen=currentScreen(this);const QRect area=screen?screen->availableGeometry():QRect(0,0,1280,800);
     edge->setGeometry(area.right()-kEdgeWidth-8,area.bottom()-kEdgeHeight-8,kEdgeWidth,kEdgeHeight);
 }
-void Drawer::refreshGlass() {
-    const auto area=targetGeometry();const auto *screen=currentScreen(this);const auto screenRect=screen?screen->geometry():QRect(0,0,1280,800);
-    const qreal dpr=qMin(2.,devicePixelRatioF());const auto path=wallpaperPath();const QFileInfo f(path);
-    const auto key=QStringList{path,QString::number(f.lastModified().toMSecsSinceEpoch()),QString::number(f.size()),QString::number(area.x()),QString::number(area.y()),
-        QString::number(area.width()),QString::number(area.height()),QString::number(settings.liquid),QString::number(settings.darken),QString::number(settings.followLauncherMaterial),QString::number(dpr)}.join('/');
-    if(key==materialKey&&!material.isNull())return;
-    const auto tile=wallpaperTile(path,area,screenRect,dpr);
-    if(settings.followLauncherMaterial) {
-        if(!launcherMaterial)launcherMaterial=std::make_unique<NextKdeGlassView>(this);
-        launcherMaterial->setRadius(26);
-        if(qEnvironmentVariableIsSet("KAISHICAIDAN_GLASS_FAST"))launcherMaterial->setBackdropFast(tile);else launcherMaterial->setBackdrop(tile);
-        material=launcherMaterial->image();
-    } else {
-        LiquidOpticsRenderer renderer;renderer.setWallpaper(tile);renderer.setMaterial(0,settings.liquid/100.);
-        material=renderer.renderPanel(QRect(QPoint(),area.size()),24);
-        if(material.isNull())material=tile;
-        QPainter p(&material);p.setCompositionMode(QPainter::CompositionMode_SourceAtop);p.fillRect(QRect(QPoint(),area.size()),QColor(0,0,0,qRound(settings.darken*2.55)));
+// Called before the drawer is shown, so the screen grab holds what lies behind it.
+void Drawer::captureBackdrop() {
+    if(!(LquiEffects::liveCapture()&&LquiEffects::glassMaterial())){
+        ++openSerial;fadeAnimation.stop();fade=1;material=QImage();previousMaterial=QImage();lastCapture=QImage();lastSignature.clear();return;
     }
-    materialKey=key;++builds;refreshColors();update();
+    const QRect target=targetGeometry();
+    QScreen *screen=QGuiApplication::screenAt(target.center());if(!screen)screen=currentScreen(this);
+    if(!screen){material=QImage();return;}
+    const QRect screenGeo=screen->geometry();
+    const qreal dpr=qMin(2.,devicePixelRatioF());
+    const QSize physical(qRound(target.width()*dpr),qRound(target.height()*dpr));
+    QImage capture=screen->grabWindow(0,target.x()-screenGeo.x(),target.y()-screenGeo.y(),target.width(),target.height()).toImage();
+    if(capture.isNull()){material=QImage();previousMaterial=QImage();lastCapture=QImage();lastSignature.clear();update();return;}
+    if(capture.size()!=physical)capture=capture.scaled(physical,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
+    capture.setDevicePixelRatio(dpr);lastCapture=capture;
+    const QByteArray sig=PopupStyle::backdropSignature(capture);
+    if(!material.isNull()&&materialSize==physical&&PopupStyle::signatureClose(sig,lastSignature)){update();return;}
+    startGlass(capture,sig,physical,dpr);
+}
+void Drawer::rebuildGlass() {
+    if(lastCapture.isNull())return;
+    const QRect target=targetGeometry();const qreal dpr=qMin(2.,devicePixelRatioF());
+    const QSize physical(qRound(target.width()*dpr),qRound(target.height()*dpr));
+    QImage capture=lastCapture.size()==physical?lastCapture:lastCapture.scaled(physical,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
+    capture.setDevicePixelRatio(dpr);lastSignature.clear();
+    startGlass(capture,PopupStyle::backdropSignature(capture),physical,dpr);
+}
+void Drawer::startGlass(const QImage &capture,const QByteArray &signature,const QSize &physical,qreal dpr) {
+    const quint64 serial=++openSerial;
+    fadeAnimation.stop();fade=1;previousMaterial=QImage();
+    material=PopupStyle::standIn(capture,physical,dpr,PopupStyle::Radius);materialSize=physical;
+    if(!launcherMaterial)launcherMaterial=std::make_unique<NextKdeGlassView>(this);
+    launcherMaterial->setRadius(PopupStyle::Radius);++builds;
+    launcherMaterial->setBackdropAsync(capture,false,[owner=QPointer<Drawer>(this),serial,signature]{
+        if(owner&&owner->openSerial==serial)owner->adoptGlass(signature);
+    });
+    update();
+}
+void Drawer::adoptGlass(const QByteArray &signature) {
+    if(!launcherMaterial||launcherMaterial->image().isNull())return;
+    previousMaterial=material;material=launcherMaterial->image();lastSignature=signature;
+    const int duration=DockPopupMotion::scaled(kCrossfadeMs);
+    if(duration<=0||previousMaterial.isNull()){previousMaterial=QImage();fade=1;update();return;}
+    fadeAnimation.stop();fadeAnimation.setDuration(duration);fadeAnimation.setStartValue(0.);fadeAnimation.setEndValue(1.);fade=0;fadeAnimation.start();update();
 }
 void Drawer::refreshColors() {
-    if(!material.isNull()) {
-        qreal sum=0;int count=0;
-        for(int y=material.height()/8;y<material.height()*7/8;y+=qMax(1,material.height()/12))
-            for(int x=material.width()/8;x<material.width()*7/8;x+=qMax(1,material.width()/12)) {
-                const auto c=material.pixelColor(x,y);if(c.alpha()<128)continue;
-                sum+=.2126*c.redF()+.7152*c.greenF()+.0722*c.blueF();++count;
-            }
-        lightSurface=count&&sum/count>.60;
-    }
+    lightSurface=false;   // the popup glass is always dark-toned
     const auto c=UiColors::forSurface(lightSurface);setPalette(c.palette(palette()));
     setStyleSheet(QString(
         "QWidget#liquidCliDrawer{color:%1;} QLabel{background:transparent;color:%1;}"
@@ -453,21 +468,22 @@ void Drawer::refreshColors() {
 }
 void Drawer::paintEvent(QPaintEvent *) {
     QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.setCompositionMode(QPainter::CompositionMode_Source);p.fillRect(rect(),Qt::transparent);p.setCompositionMode(QPainter::CompositionMode_SourceOver);
-    if(!material.isNull())p.drawImage(rect(),material);
-    else{QPainterPath path;path.addRoundedRect(QRectF(rect()),24,24);p.fillPath(path,QColor("#27323a"));}
-    p.setPen(QPen(QColor(255,255,255,65),1));p.setBrush(Qt::NoBrush);const qreal radius=settings.followLauncherMaterial?26:23;p.drawRoundedRect(QRectF(rect()).adjusted(.8,.8,-.8,-.8),radius,radius);
+    if(!material.isNull()) {
+        if(fade<1&&!previousMaterial.isNull())p.drawImage(rect(),previousMaterial);
+        p.setOpacity(previousMaterial.isNull()?1.:fade);p.drawImage(rect(),material);p.setOpacity(1);
+        PopupStyle::paintEdge(p,QRectF(rect()),PopupStyle::Radius);
+    } else PopupStyle::paintFallback(p,QRectF(rect()),PopupStyle::Radius);
 }
 
 void Drawer::reveal(bool activate) {
     if(capturing)return;hideTimer.stop();
-    if(!opened){opened=true;refreshGlass();animate(true);}
+    if(!opened){opened=true;if(!isVisible())captureBackdrop();animate(true);}
     if(activate){engaged=true;raise();activateWindow();input->focusInput();}
     unread=false;edge->refresh();
 }
 void Drawer::prepareResident() {
     if(!warmTimer.isActive()&&!warmTimer.property("wired").toBool()) {
-        // While hidden, follow orb moves (tray icons appearing) and wallpaper
-        // changes; refreshGlass() is a no-op when nothing changed.
+        // While hidden, follow orb moves (tray icons appearing).
         warmTimer.setProperty("wired",true);warmTimer.setInterval(45000);warmTimer.setTimerType(Qt::VeryCoarseTimer);
         connect(&warmTimer,&QTimer::timeout,this,&Drawer::prepareResident);warmTimer.start();
     }
@@ -481,10 +497,13 @@ void Drawer::prepareResident() {
             const auto orb=v.toObject();const QRect anchor(orb["x"].toInt(),orb["y"].toInt(),orb["width"].toInt(),orb["height"].toInt());
             if(orb["visible"].toBool()&&QGuiApplication::screenAt(anchor.center())){panelAnchor=anchor;found=true;break;}
         }
-        // At login the taskbar may not be up yet: retry instead of warming the
-        // glass for a guessed position the first click would have to rebuild.
+        // At login the taskbar may not be up yet: retry instead of warming for a
+        // guessed position the first click would have to rebuild.
         if(!found&&!warmedOnce&&warmAttempts<10){++warmAttempts;QTimer::singleShot(3000,this,&Drawer::prepareResident);return;}
-        warmAttempts=0;warmedOnce=true;refreshGlass();
+        warmAttempts=0;warmedOnce=true;
+        if(!gpuWarmed&&LquiEffects::gpuAllowed()&&LquiEffects::glassMaterial()){
+            gpuWarmed=true;if(!launcherMaterial)launcherMaterial=std::make_unique<NextKdeGlassView>(this);launcherMaterial->prepareGpu();
+        }
     });
 }
 void Drawer::Show(){reveal(true);}
@@ -517,14 +536,10 @@ bool Drawer::ImportDropAt(const QString &manifest,int x,int y,int width,int heig
 }
 void Drawer::place(qreal value) {
     shown=value;const QRect target=targetGeometry();
-    const int distance=settings.animation=="slide"?target.height()+14:kFloatDistance;
-    const auto *screen=QGuiApplication::screenAt(panelAnchor.center());
+    const auto *screen=QGuiApplication::screenAt(panelAnchor.isValid()?panelAnchor.center():target.center());
     const bool topAnchor=panelAnchor.isValid()&&screen&&panelAnchor.center().y()<screen->availableGeometry().center().y();
     if(qAbs(width()-target.width())>1||qAbs(height()-target.height())>1)resize(target.size());
-    if(panelAnchor.isValid()) {DockPopupMotion::apply(this,target,topAnchor?2:3,value);return;}
-    clearMask();
-    move(target.topLeft()+QPoint(0,qRound((topAnchor?-1:1)*distance*(1-value))));
-    setWindowOpacity(settings.animation=="float"?qBound(0.,value*1.2,1.):1.);
+    DockPopupMotion::apply(this,target,topAnchor?2:3,value);
 }
 void Drawer::animate(bool show) {
     motion.stop();const qreal from=isVisible()?shown:0.;
@@ -537,11 +552,11 @@ void Drawer::animate(bool show) {
         if(!mask().isEmpty())clearMask();setWindowOpacity(0);
         QWidget::show();layout()->activate();place(from);raise();
     }
-    bool reduced=QSettings("org.ukui","style").value("reduceAnimation",false).toBool();
-    if(settings.animation=="none"||reduced){place(show?1:0);if(show)repaint();else{QWidget::hide();setWindowOpacity(1);}return;}
+    const bool reduced=LquiEffects::reducedMotion(QSettings("org.ukui","style").value("reduceAnimation",false).toBool());
+    const int fullDuration=DockPopupMotion::scaled(show?DockPopupMotion::OpenMs:DockPopupMotion::CloseMs);
+    if(reduced||fullDuration<=0){place(show?1:0);if(show)repaint();else{QWidget::hide();setWindowOpacity(1);}return;}
     // Reversing mid-way continues from the current point with the remaining time.
-    const int duration=panelAnchor.isValid()?(show?DockPopupMotion::OpenMs:DockPopupMotion::CloseMs):settings.animationMs;
-    motion.setDuration(qMax(40,qRound(duration*qAbs((show?1.:0.)-from))));
+    motion.setDuration(qMax(40,qRound(fullDuration*qAbs((show?1.:0.)-from))));
     motion.setEasingCurve(show?QEasingCurve::OutCubic:QEasingCurve::InCubic);
     motion.setStartValue(from);motion.setEndValue(show?1.:0.);motion.start();
 }
@@ -649,8 +664,7 @@ void Drawer::applySettings(Settings value) {
         setStatus("请先停止当前回复，再更改后台、命令、目录或权限。");return;
     }
     value.normalize();const bool geometryChanged=settings.width!=value.width||settings.height!=value.height;
-    const bool materialChanged=geometryChanged||settings.liquid!=value.liquid||settings.darken!=value.darken||settings.followLauncherMaterial!=value.followLauncherMaterial;
-    const bool switched=settings.backend!=value.backend;
+        const bool switched=settings.backend!=value.backend;
     if(switched&&(backend->busy()||backend->compacting())){setStatus("请先停止当前回复再切换后台");return;}
     if(switched) {
         if(!persist())return;
@@ -666,8 +680,7 @@ void Drawer::applySettings(Settings value) {
     }
     updateReplyMode();
     input->setBackendName(settings.cliName);positionEdge();view->setTextPoint(settings.fontSize);QFont font=input->editor()->font();font.setPointSize(settings.fontSize);input->editor()->setFont(font);updateContext();
-    if(materialChanged)materialKey.clear();
-    if(opened){motion.stop();place(1);refreshGlass();}
+    if(opened){motion.stop();place(1);if(geometryChanged)rebuildGlass();}
 }
 void Drawer::Reload(){if(preferences&&!preferences->isVisible()&&!QApplication::activeModalWidget())delete preferences.data();applySettings(Settings::load(settings.file));}
 QString Drawer::State() const {

@@ -14,6 +14,7 @@ import sys
 from PyQt5 import QtCore as C, QtGui as G, QtWidgets as W, QtDBus as D
 from calendar_data import ADAPTER
 from calendar_appearance import Material, STYLE, AgendaDelegate, icon
+import popup_style  # settings dir is on sys.path after calendar_appearance
 
 BUS = 'org.kylin.Lqui.Calendar'
 HERE = Path(__file__).resolve().parent
@@ -24,9 +25,9 @@ STATES = {'published': '待接收', 'accepted': '已接收', 'in_progress': '进
 def popup_rect(anchor, available, preferred):
     width, height = min(preferred.width(), available.width()), min(preferred.height(), available.height())
     x = max(available.left(), min(anchor.right() - width + 1, available.right() - width + 1))
-    y = anchor.top() - height - 8
+    y = anchor.top() - height - popup_style.GAP
     if y < available.top():
-        y = anchor.bottom() + 9
+        y = anchor.bottom() + popup_style.GAP
     y = max(available.top(), min(y, available.bottom() - height + 1))
     return C.QRect(x, y, width, height)
 
@@ -97,6 +98,9 @@ class Calendar(Material, W.QWidget):
         self.settings = C.QSettings('kylin', 'ukui-fences')
         self.poll = C.QTimer(self); self.poll.setInterval(30000); self.poll.timeout.connect(self.refresh)
         self.idle = C.QTimer(self); self.idle.setSingleShot(True); self.idle.timeout.connect(self.idle_exit)
+        self.popup_fade = C.QVariantAnimation(self); self.popup_fade.setStartValue(0.0); self.popup_fade.setEndValue(1.0)
+        self.popup_fade.setEasingCurve(C.QEasingCurve.OutCubic)
+        self.popup_fade.valueChanged.connect(lambda value: self.setWindowOpacity(float(value)))
         self.setStyleSheet(STYLE)
         outer = W.QVBoxLayout(self); outer.setContentsMargins(18,17,18,17); outer.setSpacing(10)
         header = W.QHBoxLayout(); title = W.QLabel('日历'); title.setObjectName('centerTitle')
@@ -396,9 +400,18 @@ class Calendar(Material, W.QWidget):
         self.adapt_to_area(screen.availableGeometry())
         self.setGeometry(popup_rect(anchor, screen.availableGeometry(), C.QSize(440,740)))
         self.prepare_material()
-        self.idle.stop(); self.show(); self.raise_(); self.activateWindow(); self.poll.start(); self.refresh()
+        self.idle.stop(); self.fade_in(); self.poll.start(); self.refresh()
+
+    def fade_in(self):
+        self.popup_fade.stop()
+        duration = popup_style.fade_duration(True)
+        self.setWindowOpacity(0.0 if duration > 0 else 1.0)
+        self.show(); self.raise_(); self.activateWindow()
+        if duration > 0:
+            self.popup_fade.setDuration(duration); self.popup_fade.start()
 
     def hideEvent(self, event):
+        self.popup_fade.stop(); self.setWindowOpacity(1.0)
         self.cancel_material()
         self.poll.stop(); self.idle.start(60000); super().hideEvent(event)
 

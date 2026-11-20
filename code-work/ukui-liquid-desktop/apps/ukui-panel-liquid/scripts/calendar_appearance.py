@@ -8,6 +8,7 @@ if not (HERE/'glass_widgets.py').exists():
     sys.path.insert(0, str(HERE.parent.parent/'kylin-lqui-settings'))
 from glass_widgets import GlassCard, diffuse_backdrop, glyph
 import effects_policy
+import popup_style
 
 STYLE = '''
 QWidget {font-family:"Noto Sans CJK SC";font-size:12px;color:#f0f4fa;}
@@ -118,7 +119,7 @@ def report_worker_trouble(kind):
 class Material:
     def init_material(self):
         self.setAttribute(C.Qt.WA_TranslucentBackground)
-        self.owner=self;self.radius=28;self.native_glass=None;self.backdrop=G.QImage();self.surface=G.QImage()
+        self.owner=self;self.radius=popup_style.RADIUS;self.native_glass=None;self.backdrop=G.QImage();self.surface=G.QImage()
         self.material_builds=0;self.material_ready=False
         self.fade_from=G.QImage();self.fade=C.QVariantAnimation(self);self.fade.setStartValue(0.0);self.fade.setEndValue(1.0)
         self.fade.valueChanged.connect(lambda _value:self.update());self.fade.finished.connect(self.end_fade)
@@ -208,8 +209,7 @@ class Material:
             self.surface=self.stand_in(captured,expected,dpr)
         if self.surface.isNull() or self.surface.size()!=expected:
             self.surface=G.QImage(expected,G.QImage.Format_ARGB32_Premultiplied);self.surface.setDevicePixelRatio(dpr);self.surface.fill(C.Qt.transparent)
-            painter=G.QPainter(self.surface);painter.setRenderHint(G.QPainter.Antialiasing);painter.setBrush(G.QColor('#16232e'));painter.setPen(G.QColor('#536573'))
-            painter.drawRoundedRect(C.QRectF(self.rect()).adjusted(.5,.5,-.5,-.5),28,28);painter.end()
+            painter=G.QPainter(self.surface);popup_style.paint_fallback(painter,self.rect(),self.radius);painter.end()
         if captured.isNull():return
         helper=HERE.parent/'lqui-panel-material-worker'
         if not helper.is_file():helper=HERE.parent/'build/lqui-panel-material-worker'
@@ -259,7 +259,9 @@ class Material:
                 painter.drawImage(self.rect(),self.fade_from)
                 painter.setCompositionMode(G.QPainter.CompositionMode_SourceOver);painter.setOpacity(progress)
             painter.drawImage(self.rect(),self.surface)
+            painter.setOpacity(1.0);painter.setCompositionMode(G.QPainter.CompositionMode_SourceOver)
+            popup_style.paint_edge(painter,self.rect(),self.radius)
         else:
-            painter.setRenderHint(G.QPainter.Antialiasing);painter.setBrush(G.QColor('#16232e'));painter.setPen(G.QColor('#536573'))
-            painter.drawRoundedRect(C.QRectF(self.rect()).adjusted(.5,.5,-.5,-.5),28,28)
+            painter.setCompositionMode(G.QPainter.CompositionMode_SourceOver)
+            popup_style.paint_fallback(painter,self.rect(),self.radius)
         painter.end()

@@ -113,12 +113,7 @@ void Drawer::Preferences() {
     auto *quickFast=new QCheckBox("启用 Fast",fields);quickFast->setObjectName("settingQuickFast");quickFast->setChecked(settings.quickFast);quickFast->setEnabled(false);form->addRow("快问 Fast 模式",quickFast);
     auto *quickStatus=new QLabel(fields);quickStatus->setObjectName("quickModelStatus");quickStatus->setWordWrap(true);form->addRow(QString(),quickStatus);
     auto *width=number("窗口宽度","settingWidth",settings.width,360,1000," px",10);auto *height=number("窗口高度","settingHeight",settings.height,420,1400," px",10);
-    auto *animation=choice("呼出方式","settingAnimation",{{"上浮（轻滑 + 淡入）","float"},{"向上滑入","slide"},{"无动画","none"}},settings.animation);
-    auto *duration=number("动画时长","settingDuration",settings.animationMs,80,500," ms",10);
     auto *delay=number("失焦后收起","settingDelay",settings.hideDelay,200,3000," ms",50);
-    auto *sharedMaterial=new QCheckBox("与开始菜单共用液态材质",fields);sharedMaterial->setObjectName("settingFollowLauncherMaterial");sharedMaterial->setChecked(settings.followLauncherMaterial);form->addRow("窗口材质",sharedMaterial);
-    auto *liquid=number("液态强度","settingLiquid",settings.liquid,0,100," %");auto *darken=number("背景压暗","settingDarken",settings.darken,0,65," %");
-    auto updateMaterialControls=[=]{liquid->setEnabled(!sharedMaterial->isChecked());darken->setEnabled(!sharedMaterial->isChecked());};connect(sharedMaterial,&QCheckBox::toggled,dialog,updateMaterialControls);updateMaterialControls();
     auto *font=number("文字大小","settingFont",settings.fontSize,8,20," pt");
     auto *translation=new QLineEdit(settings.translationLanguage,fields);translation->setObjectName("settingTranslationLanguage");translation->setMaxLength(80);translation->setToolTip("截图翻译的目标语言；点击翻译立即发送截图进行处理。");form->addRow("截图翻译语言",translation);
     auto *dictationNote=new QLabel("Codex 听写暂未接入。当前桌面客户端单次上限为 9 分 55 秒（26.928.21956 版本）。",fields);dictationNote->setObjectName("dictationAvailability");dictationNote->setWordWrap(true);form->addRow("语音听写",dictationNote);
@@ -137,13 +132,11 @@ void Drawer::Preferences() {
     auto *saveTimer=new QTimer(dialog);saveTimer->setSingleShot(true);saveTimer->setInterval(180);
     const auto collectImmediate=[=]{
         auto next=settings;
-        next.width=width->value();next.height=height->value();next.animation=animation->currentData().toString();next.animationMs=duration->value();
-        next.followLauncherMaterial=sharedMaterial->isChecked();next.hideDelay=delay->value();next.liquid=liquid->value();next.darken=darken->value();next.fontSize=font->value();
+        next.width=width->value();next.height=height->value();next.hideDelay=delay->value();next.fontSize=font->value();
         next.translationLanguage=*appliedTranslation;next.contextLimitK=limit->value();next.idleStopMinutes=idle->value();next.residentOnLogin=resident->isChecked();next.defaultReplyMode=replyDefault->currentData().toString();next.normalize();return next;
     };
     const auto immediateEqual=[](const Settings &a,const Settings &b){
-        return a.width==b.width&&a.height==b.height&&a.animation==b.animation&&a.animationMs==b.animationMs&&
-            a.followLauncherMaterial==b.followLauncherMaterial&&a.hideDelay==b.hideDelay&&a.liquid==b.liquid&&a.darken==b.darken&&
+        return a.width==b.width&&a.height==b.height&&a.hideDelay==b.hideDelay&&
             a.fontSize==b.fontSize&&a.translationLanguage==b.translationLanguage&&a.contextLimitK==b.contextLimitK&&
             a.idleStopMinutes==b.idleStopMinutes&&a.residentOnLogin==b.residentOnLogin&&a.defaultReplyMode==b.defaultReplyMode;
     };
@@ -166,14 +159,14 @@ void Drawer::Preferences() {
         if(*applyingImmediate)return;
         const auto next=collectImmediate();if(immediateEqual(next,settings)&&!*immediateDirty)return;
         *immediateDirty=true;
-        const QList<QSlider*> liveSliders{width,height,duration,delay,liquid,darken,font,limit,idle};
+        const QList<QSlider*> liveSliders{width,height,delay,font,limit,idle};
         bool dragging=false;for(auto *slider:liveSliders)dragging|=slider->isSliderDown();
         if(dragging){if(!previewTimer->isActive())previewTimer->start();saveTimer->start();return;}
         previewTimer->stop();saveTimer->stop();commitImmediate(true);
     };
     connect(previewTimer,&QTimer::timeout,dialog,[=]{commitImmediate(false);});
     connect(saveTimer,&QTimer::timeout,dialog,[=]{commitImmediate(true);});
-    for(auto *slider:QList<QSlider*>{width,height,duration,delay,liquid,darken,font,limit,idle})
+    for(auto *slider:QList<QSlider*>{width,height,delay,font,limit,idle})
         connect(slider,&QSlider::sliderReleased,dialog,[=]{previewTimer->stop();saveTimer->stop();commitImmediate(true);});
 
     struct Catalog {QJsonArray models;QString model,effort;bool ready=false;};auto catalog=std::make_shared<Catalog>();
@@ -266,11 +259,9 @@ void Drawer::Preferences() {
         const auto values=effort->property("efforts").toStringList();
         effortLabel->setText(value==0?(effort->property("defaultEffort").toString().isEmpty()?"跟随":"默认 "+effort->property("defaultEffort").toString()):values.value(value));saveModel();
     });
-    for(auto *slider:QList<QSlider*>{width,height,duration,delay,liquid,darken,font,limit,idle})
+    for(auto *slider:QList<QSlider*>{width,height,delay,font,limit,idle})
         connect(slider,&QSlider::valueChanged,dialog,[=]{applyImmediate();});
-    connect(animation,QOverload<int>::of(&QComboBox::activated),dialog,[=]{applyImmediate();});
     connect(replyDefault,QOverload<int>::of(&QComboBox::activated),dialog,[=]{applyImmediate();});
-    connect(sharedMaterial,&QCheckBox::toggled,dialog,[=]{applyImmediate();});
     connect(translation,&QLineEdit::editingFinished,dialog,[=]{*appliedTranslation=translation->text();applyImmediate();});
     connect(resident,&QCheckBox::toggled,dialog,[=]{applyImmediate();});
     const auto resetBackend=[=]{
@@ -332,8 +323,8 @@ void Drawer::Preferences() {
         const Settings defaults;
         previewTimer->stop();saveTimer->stop();
         *applyingImmediate=true;
-        width->setValue(defaults.width);height->setValue(defaults.height);animation->setCurrentIndex(animation->findData(defaults.animation));duration->setValue(defaults.animationMs);
-        delay->setValue(defaults.hideDelay);sharedMaterial->setChecked(defaults.followLauncherMaterial);liquid->setValue(defaults.liquid);darken->setValue(defaults.darken);
+        width->setValue(defaults.width);height->setValue(defaults.height);
+        delay->setValue(defaults.hideDelay);
         font->setValue(defaults.fontSize);translation->setText(defaults.translationLanguage);*appliedTranslation=defaults.translationLanguage;limit->setValue(defaults.contextLimitK);idle->setValue(defaults.idleStopMinutes);
         resident->setChecked(defaults.residentOnLogin);
         *applyingImmediate=false;applyImmediate();
@@ -352,8 +343,7 @@ void Drawer::Preferences() {
     connect(buttons->button(QDialogButtonBox::Apply),&QPushButton::clicked,dialog,[=]{
         if(!QDir(directory->text()).exists()||command->text().trimmed().isEmpty()){note->setText("请填写存在的目录和有效的 CLI 命令。");return;}
         if(draft->backend!=settings.backend&&backend->busy()){note->setText("请先停止当前回复再切换后台。");return;}
-        collectSelection();auto next=*draft;next.width=width->value();next.height=height->value();next.animation=animation->currentData().toString();next.animationMs=duration->value();
-        next.followLauncherMaterial=sharedMaterial->isChecked();next.residentOnLogin=resident->isChecked();next.hideDelay=delay->value();next.liquid=liquid->value();next.darken=darken->value();next.fontSize=font->value();
+        collectSelection();auto next=*draft;next.width=width->value();next.height=height->value();next.residentOnLogin=resident->isChecked();next.hideDelay=delay->value();next.fontSize=font->value();
         next.translationLanguage=translation->text();next.directory=directory->text();next.command=command->text();next.permissions=permissions->currentData().toString();next.contextLimitK=limit->value();next.idleStopMinutes=idle->value();next.defaultReplyMode=replyDefault->currentData().toString();next.normalize();
         if(backend->busy()&&(next.backend!=settings.backend||next.command!=settings.command||next.directory!=settings.directory||next.permissions!=settings.permissions)){note->setText("请先停止当前回复，再更改后台、命令、目录或权限。");return;}
         QString error;if(!ResidentStartup::save(resident->isChecked(),&error)){note->setText("启动项保存失败："+error);return;}if(!next.save(&error)){note->setText("保存失败："+error);return;}
@@ -366,7 +356,6 @@ void Drawer::Preferences() {
         surface->setAutoFillBackground(false);
     }
     const QList<QPair<QString,QString>> help{
-        {"settingFollowLauncherMaterial","使用开始菜单同一套折射、模糊和自适应压暗效果。关闭后可单独调节小站材质。"},
         {"settingTranslationLanguage","截图翻译使用的目标语言。点击翻译后立即处理截图，不会发送已有草稿。"},
         {"settingResident","只保持界面常驻并预热背景；不会提前连接模型。模型后台休眠不关闭窗口进程。"},
         {"settingBackend","选择 CLI 后台；每个后台分别保留聊天和草稿，点击应用后切换。"},
@@ -379,9 +368,7 @@ void Drawer::Preferences() {
         {"settingSessionMode","仅显示 CLI 提供的模式；授权范围由该后台决定。"},
         {"settingEffort","此模式独立保存思考强度，可选档位随模型变化。"},
         {"settingWidth","调整聊天窗口的宽度。"},{"settingHeight","调整聊天窗口的高度。"},
-        {"settingAnimation","选择窗口从小球附近出现的方式。"},{"settingDuration","调整展开和收起动画的时长。"},
         {"settingDelay","失去焦点后等待多久收起；固定展开时不收起。"},
-        {"settingLiquid","调整玻璃的折射与液态质感。"},{"settingDarken","越向右背景越暗，文字对比更强。"},
         {"settingFont","调整聊天正文和输入区的字号。"},{"settingDirectory","CLI 的工作目录；下次连接时生效。"},
         {"settingCommand","填写 CLI 程序及必要参数；协议参数由小站添加。"},
         {"settingPermissions","决定运行命令和修改文件时使用的权限。"},

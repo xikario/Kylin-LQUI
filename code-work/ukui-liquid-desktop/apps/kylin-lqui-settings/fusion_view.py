@@ -1,5 +1,6 @@
 import datetime,json,math,html
 from PyQt5 import QtCore,QtGui,QtWidgets
+import popup_style
 from low_cost_effects import attach_button,install_effects
 from glass_widgets import GlassCard,CardChevron,AudioDeviceButton,glyph,blurred_capture
 
@@ -43,7 +44,7 @@ QCalendarWidget QAbstractItemView{background:#293c50;color:#eff6ff;}
 class FusionView:
     def paintEvent(self,event):
         p=QtGui.QPainter(self);p.setCompositionMode(QtGui.QPainter.CompositionMode_Source);p.fillRect(self.rect(),QtCore.Qt.transparent)
-    def card_widget(self,parent_layout=None,radius=23):
+    def card_widget(self,parent_layout=None,radius=popup_style.RADIUS):
         frame=GlassCard(self,radius);box=QtWidgets.QVBoxLayout(frame);box.setContentsMargins(13,10,13,10);box.setSpacing(5)
         if parent_layout is not None:parent_layout.addWidget(frame)
         return frame,box
@@ -183,8 +184,8 @@ class FusionView:
         # place instead of jumping between 340/440/520/660px bottom anchors.
         size=QtCore.QSize(min(390,area.width()),min(660,area.height()))
         # Align the visible card edge, excluding the transparent window margin.
-        x=self.anchor.left()-self.layout().contentsMargins().left();y=self.anchor.top()-size.height()-7
-        if y<area.top():y=self.anchor.bottom()+7
+        x=self.anchor.left()-self.layout().contentsMargins().left();y=self.anchor.top()-size.height()-popup_style.GAP
+        if y<area.top():y=self.anchor.bottom()+popup_style.GAP
         point=QtCore.QPoint(max(area.left(),min(x,area.right()-size.width()+1)),max(area.top(),min(y,area.bottom()-size.height()+1)))
         return QtCore.QRect(point,size)
     def set_position(self):

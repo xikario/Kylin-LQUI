@@ -53,13 +53,15 @@ class UiTest(unittest.TestCase):
         self.assertIn(('ai','Activate',['general','5']),self.fixture.calls)
     def test_page_actions_stay_at_top_while_scrolling_and_searching(self):
         fields=[{'id':str(i),'name':'row_'+str(i),'kind':'text','label':'选项 '+str(i),'value':'内容'} for i in range(30)]
-        fields.extend([{'id':'saved','name':'settingsNote','kind':'note','label':'settingsNote','value':'已应用并保存。'},
+        # 清空 is destructive: it stays in the page, never in the pinned command bar.
+        fields.extend([{'id':'clear','name':'clearConversation','kind':'action','label':'清空聊天记录并开始新对话…'},
+            {'id':'saved','name':'settingsNote','kind':'note','label':'settingsNote','value':'已应用并保存。'},
             {'id':'reset','name':'resetDefaults','kind':'action','label':'恢复默认'},
-            {'id':'clear','name':'clearConversation','kind':'action','label':'清空聊天记录并开始新对话…'},
             {'id':'apply','name':'applySettings','kind':'action','label':'应用'}])
         self.fixture.page={'ok':True,'fields':fields};self.window.render_fields(fields);self.window.resize(720,480);QtTest.QTest.qWait(50)
         self.window.filter_search('');button=self.window.fields['apply']['control']
         self.assertTrue(self.window.page_actions.isAncestorOf(button));self.assertTrue(self.window.page_actions.isAncestorOf(self.window.fields['saved']['control']))
+        self.assertFalse(self.window.page_actions.isAncestorOf(self.window.fields['clear']['control']))
         before=button.mapTo(self.window,QtCore.QPoint());bar=self.window.scroll.verticalScrollBar();self.assertGreater(bar.maximum(),0)
         bar.setValue(bar.maximum());QtTest.QTest.qWait(20);self.assertEqual(before,button.mapTo(self.window,QtCore.QPoint()))
         self.assertLess(before.y()+button.height(),self.window.scroll.mapTo(self.window,QtCore.QPoint()).y())

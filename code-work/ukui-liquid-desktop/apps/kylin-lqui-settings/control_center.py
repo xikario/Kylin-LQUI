@@ -8,7 +8,7 @@ from audio_events import AudioEvents
 from volume_feedback import VolumeFeedback
 from fusion_view import FusionView,FUSION_STYLE
 from low_cost_effects import attach_button
-import effects_policy
+import effects_policy,popup_style
 from glass_widgets import GlassCard,GlassStatusLabel,ReadableTooltips,PageTransition,glyph
 
 class Signals(QtCore.QObject):finished=QtCore.pyqtSignal(object)
@@ -253,13 +253,8 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
     def popup_frame(self,value):
         self.popup_progress=float(value);target=self.popup_target
         if not target.isValid():return
-        top=self.anchor.center().y()<target.center().y();offset=round(target.height()*(1-self.popup_progress))*(-1 if top else 1)
-        self.move(target.topLeft()+QtCore.QPoint(0,offset))
-        if self.popup_progress>=1:self.clearMask()
-        else:
-            clip=target.translated(-self.pos()).intersected(self.rect())
-            self.setMask(QtGui.QRegion(clip if not clip.isEmpty() else QtCore.QRect(-2,-2,1,1)))
-        self.setWindowOpacity(min(1.,self.popup_progress*4))
+        if (self.pos()-target.topLeft()).manhattanLength()>2:self.move(target.topLeft())
+        self.clearMask();self.setWindowOpacity(max(0.,min(1.,self.popup_progress)))
     def popup_finished(self):
         if self.closing:QtWidgets.QWidget.hide(self)
         else:
@@ -271,7 +266,7 @@ class ControlCenter(FusionView,QtWidgets.QWidget):
     def animate_popup(self,opening):
         self.popup_motion.stop();end=1. if opening else 0.
         if self.reduced_motion():self.popup_frame(end);self.popup_finished();return
-        self.popup_motion.setDuration(max(40,round((260 if opening else 220)*effects_policy.motion_scale()*abs(end-self.popup_progress))))
+        duration=popup_style.fade_duration(opening,end-self.popup_progress);self.popup_motion.setDuration(max(40,duration) if duration else 0)
         self.popup_motion.setEasingCurve(QtCore.QEasingCurve.OutCubic if opening else QtCore.QEasingCurve.InCubic)
         self.popup_motion.setStartValue(self.popup_progress);self.popup_motion.setEndValue(end);self.popup_motion.start()
     def dismiss(self):

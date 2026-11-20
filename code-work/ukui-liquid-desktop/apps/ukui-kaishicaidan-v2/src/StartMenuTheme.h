@@ -299,19 +299,9 @@ public:
             QSettings::IniFormat);
     }
 
-    Skin skin() const {
-#if defined(UKUI_KAISHICAIDAN_V2)
-        constexpr int defaultSkin = static_cast<int>(Skin::EcoLiquid);
-#else
-        constexpr int defaultSkin = static_cast<int>(Skin::Dark);
-#endif
-        return static_cast<Skin>(m_settings->value("skin",
-            defaultSkin).toInt());
-    }
-    void setSkin(Skin skin) {
-        m_settings->setValue("skin", static_cast<int>(skin));
-        m_settings->sync();
-    }
+    // Only the liquid skin remains; the stored value is ignored.
+    Skin skin() const { return Skin::EcoLiquid; }
+    void setSkin(Skin) {}
 
     QString fontFamily() const {
         return m_settings->value("fontFamily", QString()).toString();
@@ -329,25 +319,12 @@ public:
         m_settings->sync();
     }
 
-    int panelOpacity() const {
-#if defined(UKUI_KAISHICAIDAN_V2)
-        constexpr int defaultOpacity = 50;
-#else
-        constexpr int defaultOpacity = 92;
-#endif
-        return m_settings->value("panelOpacity", defaultOpacity).toInt();
-    }
-    void setPanelOpacity(int opacity) {
-        m_settings->setValue("panelOpacity", qBound(0, opacity, 100));
-        m_settings->sync();
-    }
-    bool setAppearance(Skin value,const QString &family,int size,int opacity) {
-        opacity=qBound(0,opacity,100);
-        if(skin()==value && fontFamily()==family && fontSize()==size && panelOpacity()==opacity)return false;
-        m_settings->setValue("skin",static_cast<int>(value));
+    int panelOpacity() const { return 50; }
+    void setPanelOpacity(int) {}
+    bool setAppearance(Skin,const QString &family,int size,int) {
+        if(fontFamily()==family && fontSize()==size)return false;
         m_settings->setValue("fontFamily",family);
         m_settings->setValue("fontSize",size);
-        m_settings->setValue("panelOpacity",opacity);
         m_settings->sync();
         return true;
     }

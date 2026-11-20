@@ -1,5 +1,6 @@
 #include <QDBusConnection>
 #include "Drawer.h"
+#include "DockPopupMotion.h"
 #include "SettingsBridge.h"
 #include "CodexClient.h"
 #include "AcpClient.h"
@@ -85,7 +86,7 @@ class CliTest:public QObject {
     QTemporaryDir root;
     int serial=0;
     Settings config(QString *marker=nullptr){
-        Settings s;s.file=root.path()+QString("/case-%1.json").arg(++serial);s.animation="none";
+        Settings s;s.file=root.path()+QString("/case-%1.json").arg(++serial);
         s.directory=root.path()+"/目录 含$()与'引号";QDir().mkpath(s.directory);
         const QString record=root.path()+QString("/session-%1.json").arg(serial);
         s.command=quote(qEnvironmentVariable("LIQUID_CLI_FIXTURE"))+" "+quote(record);
@@ -195,48 +196,50 @@ private slots:
         d.Show();QVERIFY(d.isVisible());QCOMPARE(d.geometry(),d.targetGeometry());QVERIFY(!d.client()->running());QVERIFY(!QFileInfo::exists(marker));
         QVERIFY(d.findChild<QLabel*>("emptyState")->isVisible());
         QVERIFY(d.edgeWidget()->width()<=40);QCOMPARE(d.edgeWidget()->width(),d.edgeWidget()->height());
-        const int builds=d.glassBuilds();QVERIFY(builds>=1);
+        const int builds=d.glassBuilds();
         for(int i=0;i<10;i++){d.Hide();d.Show();QCoreApplication::processEvents();}
         QCOMPARE(d.glassBuilds(),builds);QVERIFY(!QWidget::mouseGrabber());
         const auto artifacts=qEnvironmentVariable("LIQUID_CLI_ARTIFACT_DIR");if(!artifacts.isEmpty()){QDir().mkpath(artifacts);d.grab().save(artifacts+"/empty.png");}
     }
     void residentWarmupWaitsForTaskbarOrb(){
         // At login the taskbar may start after the AI station. The warm-up must
-        // wait for the real orb instead of building glass for a guessed spot
-        // that the first click would rebuild synchronously (a visible delay).
+        // keep retrying until the real orb appears instead of using a guessed spot.
         QString marker;Drawer d(config(&marker),folder());QCoreApplication::processEvents();
-        const int before=d.glassBuilds();
         d.prepareResident();QTest::qWait(1200);
-        QCOMPARE(d.glassBuilds(),before);
+        const QRect unanchored=d.targetGeometry();
         const QRect screen=QGuiApplication::primaryScreen()->availableGeometry();
         FakeStationPanel panel;panel.orb=QRect(screen.right()-220,screen.bottom()-46,44,44);
         auto bus=QDBusConnection::sessionBus();
         QVERIFY(bus.registerService("org.ukui.AiStationPanel"));QVERIFY(bus.registerObject("/AiStation",&panel,QDBusConnection::ExportScriptableSlots));
-        QTRY_VERIFY_WITH_TIMEOUT(d.glassBuilds()>before,6000);
-        const int warmed=d.glassBuilds();
+        QTRY_VERIFY_WITH_TIMEOUT(d.targetGeometry()!=unanchored&&d.targetGeometry().bottom()<panel.orb.top(),6000);   // the real orb was picked up
         d.ToggleAt(panel.orb.x(),panel.orb.y(),panel.orb.width(),panel.orb.height());
-        QCOMPARE(d.glassBuilds(),warmed);   // opening at the warmed orb reuses the glass
         d.Hide();bus.unregisterObject("/AiStation");bus.unregisterService("org.ukui.AiStationPanel");
     }
-    void floatMotionReversesAndFades(){
-        auto s=config();s.animation="float";s.animationMs=480;Drawer d(s,folder());d.Show();
-        QTest::qWait(90);QVERIFY(d.progress()>0&&d.progress()<1);QVERIFY(d.windowOpacity()<1);
-        QCOMPARE(d.x(),d.targetGeometry().x());QVERIFY(d.y()>d.targetGeometry().y());
+    void fadeMotionReversesAndStaysInPlace(){
+        // Unanchored drawers now only fade at the final position (no glide/slide).
+        auto s=config();Drawer d(s,folder());d.Show();
+        QTest::qWait(60);QVERIFY(d.progress()>0&&d.progress()<1);QVERIFY(d.windowOpacity()<1);
+        QCOMPARE(d.pos(),d.targetGeometry().topLeft());
         d.Hide();QTest::qWait(20);d.Show();
         QTRY_COMPARE_WITH_TIMEOUT(d.pos(),d.targetGeometry().topLeft(),1000);QTRY_COMPARE_WITH_TIMEOUT(d.progress(),1.,1000);QVERIFY(d.windowOpacity()>.99);
         d.Hide();QTRY_VERIFY_WITH_TIMEOUT(!d.isVisible(),1000);QVERIFY(d.windowOpacity()>.99);
-        s.animation="slide";d.applySettings(s);d.Show();QTRY_COMPARE_WITH_TIMEOUT(d.pos(),d.targetGeometry().topLeft(),1000);
-        s.width=680;s.height=850;s.liquid=35;const int builds=d.glassBuilds();d.applySettings(s);QCOMPARE(d.geometry(),d.targetGeometry());QVERIFY(d.glassBuilds()>builds);
+        d.Show();s.width=680;s.height=850;d.applySettings(s);QCOMPARE(d.geometry(),d.targetGeometry());
+    }
+    void openingShowsStandInMaterialBeforeAsyncGlass(){
+        if(!(LquiEffects::liveCapture()&&LquiEffects::glassMaterial()))QSKIP("Effects tier has no live capture");
+        Drawer d(config(),folder());
+        d.Show();   // returns before the asynchronous glass can have finished
+        QVERIFY(d.hasMaterial());
     }
     void taskbarMotionKeepsGeometryAndCachedSurfaceWhileFading(){
-        auto s=config();s.animation="float";Drawer d(s,folder());const QRect screen=QGuiApplication::primaryScreen()->availableGeometry();
+        auto s=config();Drawer d(s,folder());const QRect screen=QGuiApplication::primaryScreen()->availableGeometry();
         d.ToggleAt(screen.right()-45,screen.bottom()-35,32,32);const QRect target=d.targetGeometry();const int builds=d.glassBuilds();
         QTest::qWait(65);QCOMPARE(d.geometry(),target);QVERIFY(d.mask().isEmpty());QVERIFY(d.progress()>0);
         d.Hide();QTest::qWait(25);d.Show();QTRY_COMPARE_WITH_TIMEOUT(d.progress(),1.,1000);QCOMPARE(d.geometry(),target);QVERIFY(d.mask().isEmpty());QCOMPARE(d.glassBuilds(),builds);
         d.Hide();QTRY_VERIFY_WITH_TIMEOUT(!d.isVisible(),1000);QCOMPARE(d.glassBuilds(),builds);
     }
     void fractionalDpiRoundingDoesNotTriggerResizePerFrame(){
-        auto s=config();s.width=480;s.height=420;s.animation="float";Drawer d(s,folder());
+        auto s=config();s.width=480;s.height=420;Drawer d(s,folder());
         class Rounder:public QObject {
         public:int requests=0;QWidget *window=nullptr;
         protected:bool eventFilter(QObject *,QEvent *e)override{
@@ -283,6 +286,7 @@ private slots:
         d.ToggleAt(screen.right()-45,screen.bottom()-35,32,32);
         QVERIFY(d.expanded());QVERIFY(screen.contains(d.geometry()));QVERIFY(d.geometry().bottom()<screen.bottom()-35);
         QCOMPARE(d.windowTitle(),QString("AI小站"));QCOMPARE(d.findChild<QLabel*>("drawerTitle")->text(),QString("AI小站"));
+        QTRY_VERIFY_WITH_TIMEOUT(d.progress()>.5,1000);   // the fade is no longer skipped by animation="none"
         d.ToggleAt(screen.right()-45,screen.bottom()-35,32,32);QVERIFY(!d.expanded());
         d.ToggleAt(screen.left()+5,screen.bottom()-35,32,32);QVERIFY(screen.contains(d.geometry()));
         QVERIFY(!d.client()->running());
@@ -548,7 +552,8 @@ private slots:
         for(auto *w:QApplication::topLevelWidgets())if(w->windowTitle()=="AI小站设置")dialog=qobject_cast<QDialog*>(w);
         QVERIFY(dialog);QVERIFY(!dialog->windowIcon().isNull());QVERIFY(!(dialog->windowFlags()&Qt::WindowMaximizeButtonHint));
         QVERIFY(!dialog->parentWidget());
-        auto *sharedMaterial=dialog->findChild<QCheckBox*>("settingFollowLauncherMaterial");QVERIFY(sharedMaterial);QVERIFY(sharedMaterial->isChecked());sharedMaterial->setChecked(false);
+        // The removed appearance rows must be gone from the preferences UI.
+        for(const auto &gone:QStringList{"settingAnimation","settingDuration","settingFollowLauncherMaterial","settingLiquid","settingDarken"})QVERIFY2(!dialog->findChild<QWidget*>(gone),qPrintable(gone));
         QProcess identity;identity.start("xprop",{"-id",QString::number(dialog->winId()),"WM_CLASS","_KDE_NET_WM_DESKTOP_FILE","WM_WINDOW_ROLE"});QVERIFY(identity.waitForFinished(2000));
         const auto native=identity.readAllStandardOutput();QVERIFY(native.contains("_KDE_NET_WM_DESKTOP_FILE(UTF8_STRING) = \"liquid-cli\""));QVERIFY(native.contains("ai-station-settings"));
         auto *scroll=dialog->findChild<QScrollArea*>("cliSettingsScroll");QVERIFY(scroll);QVERIFY(!scroll->viewport()->autoFillBackground());QVERIFY(!scroll->widget()->autoFillBackground());
@@ -562,7 +567,7 @@ private slots:
             const auto source=drawerWallpaper(area,QGuiApplication::primaryScreen()->geometry(),dialog->devicePixelRatioF());
             source.save(artifacts+"/settings-wallpaper.png");LiquidPopup::renderMenuMaterial(source,dialog->size(),dialog->devicePixelRatioF(),false).save(artifacts+"/settings-material.png");
         }
-        QCOMPARE(d.configuration().width,620);const auto loaded=Settings::load(s.file);QCOMPARE(loaded.contextLimitK,128);QCOMPARE(loaded.idleStopMinutes,0);QCOMPARE(loaded.permissions,QString("workspace"));QVERIFY(!loaded.followLauncherMaterial);
+        QCOMPARE(d.configuration().width,620);const auto loaded=Settings::load(s.file);QCOMPARE(loaded.contextLimitK,128);QCOMPARE(loaded.idleStopMinutes,0);QCOMPARE(loaded.permissions,QString("workspace"));
         QVERIFY(d.findChild<QPushButton*>("contextButton")->text().contains("128K"));
         dialog->close();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
     }
@@ -601,7 +606,7 @@ private slots:
         QDialog *dialog=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="cliPreferences")dialog=qobject_cast<QDialog*>(w);QVERIFY(dialog);QTest::qWait(350);
         QVERIFY(screen.contains(dialog->geometry()));QVERIFY(dialog->geometry().bottom()<anchor.top());QVERIFY(qAbs(dialog->geometry().right()-anchor.right())<=1);
         auto *help=dialog->findChild<QObject*>("cliSettingsHelpController");QVERIFY(help);QCOMPARE(help->property("delayMs").toInt(),1000);
-        for(const auto &name:QStringList{"settingModel","settingEffort","settingWidth","settingHeight","settingAnimation","settingDuration","settingDelay","settingLiquid","settingDarken","settingFont","settingDirectory","settingCommand","settingPermissions","settingContextLimit","settingIdleStop"}) {
+        for(const auto &name:QStringList{"settingModel","settingEffort","settingWidth","settingHeight","settingDelay","settingFont","settingDirectory","settingCommand","settingPermissions","settingContextLimit","settingIdleStop"}) {
             auto *widget=dialog->findChild<QWidget*>(name);QVERIFY(widget);QVERIFY(!widget->property("settingsHelp").toString().isEmpty()||!widget->parentWidget()->property("settingsHelp").toString().isEmpty());
         }
         LiquidPopup::hideText();for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="liquidPopupShell")w->hide();
@@ -670,7 +675,7 @@ private slots:
     void dockGlassBackingStoreIsComplete(){
         if(!qEnvironmentVariableIsSet("LIQUID_CLI_NATIVE_SURFACE"))QSKIP("Opt-in composited screen check");
         QApplication::setCursorFlashTime(0);
-        auto s=config();s.animation="slide";s.width=495;s.height=680;
+        auto s=config();s.width=495;s.height=680;
         s.hideDelay=10000;
         Conversation saved(folder());
         for(int i=0;i<26;++i){
@@ -685,7 +690,6 @@ private slots:
         QTest::qWait(150);
         auto capture=[&]{return QGuiApplication::primaryScreen()->grabWindow(0,d.x(),d.y(),d.width(),d.height()).toImage().convertToFormat(QImage::Format_RGB32);};
         for(int pass=0;pass<4;++pass){
-            if(pass==3){s.animation="none";d.applySettings(s);}
             d.ToggleAt(screen.right()-55,pass==2?screen.top()+5:screen.bottom()-40,32,32);
             if(pass==1){QTest::qWait(90);d.Hide();QTest::qWait(45);d.Show();}
             QTRY_VERIFY_WITH_TIMEOUT(d.progress()==1,2000);QTest::qWait(500);
@@ -714,9 +718,9 @@ private slots:
         QVERIFY(bus.registerService("org.ukui.AiStationPanel"));QVERIFY(bus.registerObject("/AiStation",&panel,QDBusConnection::ExportScriptableSlots));
         struct Unregister{QDBusConnection bus;~Unregister(){bus.unregisterObject("/AiStation");bus.unregisterService("org.ukui.AiStationPanel");}} unregister{bus};
         QString marker;Drawer d(config(&marker),folder());
-        d.prepareResident();QTRY_VERIFY_WITH_TIMEOUT(d.glassBuilds()>0,5000);
+        d.prepareResident();QTRY_VERIFY_WITH_TIMEOUT(d.targetGeometry().bottom()<panel.orb.top(),5000);
         QVERIFY(!d.expanded());QVERIFY(!d.client()->running());QVERIFY(!QFileInfo::exists(marker));
-        const int builds=d.glassBuilds();d.Show();QCOMPARE(d.glassBuilds(),builds);
+        d.Show();QVERIFY(d.expanded());
         QVERIFY(ResidentStartup::save(true));QVERIFY(ResidentStartup::enabled());
         const auto startup=read(ResidentStartup::path());QVERIFY(startup.contains("--resident"));QVERIFY(!startup.contains("--show"));
         d.Preferences();QDialog *dialog=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="cliPreferences")dialog=qobject_cast<QDialog*>(w);

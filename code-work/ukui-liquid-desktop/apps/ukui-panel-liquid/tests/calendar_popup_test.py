@@ -90,6 +90,18 @@ class CalendarTests(unittest.TestCase):
         self.assertEqual(records[0]['state'],'待审核')
         self.window.statuses={'5':'done'}; self.assertTrue(self.window.records()[0]['completed'])
 
+    def test_toggle_fades_window_opacity_in_place(self):
+        window=self.window
+        duration=popup.popup_style.fade_duration(True)
+        window.toggle(popup.C.QRect(1100,850,70,38))
+        if duration>0:
+            self.assertLess(window.windowOpacity(),1.0)
+            for _ in range(50):
+                QtTest.QTest.qWait(20)
+                if window.popup_fade.state()!=popup.C.QAbstractAnimation.Running: break
+        self.assertAlmostEqual(window.windowOpacity(),1.0,places=2)
+        window.hide(); self.assertEqual(window.windowOpacity(),1.0)
+
     def test_render_and_hidden_refresh_lifecycle(self):
         window=self.window
         window.month.setSelectedDate(popup.C.QDate(2026,2,17))

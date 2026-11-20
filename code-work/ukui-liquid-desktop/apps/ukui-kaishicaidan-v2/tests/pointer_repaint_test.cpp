@@ -253,7 +253,7 @@ public:
         {
             SettingsDialog settings(&menu);settings.show();settle(260);
             check(settings.property("liquidDialogInstalled").toBool(),"launcher settings use the common surface");
-            check(config.panelOpacity()==92 && readConfig()==beforeSettings,"opening settings never persists the nearest opacity choice");
+            check(config.panelOpacity()==50 && readConfig()==beforeSettings,"opening settings never persists appearance (opacity fixed at 50)");
             QMetaObject::invokeMethod(&settings,"apply");
             const auto afterApply=readConfig();
             const auto captures=settings.property("liquidDialogMaterialBuilds").toInt();
@@ -292,17 +292,14 @@ public:
                       && minimize && minimize->isVisible()
                       && !settings->findChild<QAbstractButton *>("liquidDialogMaximize"),
                   "real launcher settings expose minimize and close without a maximize control");
-            auto *skin=settings->findChild<QGroupBox *>("launcherSkinGroup");
             auto *font=settings->findChild<QGroupBox *>("launcherFontGroup");
-            if(header && skin && font) {
+            if(header && font) {
                 const QRect headerRect(header->mapTo(settings,QPoint()),header->size());
-                const QRect skinRect(skin->mapTo(settings,QPoint()),skin->size());
                 const QRect fontRect(font->mapTo(settings,QPoint()),font->size());
-                check(headerRect.bottom()<skinRect.top() && skinRect.bottom()<fontRect.top()
-                          && settings->rect().contains(skinRect) && settings->rect().contains(fontRect),
+                check(headerRect.bottom()<fontRect.top() && settings->rect().contains(fontRect),
                       "custom header reserves space without overlapping or clipping settings groups");
             } else check(false,"settings content groups are identifiable for geometry checks");
-            for(const auto *name:{"launcherTheme","launcherOpacity","launcherFont","launcherFontSize"}) {
+            for(const auto *name:{"launcherFont","launcherFontSize"}) {
                 auto *control=settings->findChild<QWidget *>(name);
                 check(control && control->property("liquidControlButtons").toBool()
                           && control->findChild<QWidget *>("liquidControlGlyphs"),

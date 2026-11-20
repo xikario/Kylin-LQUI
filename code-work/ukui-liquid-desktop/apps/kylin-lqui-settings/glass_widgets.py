@@ -1,6 +1,6 @@
 """Cached backdrop cards: one capture per opening, no animated blur or timer."""
 from PyQt5 import QtCore,QtGui,QtWidgets
-import effects_policy
+import effects_policy,popup_style
 
 def glyph(name,color='#e6edf7',size=22):
     """Line icon drawn as a vector at whatever device size Qt asks for.
@@ -105,7 +105,7 @@ class PageTransition(QtWidgets.QWidget):
         p.drawPixmap(round(self.direction*14*(1-self.progress)),0,self.after)
 
 class GlassCard(QtWidgets.QFrame):
-    def __init__(self,owner,radius=23):super().__init__();self.owner=owner;self.radius=radius;self.accent=False;self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setProperty('glass',True)
+    def __init__(self,owner,radius=popup_style.RADIUS):super().__init__();self.owner=owner;self.radius=radius;self.accent=False;self.setAttribute(QtCore.Qt.WA_TranslucentBackground);self.setProperty('glass',True)
     def material_origin(self):
         origin=self.mapToGlobal(QtCore.QPoint())
         if hasattr(self.owner,'material_origin'):
@@ -132,30 +132,9 @@ class GlassCard(QtWidgets.QFrame):
         if native:
             image=(getattr(native,'cached',lambda *args:None) if cached_only else native.render)(QtCore.QRect(origin,self.size()),self.devicePixelRatioF(),self.radius)
             if image is not None and not image.isNull():
-                p.setRenderHint(QtGui.QPainter.SmoothPixmapTransform);p.drawImage(self.rect(),image);return True
+                p.setRenderHint(QtGui.QPainter.SmoothPixmapTransform);p.drawImage(self.rect(),image);popup_style.paint_edge(p,self.rect(),self.radius);return True
             if cached_only:return False
-        p.setRenderHints(QtGui.QPainter.Antialiasing|QtGui.QPainter.SmoothPixmapTransform);r=QtCore.QRectF(self.rect()).adjusted(.7,.7,-.7,-.7);clip=QtGui.QPainterPath();clip.addRoundedRect(r,self.radius,self.radius);p.setClipPath(clip)
-        image=getattr(self.owner,'backdrop',QtGui.QImage())
-        # Never expose live window text when capture is unavailable, a screen
-        # moves, or the cached image does not cover the complete card.
-        p.fillRect(self.rect(),QtGui.QColor('#485364'))
-        if not image.isNull():p.drawImage(self.rect(),image,QtCore.QRect(origin-getattr(self.owner,'backdrop_origin',QtCore.QPoint()),self.size()))
-        # A light application may sit behind the card. Keep secondary text
-        # readable too; connectivity state is expressed by the orb and rim.
-        p.fillRect(self.rect(),QtGui.QColor(16,23,32,185))
-        gradient=QtGui.QLinearGradient(r.topLeft(),r.bottomRight());gradient.setColorAt(0,QtGui.QColor(225,239,255,34));gradient.setColorAt(.45,QtGui.QColor(140,180,230,5));gradient.setColorAt(1,QtGui.QColor(50,75,110,35));p.fillRect(r,gradient)
-        # Refract only the empty edge band from the already diffused cache.
-        # Text never overlaps this band and no live window content is exposed.
-        if not image.isNull():
-            inner=QtGui.QPainterPath();inner.addRoundedRect(r.adjusted(4,4,-4,-4),max(1,self.radius-4),max(1,self.radius-4))
-            p.save();p.setClipPath(clip.subtracted(inner))
-            source=QtCore.QRectF(QtCore.QPointF(origin-getattr(self.owner,'backdrop_origin',QtCore.QPoint())),QtCore.QSizeF(self.size())).adjusted(7,7,-7,-7)
-            p.drawImage(r,image,source);p.fillRect(r,QtGui.QColor(28,39,54,145));p.restore()
-        # Thin curved rim catches light; center remains diffuse for readability.
-        rim=QtGui.QLinearGradient(r.topLeft(),r.bottomRight());rim.setColorAt(0,QtGui.QColor(245,245,245,95));rim.setColorAt(.32,QtGui.QColor(180,216,245,12));rim.setColorAt(.72,QtGui.QColor(160,198,235,8));rim.setColorAt(1,QtGui.QColor(230,230,230,85))
-        p.setBrush(QtCore.Qt.NoBrush);p.setPen(QtGui.QPen(QtGui.QBrush(rim),1.3));p.drawRoundedRect(r.adjusted(2,2,-2,-2),self.radius-2,self.radius-2)
-        p.setClipping(False);p.setPen(QtGui.QPen(QtGui.QColor(230,230,230,66),1));p.setBrush(QtCore.Qt.NoBrush);p.drawRoundedRect(r,self.radius,self.radius)
-        p.setPen(QtGui.QPen(QtGui.QColor(255,255,255,22),.7));p.drawRoundedRect(r.adjusted(1.5,1.5,-1.5,-1.5),self.radius-1,self.radius-1)
+        popup_style.paint_fallback(p,self.rect(),self.radius)
         return True
     def set_active(self,value):
         if self.accent!=value:self.accent=value;self.update()

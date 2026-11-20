@@ -131,8 +131,6 @@ private:
     void setupClipboardHistory();
     void showClipboardHistoryMenu();
     void updateRailTooltip();
-    void cycleQuickTheme();
-    void showThemeMenu();
     void refreshUserAvatar();
     bool openAccountSettings();
     void openDocuments();

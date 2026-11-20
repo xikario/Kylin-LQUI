@@ -9,6 +9,7 @@
 #include "../../../shared/icon-style/LiquidIconRenderer.h"
 #include "StartMenu.h"
 #include "DockPopupMotion.h"
+#include "PopupStyle.h"
 #include <QSettings>
 #include "SettingsBridge.h"
 #include "StartButton.h"
@@ -1540,7 +1541,7 @@ StartMenu::StartMenu(QWidget *parent)
         if(!m_visible){hide();clearMask();setWindowOpacity(1);}
     });
     m_nextKdeGlassView = new NextKdeGlassView(this);
-    m_nextKdeGlassView->setRadius(26);
+    m_nextKdeGlassView->setRadius(PopupStyle::Radius);
     QTimer::singleShot(0, this, [this] {
         if (m_skin == Skin::EcoLiquid) m_nextKdeGlassView->prepareGpu();
     });
@@ -2553,7 +2554,7 @@ void StartMenu::positionAboveStartButton()
     const TaskbarInfo info = TaskbarDetector::detect();
     if (!info.detected) return;
 
-    const int gap = 4;
+    const int gap = PopupStyle::Gap;
     const int menuW = StartMenuTheme::kPanelWidth;
     const int menuH = StartMenuTheme::kPanelHeight;
 
@@ -2615,7 +2616,7 @@ void StartMenu::paintEvent(QPaintEvent *event)
                 // Child widgets do not receive or lose any pointer events.
                 p.save();
                 QPainterPath silhouette;
-                silhouette.addRoundedRect(panelRect,26,26);
+                silhouette.addRoundedRect(panelRect,PopupStyle::Radius,PopupStyle::Radius);
                 p.setClipPath(silhouette, Qt::IntersectClip);
                 QRadialGradient reflection(m_glassLightPos,180);
                 reflection.setColorAt(0,QColor(255,255,255,66));
@@ -2625,11 +2626,10 @@ void StartMenu::paintEvent(QPaintEvent *event)
                 p.setPen(QPen(QBrush(reflection),.9));
                 p.drawPath(silhouette);
                 p.restore();
+                PopupStyle::paintEdge(p, QRectF(rect()), PopupStyle::Radius);
             } else {
                 // Readable fallback when capture is unavailable (e.g. Wayland).
-                p.fillPath(panelPath, QColor(28, 37, 53, 248));
-                p.setPen(QPen(QColor(255, 255, 255, 70), 1));
-                p.drawPath(panelPath);
+                PopupStyle::paintFallback(p, QRectF(rect()), PopupStyle::Radius);
             }
         } else {
             p.fillPath(panelPath, m_palette.panelBg);
@@ -2670,7 +2670,7 @@ void StartMenu::paintEvent(QPaintEvent *event)
 void StartMenu::drawLeftRail(QPainter &p)
 {
     const int railW = StartMenuTheme::kRailWidth;
-    const int cornerRadius = m_skin == Skin::EcoLiquid ? 26 : StartMenuTheme::kCornerRadius;
+    const int cornerRadius = m_skin == Skin::EcoLiquid ? int(PopupStyle::Radius) : StartMenuTheme::kCornerRadius;
     const QRect r = rect();
     const qreal innerRadius = 28.0;
 
@@ -2887,38 +2887,7 @@ void StartMenu::drawRailButtons(QPainter &p)
     p.drawLine(cx - 4, clipY + 4, cx + 3, clipY + 4);
 
     }
-    if (p.clipRegion().intersects(QRect(0, railThemeY() - 23, StartMenuTheme::kRailWidth, 48))) {
-    // Quick theme switch: a small liquid droplet
-    const int themeY = railThemeY();
-    QRect themeRect(cx - 18, themeY - 18, 36, 36);
-    paintGlassControl(p,this,themeRect,11,m_hoveredRailBtn==RailButton::Theme ? 1.0 : 0.0);
-    if (m_hoveredRailBtn == RailButton::Theme) {
-        p.setPen(Qt::NoPen);
-        p.setBrush(m_palette.hoverBg);
-        if (m_skin!=Skin::EcoLiquid) p.drawRoundedRect(themeRect, 8, 8);
-        p.setBrush(m_palette.accent);
-        p.drawRoundedRect(QRectF(3, themeY - 8, 3, 16), 1.5, 1.5);
-    }
-    QPainterPath drop;
-    drop.moveTo(cx, themeY - 11);
-    drop.cubicTo(cx - 3, themeY - 5, cx - 9, themeY,
-                 cx - 9, themeY + 5);
-    drop.cubicTo(cx - 9, themeY + 11, cx - 4, themeY + 14,
-                 cx, themeY + 14);
-    drop.cubicTo(cx + 5, themeY + 14, cx + 9, themeY + 10,
-                 cx + 9, themeY + 5);
-    drop.cubicTo(cx + 9, themeY, cx + 3, themeY - 5,
-                 cx, themeY - 11);
-    QLinearGradient dropGradient(cx - 8, themeY - 8, cx + 8, themeY + 12);
-    dropGradient.setColorAt(0.0, m_palette.accent.lighter(135));
-    dropGradient.setColorAt(1.0, QColor(99, 102, 241));
-    p.setPen(QPen(QColor(255, 255, 255, 90), 0.8));
-    p.setBrush(dropGradient);
-    p.drawPath(drop);
-    p.setPen(QPen(QColor(255, 255, 255, 145), 1.1, Qt::SolidLine, Qt::RoundCap));
-    p.drawArc(QRectF(cx - 5, themeY - 3, 9, 9), 35 * 16, 105 * 16);
-
-    }
+    // The quick theme switch was removed with the per-popup skins.
     if (p.clipRegion().intersects(QRect(0, railSettingsY() - 23, StartMenuTheme::kRailWidth, 48))) {
     // Settings 按钮绘制
     const int setY = railSettingsY();
@@ -2990,10 +2959,6 @@ void StartMenu::handleRailClick(const QPoint &pos)
     }
     if (hit(cx, railClipboardY())) {
         showClipboardHistoryMenu();
-        return;
-    }
-    if (hit(cx, railThemeY())) {
-        cycleQuickTheme();
         return;
     }
     // 设置按钮
@@ -3081,10 +3046,6 @@ void StartMenu::handleRailContextMenu(const QPoint &pos)
             removeRailApp(current);
         return;
     }
-
-    const int cx = StartMenuTheme::kRailWidth / 2;
-    if (QRect(cx - 18, railThemeY() - 18, 36, 36).contains(pos))
-        showThemeMenu();
 }
 
 void StartMenu::openDocuments()
@@ -3263,52 +3224,6 @@ void StartMenu::updateRailTooltip()
                        10000);
 }
 
-void StartMenu::cycleQuickTheme()
-{
-    const QList<Skin> quickThemes = { Skin::EcoLiquid, Skin::Dark, Skin::Light };
-    int current = quickThemes.indexOf(m_skin);
-    const Skin next = current < 0
-        ? Skin::EcoLiquid
-        : quickThemes[(current + 1) % quickThemes.size()];
-    StartMenuConfig::instance().setSkin(next);
-    applySkin(next);
-}
-
-void StartMenu::showThemeMenu()
-{
-    QMenu menu(this);
-    StartMenuTheme::applySharedMenuStyle(&menu);
-
-    const QList<QPair<Skin, QString>> themes = {
-        { Skin::EcoLiquid, QString::fromUtf8("极简液态") },
-        { Skin::Dark, QString::fromUtf8("深色") },
-        { Skin::Light, QString::fromUtf8("浅色") },
-        { Skin::Cyber, QString::fromUtf8("赛博") },
-        { Skin::Glass, QString::fromUtf8("玻璃") },
-        { Skin::Wallpaper, QString::fromUtf8("壁纸色") },
-    };
-
-    QList<QPair<QAction *, Skin>> actions;
-    for (const auto &theme : themes) {
-        QAction *action = menu.addAction(themedIcon({"preferences-desktop-theme",
-                                                      "preferences-desktop-color"}),
-                                          theme.second);
-        action->setCheckable(true);
-        action->setChecked(theme.first == m_skin);
-        actions.append(qMakePair(action, theme.first));
-    }
-
-    QAction *chosen = menu.exec(mapToGlobal(
-        QPoint(StartMenuTheme::kRailWidth + 6, railThemeY())));
-    for (const auto &entry : actions) {
-        if (chosen == entry.first) {
-            StartMenuConfig::instance().setSkin(entry.second);
-            applySkin(entry.second);
-            break;
-        }
-    }
-}
-
 void StartMenu::showMoreRecent()
 {
     m_appSortMode = AppSortMode::LastUsed;
@@ -3395,7 +3310,6 @@ void StartMenu::mouseMoveEvent(QMouseEvent *e)
         if (hit(cx, 50)) newHover = RailButton::Avatar;
         else if (hit(cx, railDocumentsY())) newHover = RailButton::Documents;
         else if (hit(cx, railClipboardY())) newHover = RailButton::Clipboard;
-        else if (hit(cx, railThemeY())) newHover = RailButton::Theme;
         else if (hit(cx, railSettingsY())) newHover = RailButton::Settings;
         else if (hit(cx, railPowerY())) newHover = RailButton::Power;
     }

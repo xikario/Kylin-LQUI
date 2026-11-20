@@ -486,7 +486,7 @@ class ControlUi(unittest.TestCase):
         self.window.hide();self.window.open_at('home',1500,1030,40,40);target=QtCore.QRect(self.window.popup_target)
         deadline=QtCore.QElapsedTimer();deadline.start()
         while self.window.opening_pending and deadline.elapsed()<3000:QtTest.QTest.qWait(10)
-        QtTest.QTest.qWait(40);self.assertGreater(self.window.y(),target.y());self.assertFalse(self.window.mask().isEmpty())
+        QtTest.QTest.qWait(40);self.assertEqual(self.window.y(),target.y());self.assertTrue(self.window.mask().isEmpty())
         self.window.dismiss();QtTest.QTest.qWait(30);self.window.open_at('home',1500,1030,40,40)
         QtTest.QTest.qWait(350);self.assertEqual(self.window.geometry(),target);self.assertTrue(self.window.mask().isEmpty());self.assertFalse(self.window.state()['motionRunning'])
         self.window.dismiss();deadline=QtCore.QElapsedTimer();deadline.start()

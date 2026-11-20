@@ -4,6 +4,9 @@
 
 struct Settings {
     bool residentOnLogin=true;
+    // followLauncherMaterial, animation, animationMs, liquid and darken are kept only
+    // for settings-file compatibility; nothing reads them any more (the drawer uses the
+    // shared popup glass and fade).
     bool followLauncherMaterial=true;
     QString translationLanguage=QStringLiteral("简体中文");
     int width=460, height=720, animationMs=200, liquid=100, darken=26, hideDelay=700, fontSize=11, contextLimitK=256, idleStopMinutes=10;

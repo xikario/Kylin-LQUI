@@ -12,7 +12,6 @@ class QLabel;
 class QPushButton;
 class QVBoxLayout;
 class QDialog;
-class QFileSystemWatcher;
 class ChatView;
 class Composer;
 class Edge;
@@ -32,6 +31,7 @@ public:
     Composer *composer() const{return input;}
     const Conversation &conversation() const{return history;}
     int glassBuilds() const{return builds;}
+    bool hasMaterial() const{return !material.isNull();}
     bool expanded() const{return opened;}
     qreal progress() const{return shown;}
     void applySettings(Settings value);
@@ -73,7 +73,10 @@ private:
     void place(qreal value);
     void positionEdge();
     void syncPanelEntry();
-    void refreshGlass();
+    void captureBackdrop();
+    void rebuildGlass();
+    void startGlass(const QImage &capture,const QByteArray &signature,const QSize &physical,qreal dpr);
+    void adoptGlass(const QByteArray &signature);
     void refreshColors();
     QRect preferencesGeometry(QSize size) const;
     void scheduleHide();
@@ -97,18 +100,18 @@ private:
     QWidget *replyModeRow=nullptr;
     QVBoxLayout *notices=nullptr;
     QPointer<QWidget> compactNotice;
-    QTimer hideTimer,wallpaperTimer;
+    QTimer hideTimer;
     // Keeps the hidden drawer's glass matched to the orb, so opening never
     // has to build it synchronously (290-420 ms on the FTG340).
-    QTimer warmTimer;int warmAttempts=0;bool warmedOnce=false;
+    QTimer warmTimer;int warmAttempts=0;bool warmedOnce=false,gpuWarmed=false;
     QVariantAnimation motion;
     QPointer<QDialog> preferences;
-    QImage material;
+    QImage material,previousMaterial,lastCapture;
+    QVariantAnimation fadeAnimation;qreal fade=1;
+    QByteArray lastSignature;QSize materialSize;quint64 openSerial=0;
     std::unique_ptr<NextKdeGlassView> launcherMaterial;
-    QString materialKey;
     QRect panelAnchor;
     bool panelHosted=false,lightSurface=false;
-    QFileSystemWatcher *watcher=nullptr;
     int answerIndex=-1,builds=0;
     qint64 compactDismissedAt=0;
     qreal shown=0;

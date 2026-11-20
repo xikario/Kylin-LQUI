@@ -88,7 +88,7 @@ void NextKdeGlassView::setBackdrop(const QImage &source)
     // explicit opening; the resident renderer retains its program and FBO.
     CohesiveGlass::configure(*m_optics);
     m_optics->setWallpaper(source);
-    m_image=m_optics->renderPanel(QRect(QPoint(),logical),m_radius);
+    m_image=CohesiveGlass::renderPopup(*m_optics,QRect(QPoint(),logical),m_radius);
     m_usedGpu=m_optics->usedGpu();
     if(!m_usedGpu) {
         setBackdropFast(source);
@@ -228,7 +228,7 @@ void NextKdeGlassView::startBackdropPreparation()
             m_optics->setPreparedWallpaper(result.material);
             const qreal dpr=source.devicePixelRatio();
             const QSize logical(qMax(1,qRound(source.width()/dpr)),qMax(1,qRound(source.height()/dpr)));
-            m_image=m_optics->renderPanel(QRect(QPoint(),logical),radius);
+            m_image=CohesiveGlass::renderPopup(*m_optics,QRect(QPoint(),logical),radius);
             m_usedGpu=m_optics->usedGpu();
             if(!m_usedGpu){m_requestedFast=true;startBackdropPreparation();return;}
         }

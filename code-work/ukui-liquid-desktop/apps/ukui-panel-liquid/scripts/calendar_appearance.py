@@ -133,6 +133,47 @@ class Material:
         if not base:return None
         return Path(base)/'kylin-lqui'/('calendar-surface-%dx%d@%d.png'%(size.width(),size.height(),round(dpr*100)))
 
+    @staticmethod
+    def backdrop_signature(captured):
+        """8x8 brightness fingerprint of what is behind the calendar."""
+        small=captured.toImage().scaled(8,8,C.Qt.IgnoreAspectRatio,C.Qt.SmoothTransformation).convertToFormat(G.QImage.Format_Grayscale8)
+        return ''.join('%02x'%small.pixelColor(x,y).red() for y in range(8) for x in range(8))
+
+    @staticmethod
+    def signature_close(a,b,limit=14):
+        if len(a)!=128 or len(b)!=128:return False
+        diffs=[abs(int(a[i:i+2],16)-int(b[i:i+2],16)) for i in range(0,128,2)]
+        return sum(diffs)/len(diffs)<=limit
+
+    # Brightness the GPU glass gives a backdrop of a given brightness, measured
+    # on the FTG340 (dark desktop 8->4, mid grey 128->64, white page 250->81).
+    GLASS_CURVE=((0,2),(8,4),(128,64),(250,81),(255,82))
+
+    @classmethod
+    def glass_brightness(cls,lum):
+        points=cls.GLASS_CURVE
+        for (x0,y0),(x1,y1) in zip(points,points[1:]):
+            if lum<=x1:return y0+(y1-y0)*(lum-x0)/max(x1-x0,1)
+        return points[-1][1]
+
+    def stand_in(self,captured,expected,dpr):
+        """Instant glass-like surface from the current backdrop (CPU blur +
+        brightness curve of the real glass), so the first frame already has the
+        right brightness and the real glass fades in without a colour jump."""
+        small=captured.toImage().scaled(max(1,expected.width()//12),max(1,expected.height()//12),C.Qt.IgnoreAspectRatio,C.Qt.SmoothTransformation).convertToFormat(G.QImage.Format_RGB32)
+        for y in range(small.height()):
+            for x in range(small.width()):
+                c=small.pixelColor(x,y);lum=.2126*c.red()+.7152*c.green()+.0722*c.blue()
+                scale=self.glass_brightness(lum)/max(lum,1.0)
+                small.setPixelColor(x,y,G.QColor(min(255,round(c.red()*scale)),min(255,round(c.green()*scale)),min(255,round(c.blue()*scale))))
+        image=small.scaled(expected,C.Qt.IgnoreAspectRatio,C.Qt.SmoothTransformation).convertToFormat(G.QImage.Format_ARGB32_Premultiplied)
+        out=G.QImage(expected,G.QImage.Format_ARGB32_Premultiplied);out.fill(C.Qt.transparent);out.setDevicePixelRatio(dpr)
+        path=G.QPainterPath();path.addRoundedRect(C.QRectF(self.rect()),self.radius,self.radius)
+        painter=G.QPainter(out);painter.setRenderHint(G.QPainter.Antialiasing);painter.setClipPath(path)
+        image.setDevicePixelRatio(dpr);painter.drawImage(C.QRectF(self.rect()),image)
+        painter.end()
+        return out
+
     def show_surface(self,image):
         """Crossfade a newly finished glass over the one on screen."""
         duration=round(180*effects_policy.motion_scale())
@@ -156,10 +197,15 @@ class Material:
         captured=screen.grabWindow(0,offset.x(),offset.y(),region.width(),region.height())
         self.material_builds+=1
         dpr=self.devicePixelRatioF();expected=C.QSize(round(self.width()*dpr),round(self.height()*dpr))
-        if self.surface.isNull() or self.surface.size()!=expected:
-            cache=self.surface_cache(expected,dpr);cached=G.QImage(str(cache)) if cache and cache.is_file() else G.QImage()
-            if not cached.isNull() and cached.size()==expected:
-                cached=cached.convertToFormat(G.QImage.Format_ARGB32_Premultiplied);cached.setDevicePixelRatio(dpr);self.surface=cached
+        signature=self.backdrop_signature(captured) if not captured.isNull() else ''
+        # Start from the saved glass only when the backdrop looks the same as
+        # when it was made; over a different backdrop (a white browser instead
+        # of the dark desktop) it would visibly change colour a moment later.
+        cache=self.surface_cache(expected,dpr);cached=G.QImage(str(cache)) if cache and cache.is_file() else G.QImage()
+        if not cached.isNull() and cached.size()==expected and self.signature_close(cached.text('backdrop'),signature):
+            cached=cached.convertToFormat(G.QImage.Format_ARGB32_Premultiplied);cached.setDevicePixelRatio(dpr);self.surface=cached
+        elif signature:
+            self.surface=self.stand_in(captured,expected,dpr)
         if self.surface.isNull() or self.surface.size()!=expected:
             self.surface=G.QImage(expected,G.QImage.Format_ARGB32_Premultiplied);self.surface.setDevicePixelRatio(dpr);self.surface.fill(C.Qt.transparent)
             painter=G.QPainter(self.surface);painter.setRenderHint(G.QPainter.Antialiasing);painter.setBrush(G.QColor('#16232e'));painter.setPen(G.QColor('#536573'))
@@ -195,7 +241,8 @@ class Material:
                         image.setDevicePixelRatio(dpr);self.show_surface(image)
                         cache=self.surface_cache(expected,dpr)
                         if cache:
-                            try:cache.parent.mkdir(parents=True,exist_ok=True);image.save(str(cache),'PNG')
+                            try:
+                                cache.parent.mkdir(parents=True,exist_ok=True);saved=G.QImage(image);saved.setText('backdrop',signature);saved.save(str(cache),'PNG')
                             except OSError:pass
             worker.deleteLater()
         worker.finished.connect(complete)

@@ -179,11 +179,21 @@ class CalendarTests(unittest.TestCase):
             window.toggle(anchor);QtTest.QTest.qWait(50);window.hide()
             dpr=window.devicePixelRatioF();expected=popup.C.QSize(round(window.width()*dpr),round(window.height()*dpr))
             cached=popup.G.QImage(expected,popup.G.QImage.Format_ARGB32_Premultiplied);cached.fill(popup.G.QColor(200,30,30,220))
-            path=window.surface_cache(expected,dpr);path.parent.mkdir(parents=True,exist_ok=True);self.assertTrue(cached.save(str(path),'PNG'))
+            screen=popup.W.QApplication.primaryScreen();geo=window.geometry()
+            backdrop=window.backdrop_signature(screen.grabWindow(0,geo.x(),geo.y(),geo.width(),geo.height()))
+            path=window.surface_cache(expected,dpr);path.parent.mkdir(parents=True,exist_ok=True)
+            cached.setText('backdrop',backdrop);self.assertTrue(cached.save(str(path),'PNG'))
             window.surface=popup.G.QImage()                       # as in a freshly started calendar process
             window.toggle(anchor);QtTest.QTest.qWait(50)
             centre=window.surface.pixelColor(expected.width()//2,expected.height()//2)
-            self.assertGreater(centre.red(),150,'reopening shows the cached glass, not the flat placeholder')
+            self.assertGreater(centre.red(),150,'same backdrop: reopening shows the saved glass')
+            window.hide()
+            other='ff'*64 if backdrop[:2]!='ff' else '00'*64       # saved over a very different backdrop
+            cached.setText('backdrop',other);self.assertTrue(cached.save(str(path),'PNG'))
+            window.toggle(anchor);QtTest.QTest.qWait(50)
+            centre=window.surface.pixelColor(expected.width()//2,expected.height()//2)
+            self.assertLess(centre.red(),150,'different backdrop: the stale glass is not shown')
+            self.assertGreater(centre.alpha(),200,'a stand-in made from the current backdrop is shown instead')
             fresh=popup.G.QImage(expected,popup.G.QImage.Format_ARGB32_Premultiplied);fresh.fill(popup.G.QColor(30,30,200,220))
             window.show()                                  # no WM under Xvfb: keep it visible for the fade
             window.show_surface(fresh)

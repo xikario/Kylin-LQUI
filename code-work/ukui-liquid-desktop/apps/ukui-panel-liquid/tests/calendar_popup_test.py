@@ -90,6 +90,76 @@ class CalendarTests(unittest.TestCase):
         self.assertEqual(records[0]['state'],'待审核')
         self.window.statuses={'5':'done'}; self.assertTrue(self.window.records()[0]['completed'])
 
+    def test_details_readable_with_white_system_palette(self):
+        # Reproduce the light native surface over the dark calendar using real pixels.
+        W, C, G = popup.W, popup.C, popup.G
+        light = self.window.palette()
+        light.setColor(G.QPalette.Window, G.QColor('white'))
+        light.setColor(G.QPalette.Base, G.QColor('white'))
+        self.window.setPalette(light)
+        text = ('项目例会通知。时间：11月25日 10:00。\n'
+                '议题：核对本周计划，讨论交付安排。<会议资料>\n') * 35
+        record = W.QListWidgetItem('项目例会')
+        record.setData(C.Qt.UserRole, {'title':text, 'date':'2026-11-25', 'time':'待办', 'state':'个人待办'})
+        self.window.list.addItem(record)
+        self.window.list.setCurrentItem(record)
+        observed = {}
+        def count_tones(widget):
+            image = widget.grab().toImage()
+            dark = bright = 0
+            for y in range(2, image.height()-2, 2):
+                for x in range(2, image.width()-2, 2):
+                    c = image.pixelColor(x, y)
+                    if c.alpha() < 220: continue
+                    dark += max(c.red(),c.green(),c.blue()) < 96
+                    bright += min(c.red(),c.green(),c.blue()) > 140
+            return dark, bright
+        def inspect():
+            dialog = self.app.activeModalWidget()
+            try:
+                body = dialog.findChild(W.QPlainTextEdit, 'agendaBody')
+                close = dialog.findChild(W.QPushButton)
+                observed['text'] = body.toPlainText()
+                observed['meta'] = dialog.findChild(W.QLabel, 'agendaMeta').text()
+                observed['body_tones'] = count_tones(body.viewport())
+                observed['button_tones'] = count_tones(close)
+                observed['scroll'] = body.verticalScrollBar().maximum()
+                observed['button'] = (close.text(), close.isVisibleTo(dialog))
+            except Exception as e:
+                observed['error'] = repr(e)
+            finally:
+                if dialog: dialog.reject()
+        C.QTimer.singleShot(100, inspect)
+        self.window.details()
+        self.assertNotIn('error', observed)
+        self.assertEqual(observed['text'], text)
+        self.assertIn('2026-11-25', observed['meta'])
+        self.assertIn('个人待办', observed['meta'])
+        self.assertGreater(observed['scroll'], 0)
+        self.assertEqual(observed['button'], ('关闭',True))
+        for dark,bright in (observed['body_tones'], observed['button_tones']):
+            self.assertGreater(dark, 10)
+            self.assertGreater(bright, 10)
+        short = '项目例会通知\n\n时间：11 月 25 日 10:00\n地点：二楼会议室\n\n议题：确认本周交付计划，梳理待协调事项，并确定每项工作的负责人。'
+        item = record.data(C.Qt.UserRole)
+        item['title'] = short
+        record.setData(C.Qt.UserRole, item)
+        C.QTimer.singleShot(80, inspect)
+        self.window.details()
+        self.assertEqual(observed['text'], short)
+        self.assertEqual(observed['scroll'], 0)
+
+    def test_delete_confirmation_defaults_to_cancel(self):
+        W, C = popup.W, popup.C
+        default = []
+        def cancel():
+            dialog = self.app.activeModalWidget()
+            default.extend(b.text() for b in dialog.findChildren(W.QPushButton) if b.isDefault())
+            QtTest.QTest.keyClick(dialog, C.Qt.Key_Escape)
+        C.QTimer.singleShot(80,cancel)
+        self.assertFalse(self.window.read_dialog('删除事项','删除所选事项？',confirm=True))
+        self.assertEqual(default,['取消'])
+
     def test_toggle_fades_window_opacity_in_place(self):
         window=self.window
         duration=popup.popup_style.fade_duration(True)

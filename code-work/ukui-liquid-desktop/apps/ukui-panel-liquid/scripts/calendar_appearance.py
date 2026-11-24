@@ -42,6 +42,80 @@ QToolTip {background:#eef4fa;color:#27394d;border:1px solid #a7bdcf;padding:6px;
 '''
 
 
+# The parent calendar uses light text on glass. Own the whole modal surface as
+# well: the OEM message box can otherwise supply a white background.
+DIALOG_STYLE = """
+QDialog#agendaDialog, QFrame#agendaSurface {background-color:#1c2c38;color:#f5f8fb;border:0;}
+QFrame#agendaSurface {border:1px solid #516572;border-radius:13px;}
+QLabel {background:transparent;color:#f5f8fb;border:0;font-size:14px;}
+QLabel#agendaHeading {font-size:18px;font-weight:600;}
+QLabel#agendaMeta {color:#b3e8de;font-size:13px;}
+QPlainTextEdit, QLineEdit, QDateEdit, QTimeEdit {background:#11232e;color:#f5f8fb;
+    border:1px solid #546b79;border-radius:7px;padding:6px;font-size:14px;
+    selection-background-color:#396a66;selection-color:white;}
+QPlainTextEdit#agendaBody {border:0;border-radius:8px;padding:4px;}
+QPushButton {background:#344a57;color:#f5f8fb;border:1px solid #657985;
+    border-radius:8px;padding:5px 15px;min-height:22px;font-size:13px;}
+QPushButton:hover {background:#405b69;} QPushButton:pressed {background:#283e4b;}
+QPushButton[primary="true"] {background:#a9e4d4;color:#112b28;border-color:#a9e4d4;font-weight:600;}
+QPushButton[primary="true"]:hover {background:#c4f3e6;}
+QPushButton:focus {border:2px solid #d2e8ff;}
+QCalendarWidget, QCalendarWidget QWidget, QCalendarWidget QAbstractItemView {
+    background:#223440;color:#f5f8fb;selection-background-color:#396a66;selection-color:white;}
+"""
+
+
+class AgendaDialog(W.QDialog):
+    def __init__(self, parent, title):
+        super().__init__(parent, C.Qt.Dialog | C.Qt.FramelessWindowHint)
+        self.setWindowTitle(title)
+        self.setObjectName('agendaDialog')
+        self.setAttribute(C.Qt.WA_TranslucentBackground)
+        palette = self.palette()
+        for group in (G.QPalette.Active, G.QPalette.Inactive):
+            for role, ink in ((G.QPalette.Window, '#1c2c38'), (G.QPalette.Base, '#11232e'),
+                              (G.QPalette.WindowText, '#f5f8fb'), (G.QPalette.Text, '#f5f8fb'),
+                              (G.QPalette.Button, '#344a57'), (G.QPalette.ButtonText, '#f5f8fb'),
+                              (G.QPalette.Highlight, '#396a66'), (G.QPalette.HighlightedText, '#ffffff')):
+                palette.setColor(group, role, G.QColor(ink))
+        self.setPalette(palette)
+        self.setStyleSheet(DIALOG_STYLE)
+        outer = W.QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        surface = W.QFrame(self)
+        surface.setObjectName('agendaSurface')
+        surface.setAttribute(C.Qt.WA_StyledBackground)
+        outer.addWidget(surface)
+        self.content = W.QVBoxLayout(surface)
+        self.content.setContentsMargins(18, 16, 18, 16)
+        self.content.setSpacing(12)
+        heading = W.QLabel(title)
+        heading.setObjectName('agendaHeading')
+        self.content.addWidget(heading)
+
+    def run(self):
+        try:
+            return self.exec_()
+        finally:
+            self.deleteLater()
+
+    def add_buttons(self, accept='关闭', cancel=False, cancel_default=False):
+        buttons = W.QDialogButtonBox(self)
+        ok = buttons.addButton(accept, W.QDialogButtonBox.AcceptRole)
+        primary = ok
+        if cancel:
+            back = buttons.addButton('取消', W.QDialogButtonBox.RejectRole)
+            if cancel_default:
+                primary = back
+                ok.setAutoDefault(False)
+        primary.setDefault(True)
+        primary.setProperty('primary', True)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        self.content.addWidget(buttons)
+        return ok
+
+
 # Each shape in its own design box: (box size, pen width, draw(painter)).
 def _polyline(*points):
     return lambda p:p.drawPolyline(G.QPolygonF([C.QPointF(x,y) for x,y in points]))
@@ -198,6 +272,13 @@ class Material:
         captured=screen.grabWindow(0,offset.x(),offset.y(),region.width(),region.height())
         self.material_builds+=1
         dpr=self.devicePixelRatioF();expected=C.QSize(round(self.width()*dpr),round(self.height()*dpr))
+        # X11 rounds both ends of the screen region. At fractional device
+        # ratios this can differ by one pixel from rounding the widget size.
+        if (not captured.isNull() and captured.size()!=expected
+                and abs(captured.width()-expected.width())<=1
+                and abs(captured.height()-expected.height())<=1):
+            captured=captured.scaled(expected, C.Qt.IgnoreAspectRatio, C.Qt.SmoothTransformation)
+            captured.setDevicePixelRatio(dpr)
         signature=self.backdrop_signature(captured) if not captured.isNull() else ''
         # Start from the saved glass only when the backdrop looks the same as
         # when it was made; over a different backdrop (a white browser instead

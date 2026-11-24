@@ -7,13 +7,14 @@ one minute unless an explicit write is still in flight.
 """
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import sys
 
 from PyQt5 import QtCore as C, QtGui as G, QtWidgets as W, QtDBus as D
 from calendar_data import ADAPTER
-from calendar_appearance import Material, STYLE, AgendaDelegate, icon
+from calendar_appearance import Material, STYLE, AgendaDelegate, AgendaDialog, icon
 import popup_style  # settings dir is on sys.path after calendar_appearance
 
 BUS = 'org.kylin.Lqui.Calendar'
@@ -302,20 +303,71 @@ class Calendar(Material, W.QWidget):
     def details(self, *_):
         item = self.current()
         if not item: return
-        W.QMessageBox.information(self, '事项详情', item.get('title','')+'\n\n'+item['date']+'  '+item.get('time','')+'\n'+item['state']+
-                                 ('\n工作待办由中台管理，提交审核后才可确认完成。' if item.get('workTaskId') else ''))
+        meta = [item['date']]
+        if item.get('time') and item['time'] != '待办':
+            meta.append(item['time'])
+        meta.append(item['state'])
+        text = item.get('title', '')
+        if item.get('workTaskId'):
+            text += '\n\n工作待办由中台管理，提交审核后才可确认完成。'
+        self.read_dialog('事项详情', text, '  ·  '.join(meta))
+
+    def read_dialog(self, title, text, meta='', confirm=False):
+        dialog = AgendaDialog(self, title)
+        if meta:
+            subtitle = W.QLabel(meta)
+            subtitle.setObjectName('agendaMeta')
+            subtitle.setTextFormat(C.Qt.PlainText)
+            subtitle.setWordWrap(True)
+            dialog.content.addWidget(subtitle)
+        body = W.QPlainTextEdit(dialog)
+        body.setObjectName('agendaBody')
+        body.setReadOnly(True)
+        body.setPlainText(text)
+        body.setWordWrapMode(G.QTextOption.WrapAtWordBoundaryOrAnywhere)
+        body.setAccessibleName(title + '正文')
+        body.setTabChangesFocus(True)
+        dialog.content.addWidget(body, 1)
+        ok = dialog.add_buttons('删除' if confirm else '关闭', cancel=confirm, cancel_default=confirm)
+        if not confirm:
+            ok.setFocus()
+        screen = W.QApplication.screenAt(self.frameGeometry().center()) or W.QApplication.primaryScreen()
+        area = screen.availableGeometry()
+        dialog.ensurePolished()
+        width = min(452, area.width() - 24)
+        chrome = dialog.content.contentsMargins()
+        count = dialog.content.count()
+        fixed_height = chrome.top() + chrome.bottom() + (count - 1) * dialog.content.spacing()
+        fixed_height += sum(dialog.content.itemAt(i).sizeHint().height() for i in range(count)
+                            if dialog.content.itemAt(i).widget() is not body)
+        measure = G.QTextDocument()
+        measure.setDefaultFont(body.font())
+        measure.setDefaultTextOption(body.document().defaultTextOption())
+        measure.setPlainText(text)
+        measure.setTextWidth(max(1, width - chrome.left() - chrome.right() - 16))
+        # Use document layout so explicit blank lines and unbroken identifiers
+        # contribute to the height. Long notices scroll inside the body.
+        body.setMinimumHeight(body.fontMetrics().height() + 18)
+        height = fixed_height + math.ceil(measure.size().height()) + 18
+        dialog.resize(width, min(height, area.height() - 24, 540))
+        rect = C.QRect(C.QPoint(), dialog.size())
+        rect.moveCenter(self.frameGeometry().center())
+        rect.moveLeft(max(area.left(), min(rect.left(), area.right()-rect.width()+1)))
+        rect.moveTop(max(area.top(), min(rect.top(), area.bottom()-rect.height()+1)))
+        dialog.move(rect.topLeft())
+        return dialog.run() == W.QDialog.Accepted
 
     def save(self, operation, change):
         if self.writing: return
         self.writing = True; self.actions()
         def done(result):
             self.writing = False; self.actions(); self.generation += 1; self.refresh()
-            if result.get('error'): W.QMessageBox.warning(self, '未保存', result['error'])
+            if result.get('error'): self.read_dialog('未保存', result['error'])
         self.worker({'operation':operation, 'database':self.database, 'change':change}, done)
 
     def editor(self, item=None):
-        item = item or {}; dialog = W.QDialog(self); dialog.setWindowTitle('编辑事项' if item else '新建个人待办')
-        form = W.QFormLayout(dialog); title = W.QPlainTextEdit(item.get('title','')); title.setMinimumWidth(300); title.setMaximumHeight(110)
+        item = item or {}; dialog = AgendaDialog(self, '编辑事项' if item else '新建个人待办')
+        form = W.QFormLayout(); dialog.content.addLayout(form); title = W.QPlainTextEdit(item.get('title','')); title.setMinimumWidth(300); title.setMaximumHeight(110)
         form.addRow('内容', title)
         date = W.QDateEdit(C.QDate.fromString(item.get('date',''), 'yyyy-MM-dd') if item else self.month.selectedDate()); date.setCalendarPopup(True)
         date.setDisplayFormat('yyyy-MM-dd'); form.addRow('日期', date)
@@ -326,10 +378,8 @@ class Calendar(Material, W.QWidget):
             start.setTime(C.QTime.fromString(editable['start'],'HH:mm')); end.setTime(C.QTime.fromString(editable['end'],'HH:mm'))
             form.addRow('开始', start); form.addRow('结束', end)
         if item.get('series'): form.addRow(W.QLabel('修改内容作用于整组重复日程；此处不调整重复规则。'))
-        buttons = W.QDialogButtonBox(W.QDialogButtonBox.Save | W.QDialogButtonBox.Cancel)
-        buttons.button(W.QDialogButtonBox.Save).setText('保存'); buttons.button(W.QDialogButtonBox.Cancel).setText('取消')
-        form.addRow(buttons); buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
-        if dialog.exec_() != W.QDialog.Accepted: return
+        dialog.add_buttons('保存', cancel=True)
+        if dialog.run() != W.QDialog.Accepted: return
         change = {'action':'edit' if item else 'add', 'title':title.toPlainText(), 'date':date.date().toString('yyyy-MM-dd')}
         if native:
             change.update(id=item['sourceId'], version=item['version'])
@@ -349,22 +399,28 @@ class Calendar(Material, W.QWidget):
         item = self.current()
         if not item or item.get('workTaskId') or self.writing: return
         text = '删除整组重复事项？' if item.get('series') else '删除所选事项？'
-        if W.QMessageBox.question(self,'删除事项',text,W.QMessageBox.Yes | W.QMessageBox.Cancel,W.QMessageBox.Cancel) == W.QMessageBox.Yes:
+        if self.read_dialog('删除事项', text, confirm=True):
             self.save('task' if item['kind']=='task' else 'native', {'action':'delete','id':item.get('sourceId',item['id']), 'version':item['version']})
 
     def complete(self):
         item = self.current()
         if not item or self.writing: return
         if item.get('workTaskId'):
-            note, accepted = W.QInputDialog.getText(self, '提交工作待办审核', '验收说明（审核通过后才显示已完成）：')
-            if not accepted or not note.strip(): return
+            dialog = AgendaDialog(self, '提交工作待办审核')
+            form = W.QFormLayout()
+            dialog.content.addLayout(form)
+            edit = W.QLineEdit()
+            form.addRow('验收说明（审核通过后才显示已完成）', edit)
+            dialog.add_buttons('提交', cancel=True)
+            if dialog.run() != W.QDialog.Accepted or not edit.text().strip(): return
+            note = edit.text()
             self.writing = True; self.actions()
             def done(result):
                 self.writing = False
                 if 'statuses' in result:
                     self.statuses = result['statuses']; self.save_work_cache()
                 self.render()
-                if result.get('error'): W.QMessageBox.warning(self,'提交审核',result['error'])
+                if result.get('error'): self.read_dialog('提交审核', result['error'])
             # Work adapter accepts plain UTF-8 note, not JSON.
             self.run(ADAPTER/'calendar_snapshot.py', ['--work-submit',item['workTaskId']], note, done, 12000)
         elif item['kind']=='task':
@@ -373,14 +429,14 @@ class Calendar(Material, W.QWidget):
             self.settings.sync(); keys = set(self.settings.value('desklets/calendar/completed',[]) or [])
             key = item['completionKey']; keys.discard(key) if key in keys else keys.add(key)
             self.settings.setValue('desklets/calendar/completed',sorted(keys)); self.settings.sync()
-            if self.settings.status()!=C.QSettings.NoError: W.QMessageBox.warning(self,'未保存','完成状态未能保存，请重试。')
+            if self.settings.status()!=C.QSettings.NoError: self.read_dialog('未保存', '完成状态未能保存，请重试。')
             self.render()
 
     def sync_holidays(self):
         self.sync_button.setEnabled(False)
         def done(result):
             self.sync_button.setEnabled(True); self.generation += 1; self.refresh()
-            W.QMessageBox.information(self,'节假日同步',result.get('message') or result.get('error','同步完成'))
+            self.read_dialog('节假日同步', result.get('message') or result.get('error','同步完成'))
         years = sorted({C.QDate.currentDate().year(), self.month.yearShown(), C.QDate.currentDate().year()+1})
         self.run(ADAPTER/'holiday_sync.py', [arg for y in years for arg in ('--year',str(y))], None, done, 35000)
 

@@ -444,25 +444,33 @@ private:
     }
     void runDropAction(const QString &id,const QString &manifest,const QJsonObject &payload) {
         const QRect anchor(mapToGlobal(QPoint()),size());
-        if(id=="todo"){addTodo(StationDrop::todoTitle(payload));StationDrop::discard(manifest);return;}
+        if(id=="todo"){addTodo(payload);StationDrop::discard(manifest);return;}
         sendDrop(manifest,anchor,0,id=="insert"?QString():id);
     }
     // Personal todos live in the calendar's own store; reuse its validated writer.
-    void addTodo(const QString &title) {
+    void addTodo(QJsonObject payload) {
+        const QString title=StationDrop::todoTitle(payload);
         if(title.isEmpty()){notify("没有可加入待办的文字");return;}
         const QString dir=qEnvironmentVariable("LQUI_CALENDAR_DIR",QDir::homePath()+"/.local/lib/ukui-panel-liquid/calendar");
-        if(!QFileInfo::exists(dir+"/calendar_data.py")){notify("未找到日历组件，无法加入待办");return;}
+        const QString helper=dir+"/drop_todo.py";
+        if(!QFileInfo::exists(helper)){notify("未找到待办日期组件");return;}
+        payload.insert("title",title);
         auto *process=new QProcess(this);
-        const QString code=QStringLiteral("import sys;sys.path.insert(0,sys.argv[1]);import calendar_data as c;"
-            "c.mutate_task(c.task_path(),{'action':'add','title':sys.argv[2],'date':sys.argv[3]})");
-        connect(process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this,process,title](int code,QProcess::ExitStatus status){
+        connect(process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this,process](int code,QProcess::ExitStatus status){
             process->deleteLater();
-            if(status==QProcess::NormalExit&&code==0)notify("已加入今天的待办："+(title.size()>24?title.left(23)+QChar(0x2026):title));
-            else notify("加入待办失败："+QString::fromUtf8(process->readAllStandardError()).trimmed().section('\n',-1).left(80));
+            if(status!=QProcess::NormalExit||code!=0){notify("加入待办失败，请重试");return;}
+            const auto result=QJsonDocument::fromJson(process->readAllStandardOutput()).object();
+            if(result.contains("date")&&result.value("date").isNull())return;  // User cancelled the date picker.
+            const QDate date=QDate::fromString(result.value("date").toString(),Qt::ISODate);
+            if(!date.isValid()){notify("无法确认待办保存结果，请查看日历");return;}
+            notify("已加入 "+date.toString("yyyy年M月d日")+" 的待办");
         });
-        connect(process,&QProcess::errorOccurred,this,[this,process](QProcess::ProcessError error){if(error==QProcess::FailedToStart){process->deleteLater();notify("无法启动待办写入");}});
-        QTimer::singleShot(5000,process,[process]{if(process->state()!=QProcess::NotRunning)process->kill();});
-        process->start("python3",{"-I","-c",code,dir,title,QDate::currentDate().toString(Qt::ISODate)});
+        connect(process,&QProcess::errorOccurred,this,[this,process](QProcess::ProcessError error){
+            if(error==QProcess::FailedToStart){process->deleteLater();notify("无法启动待办组件");}
+        });
+        process->start("/usr/bin/python3",{"-I",helper});
+        process->write(QJsonDocument(payload).toJson(QJsonDocument::Compact));
+        process->closeWriteChannel();
     }
     Display *dropDisplay=nullptr;Atom positionAtom=0,copyAtom=0;
     bool launching=false,dragOver=false;

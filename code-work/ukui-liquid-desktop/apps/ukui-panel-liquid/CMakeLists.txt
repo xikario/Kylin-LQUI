@@ -75,6 +75,9 @@ endforeach()
 enable_testing()
 find_program(CALENDAR_PYTHON_EXECUTABLE python3 PATHS /usr/bin NO_DEFAULT_PATH)
 if(CALENDAR_PYTHON_EXECUTABLE)
+    add_test(NAME panel-drop-todo-date
+        COMMAND ${CALENDAR_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/drop_todo_test.py -v)
+    set_tests_properties(panel-drop-todo-date PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 30)
     foreach(CALENDAR_SCALE 1 1.5 2)
         add_test(NAME calendar-popup-${CALENDAR_SCALE} COMMAND xvfb-run -a -s "-screen 0 2560x1600x24"
             dbus-run-session -- ${CALENDAR_PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/calendar_popup_test.py -v)

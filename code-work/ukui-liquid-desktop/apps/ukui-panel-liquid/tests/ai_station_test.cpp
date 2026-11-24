@@ -219,12 +219,14 @@ private slots:
         // Todo goes straight to the calendar's task store, without AI.
         QTemporaryDir calendarDir;QFile fakeData(calendarDir.path()+"/calendar_data.py");QVERIFY(fakeData.open(QIODevice::WriteOnly));
         fakeData.write("import json,os\ndef task_path(): return os.path.join(os.path.dirname(__file__),'tasks.json')\ndef mutate_task(path,request):\n    open(path,'w').write(json.dumps(request))\n");fakeData.close();
+        const QString resolver=QFINDTESTDATA("../scripts/drop_todo.py");
+        QVERIFY(!resolver.isEmpty());QVERIFY(QFile::copy(resolver,calendarDir.path()+"/drop_todo.py"));
         qputenv("LQUI_CALENDAR_DIR",calendarDir.path().toUtf8());
-        QMimeData todo;todo.setText("  周五前\n交周报  ");dropMenu=dropAndMenu(todo);QVERIFY(dropMenu);dropMenu->findChild<QAction*>("aiStationDrop_todo")->trigger();
+        QMimeData todo;todo.setText("  项目例会通知\n时间：2026年11月25日 10:00  ");dropMenu=dropAndMenu(todo);QVERIFY(dropMenu);dropMenu->findChild<QAction*>("aiStationDrop_todo")->trigger();
         QTRY_VERIFY(QFileInfo::exists(calendarDir.path()+"/tasks.json"));
         {QFile out(calendarDir.path()+"/tasks.json");QVERIFY(out.open(QIODevice::ReadOnly));const auto request=QJsonDocument::fromJson(out.readAll()).object();
-         QCOMPARE(request.value("action").toString(),QString("add"));QCOMPARE(request.value("title").toString(),QString("周五前 交周报"));
-         QCOMPARE(request.value("date").toString(),QDate::currentDate().toString(Qt::ISODate));}
+         QCOMPARE(request.value("action").toString(),QString("add"));QCOMPARE(request.value("title").toString(),QString("项目例会通知 时间：2026年11月25日 10:00"));
+         QCOMPARE(request.value("date").toString(),QString("2026-11-25"));}
         QTRY_VERIFY(orb->toolTip().contains("待办"));
         qunsetenv("LQUI_CALENDAR_DIR");
         // Dismissing the menu discards the staged drop.

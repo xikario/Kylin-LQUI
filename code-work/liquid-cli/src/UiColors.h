@@ -6,6 +6,14 @@
 // One contrast decision for the rendered glass, shared by all chat surfaces.
 struct UiColors {
     QString text,muted,accent,field,border,bubble,userBubble;
+    QString paper,wash;
+    static UiColors chat(bool light,const QString &id) {
+        if(id=="gemini")return {"#342A48","#695A78","#775194","#FFFFFF","#DDD3E5","#FFFCFF","#EBDFF6","#F9F6FC","#E9DDF6"};
+        if(id=="claude")return {"#452E29","#775D53","#965332","#FFFDFC","#E4D4C9","#FFFCFA","#F8E3D5","#FFF9F4","#F9E1CD"};
+        if(id=="fish")return {"#26384A","#536B80","#356486","#FCFEFF","#CEDCE7","#FCFEFF","#DCEDF9","#F5FAFD","#DCECF9"};
+        if(id=="gpt")return {"#293D39","#536C64","#396B5F","#FEFFFD","#CEDFD7","#FDFFFD","#DFEFE6","#F6FAF7","#DDEDE1"};
+        return forSurface(light);
+    }
     static QColor color(const QString &css) {
         if(!css.startsWith("rgba("))return QColor(css);
         const auto parts=css.mid(5,css.size()-6).split(',');
@@ -19,7 +27,7 @@ struct UiColors {
         for(auto group:{QPalette::Active,QPalette::Inactive,QPalette::Disabled}) {
             for(auto role:{QPalette::WindowText,QPalette::Text,QPalette::ButtonText})p.setColor(group,role,QColor(group==QPalette::Disabled?muted:text));
             p.setColor(group,QPalette::PlaceholderText,QColor(muted));
-            p.setColor(group,QPalette::Highlight,QColor("#397d73"));p.setColor(group,QPalette::HighlightedText,Qt::white);
+            p.setColor(group,QPalette::Highlight,QColor(paper.isEmpty()?QString("#397d73"):accent));p.setColor(group,QPalette::HighlightedText,Qt::white);
         }
         return p;
     }

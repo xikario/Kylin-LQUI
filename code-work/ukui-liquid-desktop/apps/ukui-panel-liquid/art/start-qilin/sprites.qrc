@@ -1,0 +1,9 @@
+<RCC>
+  <qresource prefix="/start-qilin">
+    <file alias="idle.png">frames/idle.png</file>
+    <file alias="roar.png">frames/roar.png</file>
+    <file alias="tail.png">frames/tail.png</file>
+    <file alias="leap.png">frames/leap.png</file>
+    <file alias="bow.png">frames/bow.png</file>
+  </qresource>
+</RCC>

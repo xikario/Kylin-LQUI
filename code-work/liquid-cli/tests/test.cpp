@@ -109,6 +109,47 @@ private slots:
         QVERIFY(layout.open(QIODevice::WriteOnly|QIODevice::Truncate));layout.write(before);layout.close();
         QCOMPARE(tile.size(),QSize(240,135));QVERIFY(qAbs(tile.pixelColor(120,60).red()-202)<6);
     }
+    void petChatUsesStationDrawerAtOrb(){
+        auto s=config();s.selectBackend("commandcode-cli");s.height=480;Drawer d(s,folder());
+        const QRect screen=QGuiApplication::primaryScreen()->availableGeometry();
+        const QRect orb(screen.right()-80,screen.bottom()-42,40,40);
+        d.PetChatAt("gemini",orb.x(),orb.y(),orb.width(),orb.height());
+        QTRY_VERIFY(d.expanded());QCOMPARE(d.windowTitle(),QString("和Gemini 星空猫聊天"));
+        QVERIFY(d.targetGeometry().bottom()<orb.top());QVERIFY(d.composer());
+        QVERIFY(d.findChild<QPushButton*>("newConversation"));QVERIFY(d.findChild<QPushButton*>("quickReplyMode"));
+        auto *portrait=d.findChild<QLabel*>("petPortrait");
+        auto *tools=d.findChild<QPushButton*>("petTools");
+        QVERIFY(portrait&&tools);QVERIFY(!portrait->isHidden());QVERIFY(!tools->isHidden());
+        auto *input=d.composer()->editor();
+        QVERIFY(input->property("backendPlaceholder").toString().contains("Gemini 星空猫"));
+        input->setPlainText("草稿");
+        d.PetChatAt("gemini",orb.x(),orb.y(),orb.width(),orb.height());
+        QVERIFY(!d.expanded());QCOMPARE(input->toPlainText(),QString("草稿"));
+        d.PetChatAt("gemini",orb.x(),orb.y(),orb.width(),orb.height());
+        QVERIFY(d.expanded());QCOMPARE(input->toPlainText(),QString("草稿"));input->clear();
+        const QVector<ChatMessage> messages={
+            {"user","把一张图片拖给你，可以做什么？",{},{},0},
+            {"assistant","可以提取图片里的文字，也可以翻译。把图片拖到我身上，松手就能选。",{},{},0},
+            {"user","文件夹也可以吗？",{},{},0},
+            {"assistant","可以。拖入文件夹后，选「梳理要点」或「加入待办」就好。",{},{},0}
+        };
+        d.chat()->reset(messages);
+        const QString preview=qEnvironmentVariable("LIQUID_CLI_ARTIFACT_DIR");
+        for(const auto &id:{QString("claude"),QString("fish"),QString("gpt"),QString("gemini")}) {
+            d.PetChatAt(id,orb.x(),orb.y(),orb.width(),orb.height());
+            const auto ink=QColor(UiColors::chat(true,id).text);
+            QCOMPARE(input->palette().color(QPalette::Text),ink);
+            for(auto *item:d.chat()->findChildren<QTextBrowser*>("messageText"))QCOMPARE(item->palette().color(QPalette::Text),ink);
+            if(!preview.isEmpty()){QDir().mkpath(preview);QTest::qWait(160);QVERIFY(d.grab().save(preview+"/pet-chat-"+id+".png"));}
+        }
+        input->setPlainText("未发送的草稿");
+        d.Hide();d.Show();QCOMPARE(d.windowTitle(),QString("AI小站"));
+        QVERIFY(portrait->isHidden());QVERIFY(tools->isHidden());
+        QCOMPARE(input->toPlainText(),QString("未发送的草稿"));
+        QCOMPARE(input->palette().color(QPalette::Text),QColor(UiColors::forSurface(false).text));
+        d.PetChatAt("gpt",orb.x(),orb.y(),orb.width(),orb.height());
+        QCOMPARE(d.windowTitle(),QString("和GPT 白龙聊天"));
+    }
     void settingsRoundTripAndMigration(){
         auto s=config();s.width=90000;s.height=-10;s.liquid=900;s.animation="spring";s.permissions="bogus";s.contextLimitK=1;s.normalize();
         QCOMPARE(s.width,1000);QCOMPARE(s.height,420);QCOMPARE(s.liquid,100);QCOMPARE(s.animation,QString("float"));

@@ -6,8 +6,10 @@
 #include "../../../shared/effects/EffectsPolicy.h"
 #include "ControlCenterLauncher.h"
 #include <QKeyEvent>
+#include <QBuffer>
 #include "StationMetrics.h"
 #include "StationDrop.h"
+#include "PetEntry.h"
 #include <QApplication>
 #include <QAbstractNativeEventFilter>
 #include <xcb/xcb.h>
@@ -40,10 +42,13 @@
 #include <QMouseEvent>
 #include <QSettings>
 #include <QStandardPaths>
-#include <QXmlStreamReader>
-#include <QRegularExpression>
+#include <QRandomGenerator>
+#include <array>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QDate>
+#include <QPointer>
+#include <QToolTip>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #undef FontChange
@@ -53,8 +58,10 @@
 #undef FocusIn
 #undef FocusOut
 #include <algorithm>
+#include <memory>
 #include <QDynamicPropertyChangeEvent>
 #include <QSet>
+#include <QVector>
 #include <dlfcn.h>
 
 namespace {
@@ -88,7 +95,11 @@ public:
     }
 protected:
     bool eventFilter(QObject *,QEvent *event) override {
-        if(event->type()==QEvent::Enter)play(false);
+        if(button->property("petFaceActive").toBool()){
+            if(motion.state()==QAbstractAnimation::Running){motion.stop();hide();setProperty("animating",false);}
+            return false;
+        }
+        if(event->type()==QEvent::Enter&&button->objectName()!="StartMenuButton")play(false);
         if(event->type()==QEvent::MouseButtonPress&&static_cast<QMouseEvent*>(event)->button()==Qt::LeftButton)play(true);
         if(event->type()==QEvent::DynamicPropertyChange&&static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName()=="liquidOrbPressFeedback")play(true);
         if(event->type()==QEvent::Resize)setGeometry(button->rect());
@@ -125,40 +136,94 @@ void paintOrbSurface(QPainter &p,const QRectF &r,bool hovered) {
 }
 class StartOrbFace final:public QObject {
 public:
-    explicit StartOrbFace(QWidget *button):QObject(button),button(button) {
-        setObjectName("lquiStartOrbFace");button->setCursor(Qt::PointingHandCursor);button->setAutoFillBackground(false);
-        button->setProperty("doNotAnimate",true);button->setProperty("useIconHighlightEffect",false);button->installEventFilter(this);
-        // Read the installed vector mark, not a low-resolution theme circle.
-        // No theme asset is rewritten or bundled into this project.
-        for(const auto &theme:{QIcon::themeName(),QString("ukui-icon-theme-fashion"),QString("ukui-icon-theme-classical")}) {
-            QFile file("/usr/share/icons/"+theme+"/scalable/apps/kylin-startmenu.svg");if(!file.open(QIODevice::ReadOnly))continue;
-            QXmlStreamReader xml(&file);
-            while(!xml.atEnd()) {
-                xml.readNext();if(!xml.isStartElement()||xml.name()!="polygon")continue;
-                const auto values=xml.attributes().value("points").toString().split(QRegularExpression("[ ,\\s]+"),QString::SkipEmptyParts);
-                if(values.size()<30)continue;QPolygonF polygon;
-                for(int i=0;i+1<values.size();i+=2)polygon<<QPointF(values[i].toDouble(),values[i+1].toDouble());
-                glyph.addPolygon(polygon);glyph.closeSubpath();break;
-            }
-            if(!glyph.isEmpty())break;
-        }
+    explicit StartOrbFace(QWidget *widget):QObject(widget),button(widget),idle(":/start-qilin/idle.png") {
+        setObjectName("lquiStartOrbFace");
+        button->setCursor(Qt::PointingHandCursor);
+        button->setAutoFillBackground(false);
+        button->setProperty("doNotAnimate",true);
+        button->setProperty("useIconHighlightEffect",false);
+        frameTimer.setParent(this);
+        frameTimer.setObjectName("qilinGestureFrame");
+        frameTimer.setSingleShot(true);
+        connect(&frameTimer,&QTimer::timeout,this,[this]{
+            ++frame;
+            if(frame>=frameCount())stop();
+            else {frameTimer.start();button->update();}
+        });
+        button->installEventFilter(this);
     }
 protected:
     bool eventFilter(QObject *,QEvent *event) override {
-        if(event->type()==QEvent::Enter||event->type()==QEvent::Leave||event->type()==QEvent::FocusIn||event->type()==QEvent::FocusOut)button->update();
-        if(event->type()!=QEvent::Paint)return false;
-        QPainter p(button);const qreal diameter=qMin(30,button->height()-8);const QPointF center(button->width()/2.,button->height()/2.);
-        const QRectF face(center-QPointF(diameter/2,diameter/2),QSizeF(diameter,diameter));
-        paintOrbSurface(p,face,button->underMouse()||button->hasFocus());
-        if(!glyph.isEmpty()) {
-            const QRectF bounds=glyph.boundingRect();const qreal scale=diameter*.68/qMax(bounds.width(),bounds.height());
-            p.translate(center);p.scale(scale,scale);p.translate(-bounds.center());p.setPen(Qt::NoPen);p.setBrush(QColor("#effcff"));p.drawPath(glyph);
-        } else {
-            p.setRenderHint(QPainter::SmoothPixmapTransform);p.drawPixmap(face.adjusted(3,3,-3,-3),QIcon::fromTheme("kylin-startmenu").pixmap(128,128),QRectF(0,0,128,128));
+        switch(event->type()){
+        case QEvent::Enter: start();button->update();break;
+        case QEvent::Leave:
+        case QEvent::Hide:
+        case QEvent::MouseButtonPress: stop();break;
+        case QEvent::DynamicPropertyChange:
+            if(static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName()=="liquidOrbPressFeedback")stop();
+            break;
+        case QEvent::FocusIn:case QEvent::FocusOut:button->update();break;
+        case QEvent::Paint:paint();return true;
+        default:break;
         }
-        return true;
+        return false;
     }
-private:QWidget *button;QPainterPath glyph;
+private:
+    struct Gesture {const char *image;int frameMs;QPixmap strip;};
+    QWidget *button;
+    QPixmap idle;
+    std::array<Gesture,4> moves{{
+        {":/start-qilin/roar.png",56,{}},{":/start-qilin/tail.png",52,{}},
+        {":/start-qilin/leap.png",48,{}},{":/start-qilin/bow.png",61,{}}
+    }};
+    std::array<int,4> order{{0,1,2,3}};
+    int next=4,last=-1,active=-1,frame=0;
+    QTimer frameTimer;
+
+    int drawGesture(){
+        if(next==int(order.size())){
+            auto *random=QRandomGenerator::global();
+            for(int i=int(order.size())-1;i>0;--i)std::swap(order[i],order[random->bounded(i+1)]);
+            if(order.front()==last)std::swap(order.front(),order[1+random->bounded(int(order.size())-1)]);
+            next=0;
+        }
+        last=order[next++];
+        return last;
+    }
+    int frameCount() const {
+        if(active<0)return 0;
+        const QPixmap &strip=moves[active].strip;
+        return strip.isNull()?0:strip.width()/strip.height();
+    }
+    void start(){
+        if(active>=0||QApplication::mouseButtons()!=Qt::NoButton)return;
+        QSettings settings(QDir::homePath()+"/.config/ukui/liquid-panel.ini",QSettings::IniFormat);
+        if(LquiEffects::reducedMotion(settings.value("appearance/reducedMotion",false).toBool()))return;
+        active=drawGesture();frame=0;
+        auto &move=moves[active];
+        if(move.strip.isNull())move.strip.load(QString::fromLatin1(move.image));
+        if(!frameCount()){active=-1;return;}
+        frameTimer.start(move.frameMs);
+    }
+    void stop(){
+        frameTimer.stop();active=-1;frame=0;button->update();
+    }
+    void paint() const {
+        QPainter p(button);
+        const QPointF center=QRectF(button->rect()).center();
+        const qreal diameter=qMin(30,button->height()-8);
+        const QRectF base(center-QPointF(diameter/2,diameter/2),QSizeF(diameter,diameter));
+        paintOrbSurface(p,base,button->underMouse()||button->hasFocus());
+        if(idle.isNull()){
+            p.drawPixmap(base.toAlignedRect(),QIcon::fromTheme("kylin-startmenu").pixmap(64,64));return;
+        }
+        const qreal side=qMin<qreal>(diameter*1.34,qMin(button->width(),button->height())-2);
+        const QRectF target(center-QPointF(side/2,side/2),QSizeF(side,side));
+        const QPixmap &strip=active>=0?moves[active].strip:idle;
+        const int tile=strip.height();
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+        p.drawPixmap(target,strip,QRectF(frame*tile,0,tile,tile));
+    }
 };
 class Orb final : public QAbstractButton, public QAbstractNativeEventFilter {
 public:
@@ -171,8 +236,57 @@ public:
             if(dropDisplay){positionAtom=XInternAtom(dropDisplay,"XdndPosition",False);copyAtom=XInternAtom(dropDisplay,"XdndActionCopy",False);qApp->installNativeEventFilter(this);}
         }
         new OrbAccent(this);
-        connect(this,&QAbstractButton::clicked,this,[this]{launch(false);});
+        refreshPet();
+        greetingEnd.setParent(this);greetingEnd.setObjectName("petGreetingEnd");
+        greetingEnd.setSingleShot(true);
+        connect(&greetingEnd,&QTimer::timeout,this,[this]{showGreetingFrame(greetingFrame+1);});
+        singleClick.setSingleShot(true);
+        connect(&singleClick,&QTimer::timeout,this,[this]{
+            refreshPet();if(petId.isEmpty())return;
+            auto call=QDBusMessage::createMethodCall("org.ukui.AiPet","/Pet","org.ukui.AiPet","Toggle");
+            call.setAutoStartService(false);
+            auto *watcher=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call,1000),this);
+            connect(watcher,&QDBusPendingCallWatcher::finished,this,[this](QDBusPendingCallWatcher *w){
+                const QDBusPendingReply<> reply=*w;w->deleteLater();
+                if(!reply.isError())return;
+                const auto error=reply.error().name();
+                if(error=="org.freedesktop.DBus.Error.ServiceUnknown"||error=="org.freedesktop.DBus.Error.NameHasNoOwner"||error=="org.freedesktop.DBus.Error.UnknownObject")
+                    if(!QProcess::startDetached("gtk-launch",{"kylin-ai-pet"}))notify("无法启动 AI 宠物");
+            });
+        });
+        connect(this,&QAbstractButton::clicked,this,[this]{
+            refreshPet();
+            if(petId.isEmpty()){launch(false);return;}
+            singleClick.start(QApplication::doubleClickInterval());
+        });
     }
+    void refreshPet() {
+        QSettings cfg(PetEntry::path(),QSettings::IniFormat);
+        QString next=cfg.value("entry/mode").toString()=="pet"?cfg.value("entry/character","claude").toString():QString();
+        if(PetEntry::label(next).isEmpty())next.clear();
+        if(next==petId)return;
+        petId=next;
+        const QString avatar=PetEntry::icon(next);
+        petFace=avatar.isEmpty()?QPixmap():QPixmap(avatar);
+        loadGreeting(avatar);
+        setProperty("petFaceActive",!petFace.isNull());
+        const QString name=next.isEmpty()?"AI小站":PetEntry::label(next);
+        setAccessibleName(name);setToolTip(next.isEmpty()?QStringLiteral("AI小站 · 右键截图与设置"):QString());update();
+    }
+    void petChat(const QString &id) {
+        const QRect anchor(mapToGlobal(QPoint()),size());
+        auto call=QDBusMessage::createMethodCall("org.ukui.LiquidCli","/Cli","org.ukui.LiquidCli","PetChatAt");
+        call.setArguments({id,anchor.x(),anchor.y(),anchor.width(),anchor.height()});
+        auto *watcher=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call,1200),this);
+        connect(watcher,&QDBusPendingCallWatcher::finished,this,[this,id,anchor](QDBusPendingCallWatcher *w){
+            const QDBusPendingReply<> reply=*w;w->deleteLater();if(!reply.isError())return;
+            if(reply.error().name()=="org.freedesktop.DBus.Error.ServiceUnknown"||reply.error().name()=="org.freedesktop.DBus.Error.NameHasNoOwner"){
+                const QString a=QString("%1,%2,%3,%4").arg(anchor.x()).arg(anchor.y()).arg(anchor.width()).arg(anchor.height());
+                QProcess::startDetached(launcher(),{"--pet-chat",id,"--anchor",a});
+            }else notify("无法打开宠物对话");
+        });
+    }
+    void petDropMenu(const QString &manifest,const QPoint &point) { showDropMenu(manifest,QRect(point,QSize(1,1))); }
     ~Orb() override {if(dropDisplay){qApp->removeNativeEventFilter(this);XCloseDisplay(dropDisplay);}}
     bool nativeEventFilter(const QByteArray &type,void *message,long *) override {
         if(!dropDisplay||type!="xcb_generic_event_t"||!isVisible())return false;
@@ -189,17 +303,41 @@ public:
         return false;
     }
 protected:
-    void dragEnterEvent(QDragEnterEvent *event) override {if((event->possibleActions()&Qt::CopyAction)&&StationDrop::accepts(event->mimeData())){dragOver=true;event->setDropAction(Qt::CopyAction);event->accept();update();}}
+    void mouseDoubleClickEvent(QMouseEvent *e) override {
+        refreshPet();
+        if(e->button()==Qt::LeftButton&&!petId.isEmpty()){
+            singleClick.stop();skipRelease=true;setDown(false);petChat(petId);e->accept();return;
+        }
+        QAbstractButton::mouseDoubleClickEvent(e);
+    }
+    void mouseReleaseEvent(QMouseEvent *e) override {
+        if(skipRelease&&e->button()==Qt::LeftButton){skipRelease=false;setDown(false);e->accept();return;}
+        QAbstractButton::mouseReleaseEvent(e);
+    }
+    void dragEnterEvent(QDragEnterEvent *event) override {if((event->possibleActions()&Qt::CopyAction)&&StationDrop::accepts(event->mimeData())){setDragOver(true);event->setDropAction(Qt::CopyAction);event->accept();}}
     void dragMoveEvent(QDragMoveEvent *event) override {if((event->possibleActions()&Qt::CopyAction)&&StationDrop::accepts(event->mimeData())){event->setDropAction(Qt::CopyAction);event->accept();}}
-    void dragLeaveEvent(QDragLeaveEvent *event) override {dragOver=false;update();event->accept();}
+    void dragLeaveEvent(QDragLeaveEvent *event) override {setDragOver(false);event->accept();}
     void dropEvent(QDropEvent *event) override {
         if(!(event->possibleActions()&Qt::CopyAction)){event->ignore();return;}
-        dragOver=false;update();QString error;const auto manifest=StationDrop::prepare(event->mimeData(),&error);
-        if(manifest.isEmpty()){if(!error.isEmpty())setToolTip(error);event->ignore();return;}
-        event->setDropAction(Qt::CopyAction);event->accept();sendDrop(manifest,QRect(mapToGlobal(QPoint()),size()));
+        setDragOver(false);QString error;const auto manifest=StationDrop::prepare(event->mimeData(),&error);
+        if(manifest.isEmpty()){if(!error.isEmpty())notify(error);event->ignore();return;}
+        event->setDropAction(Qt::CopyAction);event->accept();
+        // The drag source is still waiting for this event to return.
+        QTimer::singleShot(0,this,[this,manifest]{showDropMenu(manifest);});
     }
-    void enterEvent(QEvent *e) override{update();QAbstractButton::enterEvent(e);}
-    void leaveEvent(QEvent *e) override{update();QAbstractButton::leaveEvent(e);}
+    void enterEvent(QEvent *e) override {
+        if(!greetingHolds.isEmpty()&&QApplication::mouseButtons()==Qt::NoButton&&!LquiEffects::reducedMotion())
+            showGreetingFrame(0);
+        else update();
+        QAbstractButton::enterEvent(e);
+    }
+    void leaveEvent(QEvent *e) override {
+        showGreetingFrame(-1);QAbstractButton::leaveEvent(e);
+    }
+    void hideEvent(QHideEvent *e) override {
+        if(greetingFrame>=0)showGreetingFrame(-1);
+        QAbstractButton::hideEvent(e);
+    }
     void contextMenuEvent(QContextMenuEvent *e) override {
         auto *m=new QMenu(this);m->setAttribute(Qt::WA_DeleteOnClose);
         m->addAction("打开 AI小站",this,[this]{launch(false);});
@@ -219,12 +357,113 @@ protected:
     }
     void paintEvent(QPaintEvent *) override {
         QPainter p(this);p.setRenderHint(QPainter::Antialiasing);
-        const qreal size=qMin(30,height()-8);const QPointF c(width()/2.,height()/2.);QRectF r(c.x()-size/2,c.y()-size/2,size,size);
-        paintOrbSurface(p,r,underMouse()||hasFocus());
+        const qreal size=qMin(petId.isEmpty()||petId=="claude"?30:35,height()-6);const QPointF c(width()/2.,height()/2.);QRectF r(c.x()-size/2,c.y()-size/2,size,size);
+        if(!petFace.isNull()) {
+            p.setRenderHint(QPainter::SmoothPixmapTransform);
+            if(greetingFrame>=0) {
+                const int side=greetingStrip.height();
+                p.drawPixmap(r,greetingStrip,QRectF(greetingFrame*side,0,side,side));
+            } else p.drawPixmap(r,petFace,QRectF(petFace.rect()));
+        } else paintOrbSurface(p,r,underMouse()||hasFocus());
         if(dragOver){p.setBrush(Qt::NoBrush);p.setPen(QPen(QColor("#a0f3db"),1.6));p.drawEllipse(r.adjusted(-3,-3,3,3));}
-        QFont font=p.font();font.setPixelSize(10);font.setBold(true);p.setFont(font);p.setPen(isDown()?QColor("#dcf5ff"):Qt::white);p.drawText(r,Qt::AlignCenter,"AI");
+        QFont font=p.font();font.setPixelSize(10);font.setBold(true);p.setFont(font);p.setPen(isDown()?QColor("#dcf5ff"):Qt::white);if(petFace.isNull())p.drawText(r,Qt::AlignCenter,"AI");
+        if(dragOver) {
+            // "+" badge: the orb will take what is being dragged.
+            const qreal badge=7.;const QPointF at(r.right()-1,r.bottom()-1);
+            p.setPen(QPen(QColor(10,60,45,170),1.));p.setBrush(QColor("#38d39f"));p.drawEllipse(at,badge,badge);
+            p.setPen(QPen(Qt::white,1.8,Qt::SolidLine,Qt::RoundCap));
+            p.drawLine(at-QPointF(3.6,0),at+QPointF(3.6,0));p.drawLine(at-QPointF(0,3.6),at+QPointF(0,3.6));
+        }
     }
 private:
+    QTimer singleClick;bool skipRelease=false;
+    QTimer greetingEnd;
+    QString petId;
+    QPixmap petFace,greetingStrip;
+    QVector<int> greetingHolds;
+    int greetingFrame=-1;
+
+    // Decode just the selected role's tiny strip when switching pets. The
+    // one-shot timer is only armed for a visible gesture, never at rest.
+    void loadGreeting(const QString &avatar) {
+        greetingEnd.stop();greetingFrame=-1;
+        greetingHolds.clear();greetingStrip=QPixmap();
+        if(petFace.isNull())return;
+        const QDir dir=QFileInfo(avatar).dir();
+        QFile file(dir.filePath("../greetings.json"));
+        if(!file.open(QIODevice::ReadOnly))return;
+        const auto role=QJsonDocument::fromJson(file.readAll()).object().value(petId).toObject();
+        const QString image=role.value("file").toString();
+        const auto holds=role.value("holdMs").toArray();
+        if(image.isEmpty()||QFileInfo(image).fileName()!=image||holds.isEmpty())return;
+        QVector<int> delays;
+        for(const auto &value:holds) {
+            const int ms=value.toInt();
+            if(ms<=0)return;
+            delays.append(ms);
+        }
+        const QPixmap strip(dir.filePath(image));
+        if(strip.isNull()||strip.width()!=qint64(strip.height())*delays.size())return;
+        greetingStrip=strip;greetingHolds=delays;
+    }
+    void showGreetingFrame(int index) {
+        greetingEnd.stop();greetingFrame=-1;
+        if(index>=0&&index<greetingHolds.size()){
+            greetingFrame=index;greetingEnd.start(greetingHolds.at(index));
+        }
+        update();
+    }
+    void setDragOver(bool on){if(dragOver==on)return;dragOver=on;setProperty("dropHint",on);update();}
+    void notify(const QString &text) {
+        setToolTip(text);QToolTip::showText(mapToGlobal(QPoint(width()/2,0)),text,this);
+        QTimer::singleShot(4000,this,[this]{setToolTip(petId.isEmpty()?QStringLiteral("AI小站 · 右键截图与设置"):QString());});
+    }
+    // Quick actions for what was just dropped, shown at the orb.
+    void showDropMenu(const QString &manifest,const QRect &petAnchor={}) {
+        for(auto *old:findChildren<QMenu*>("aiStationDropMenu"))old->close();
+        const auto payload=StationDrop::read(manifest);if(payload.isEmpty())return;
+        auto *menu=new QMenu(this);menu->setObjectName("aiStationDropMenu");menu->setAttribute(Qt::WA_DeleteOnClose);
+        auto chosen=std::make_shared<bool>(false);
+        for(const auto &action:StationDrop::actions(payload)) {
+            if(action.id=="insert")menu->addSeparator();
+            auto *item=menu->addAction(action.label);item->setObjectName("aiStationDrop_"+action.id);
+            connect(item,&QAction::triggered,this,[this,menu,chosen,manifest,payload,id=action.id]{
+                *chosen=true;menu->close();runDropAction(id,manifest,payload);
+            });
+        }
+        connect(menu,&QMenu::aboutToHide,this,[chosen,manifest]{
+            // A click on an item hides the menu before it triggers; decide after.
+            QTimer::singleShot(0,[chosen,manifest]{if(!*chosen)StationDrop::discard(manifest);});
+        });
+        menu->ensurePolished();const QSize size=menu->sizeHint();
+        const QRect orb=petAnchor.isValid()?petAnchor:QRect(mapToGlobal(QPoint()),this->size());
+        const QScreen *screen=QGuiApplication::screenAt(orb.center());const QRect area=screen?screen->availableGeometry():QRect(orb.center()-QPoint(2000,2000),QSize(4000,4000));
+        int y=orb.top()-size.height()-8;if(y<area.top())y=orb.bottom()+8;
+        const int x=qBound(area.left(),orb.center().x()-size.width()/2,qMax(area.left(),area.right()-size.width()));
+        menu->popup(QPoint(x,y));
+    }
+    void runDropAction(const QString &id,const QString &manifest,const QJsonObject &payload) {
+        const QRect anchor(mapToGlobal(QPoint()),size());
+        if(id=="todo"){addTodo(StationDrop::todoTitle(payload));StationDrop::discard(manifest);return;}
+        sendDrop(manifest,anchor,0,id=="insert"?QString():id);
+    }
+    // Personal todos live in the calendar's own store; reuse its validated writer.
+    void addTodo(const QString &title) {
+        if(title.isEmpty()){notify("没有可加入待办的文字");return;}
+        const QString dir=qEnvironmentVariable("LQUI_CALENDAR_DIR",QDir::homePath()+"/.local/lib/ukui-panel-liquid/calendar");
+        if(!QFileInfo::exists(dir+"/calendar_data.py")){notify("未找到日历组件，无法加入待办");return;}
+        auto *process=new QProcess(this);
+        const QString code=QStringLiteral("import sys;sys.path.insert(0,sys.argv[1]);import calendar_data as c;"
+            "c.mutate_task(c.task_path(),{'action':'add','title':sys.argv[2],'date':sys.argv[3]})");
+        connect(process,qOverload<int,QProcess::ExitStatus>(&QProcess::finished),this,[this,process,title](int code,QProcess::ExitStatus status){
+            process->deleteLater();
+            if(status==QProcess::NormalExit&&code==0)notify("已加入今天的待办："+(title.size()>24?title.left(23)+QChar(0x2026):title));
+            else notify("加入待办失败："+QString::fromUtf8(process->readAllStandardError()).trimmed().section('\n',-1).left(80));
+        });
+        connect(process,&QProcess::errorOccurred,this,[this,process](QProcess::ProcessError error){if(error==QProcess::FailedToStart){process->deleteLater();notify("无法启动待办写入");}});
+        QTimer::singleShot(5000,process,[process]{if(process->state()!=QProcess::NotRunning)process->kill();});
+        process->start("python3",{"-I","-c",code,dir,title,QDate::currentDate().toString(Qt::ISODate)});
+    }
     Display *dropDisplay=nullptr;Atom positionAtom=0,copyAtom=0;
     bool launching=false,dragOver=false;
     void launchCapture(){
@@ -241,18 +480,21 @@ private:
             if(!QProcess::startDetached(launcher(),{"--capture","--anchor",a}))setToolTip("无法打开 AI小站截图");
         });
     }
-    void sendDrop(const QString &manifest,const QRect &anchor,int attempt=0) {
+    void sendDrop(const QString &manifest,const QRect &anchor,int attempt=0,const QString &action=QString()) {
         if(!QFileInfo::exists(manifest))return;
-        auto call=QDBusMessage::createMethodCall("org.ukui.LiquidCli","/Cli","org.ukui.LiquidCli","ImportDropAt");
-        call.setArguments({manifest,anchor.x(),anchor.y(),anchor.width(),anchor.height()});
+        auto call=QDBusMessage::createMethodCall("org.ukui.LiquidCli","/Cli","org.ukui.LiquidCli",action.isEmpty()?"ImportDropAt":"ImportDropActionAt");
+        if(action.isEmpty())call.setArguments({manifest,anchor.x(),anchor.y(),anchor.width(),anchor.height()});
+        else call.setArguments({manifest,action,anchor.x(),anchor.y(),anchor.width(),anchor.height()});
         auto *watcher=new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(call,1500),this);
-        connect(watcher,&QDBusPendingCallWatcher::finished,this,[this,manifest,anchor,attempt](QDBusPendingCallWatcher *w){
+        connect(watcher,&QDBusPendingCallWatcher::finished,this,[this,manifest,anchor,attempt,action](QDBusPendingCallWatcher *w){
             const QDBusPendingReply<bool> reply=*w;w->deleteLater();if(!reply.isError()){if(!reply.value())setToolTip("AI小站未能接收内容，请重新拖入");return;}
             const auto name=reply.error().name();
             if(name=="org.freedesktop.DBus.Error.ServiceUnknown"||name=="org.freedesktop.DBus.Error.NameHasNoOwner") {
                 const QString a=QString("%1,%2,%3,%4").arg(anchor.x()).arg(anchor.y()).arg(anchor.width()).arg(anchor.height());
-                if(!QProcess::startDetached(launcher(),{"--drop",manifest,"--anchor",a}))setToolTip("无法启动 AI小站接收拖放");
-            } else if(attempt<12&&(name=="org.freedesktop.DBus.Error.UnknownObject"||name=="org.freedesktop.DBus.Error.NoReply"))QTimer::singleShot(150,this,[this,manifest,anchor,attempt]{sendDrop(manifest,anchor,attempt+1);});
+                QStringList arguments{"--drop",manifest,"--anchor",a};if(!action.isEmpty())arguments<<"--drop-action"<<action;
+                if(!QProcess::startDetached(launcher(),arguments))setToolTip("无法启动 AI小站接收拖放");
+            } else if(!action.isEmpty()&&name=="org.freedesktop.DBus.Error.UnknownMethod")sendDrop(manifest,anchor,attempt); // older AI小站: just insert
+            else if(attempt<12&&(name=="org.freedesktop.DBus.Error.UnknownObject"||name=="org.freedesktop.DBus.Error.NoReply"))QTimer::singleShot(150,this,[this,manifest,anchor,attempt,action]{sendDrop(manifest,anchor,attempt+1,action);});
             else setToolTip("AI小站未能接收内容，请重新拖入");
         });
     }
@@ -405,6 +647,7 @@ protected:
     }
 private:
     void sample() {
+        orb->refreshPet();
         const qint64 ms=clock.elapsed();const auto net=metrics.network();const auto rates=metrics.updateNetwork(net,ms);
         if(lastThermal<0||ms-lastThermal>=10000){thermal=metrics.temperature(ms);lastThermal=ms;}
         readout->setValues(thermal,rates);face->refresh();++samples;
@@ -662,6 +905,45 @@ QString PanelAiStation::State() const {
         const auto r=w->windowHandle()->geometry();calendars.append(QJsonObject{{"x",r.x()},{"y",r.y()},{"width",r.width()},{"height",r.height()},{"dpr",w->devicePixelRatioF()},{"windowId",QString::number(w->winId())}});
     }
     return QString::fromUtf8(QJsonDocument(QJsonObject{{"clusters",array},{"orbs",orbs},{"desktopCorners",edge},{"systemEntries",systemEntries},{"calendars",calendars},{"calendarGeometryRedirects",qApp->property("lquiCalendarGeometryRedirects").toInt()},{"calendarPreloadInherited",qEnvironmentVariable("LD_PRELOAD").contains("liblqui-calendar-geometry-bridge.so")}}).toJson(QJsonDocument::Compact));
+}
+
+bool PanelAiStation::OpenPetChat(const QString &character) {
+    if(PetEntry::label(character).isEmpty())return false;
+    for(auto cluster:widgets)if(cluster&&cluster->isVisible()){
+        auto *orb=cluster->findChild<QAbstractButton*>("aiStationOrb");
+        if(orb){static_cast<Orb*>(orb)->petChat(character);return true;}
+    }
+    return false;
+}
+
+bool PanelAiStation::PetDrop(const QString &description) {
+    if(description.size()>24*1024*1024)return false;
+    const auto data=QJsonDocument::fromJson(description.toUtf8()).object();
+    QMimeData mime;QList<QUrl> urls;
+    for(const auto &value:data.value("files").toArray()) {
+        const QString file=value.toString();
+        if(QDir::isAbsolutePath(file))urls<<QUrl::fromLocalFile(file);
+    }
+    for(const auto &value:data.value("links").toArray()) {
+        const QUrl url(value.toString());
+        if(url.isValid()&&!url.scheme().isEmpty()&&!urls.contains(url))urls<<url;
+    }
+    if(!urls.isEmpty())mime.setUrls(urls);
+    if(data.contains("text"))mime.setText(data.value("text").toString());
+    if(data.contains("image")) {
+        const QByteArray bytes=QByteArray::fromBase64(data.value("image").toString().toLatin1());
+        QBuffer buffer;buffer.setData(bytes);buffer.open(QIODevice::ReadOnly);
+        QImageReader reader(&buffer);const QSize size=reader.size();
+        if(!size.isValid()||qint64(size.width())*size.height()>32000000)return false;
+        const QImage image=reader.read();if(image.isNull())return false;mime.setImageData(image);
+    }
+    for(auto cluster:widgets)if(cluster) {
+        auto *orb=cluster->findChild<QAbstractButton*>("aiStationOrb");if(!orb)continue;
+        const QString manifest=StationDrop::prepare(&mime);
+        if(manifest.isEmpty())return false;
+        static_cast<Orb*>(orb)->petDropMenu(manifest,QCursor::pos());return true;
+    }
+    return false;
 }
 
 bool PanelAiStation::OpenCalendar(){

@@ -71,7 +71,7 @@ void AcpClient::launch() {
             });
             connect(process,QOverload<int,QProcess::ExitStatus>::of(&QProcess::finished),this,[this]{processGone(settings.cliName+" 已退出；请检查 CLI 安装和登录配置");});
             connect(process,&QProcess::errorOccurred,this,[this](QProcess::ProcessError e){if(e==QProcess::FailedToStart)processGone("无法启动 "+settings.cliName);});
-            const QString suffix=settings.backend=="qwen"?" --acp":" --profile acp";
+            const QString suffix=settings.backend=="qwen"?" --acp":settings.backend=="commandcode-cli"?" acp":" --profile acp";
             process->start(helper,{"--run",unit,hex(settings.directory),hex("exec "+settings.command+suffix)});
             phase=Initializing;initialize();
         }
@@ -93,7 +93,7 @@ void AcpClient::initialize() {
 QString AcpClient::failure(const QJsonObject &error) const {
     QString text=error.value("message").toString("CLI 返回错误");
     if(error.value("code").toInt()==-32000||text.contains("auth",Qt::CaseInsensitive)||text.contains("API key",Qt::CaseInsensitive))
-        text+=settings.backend=="qwen"?"；请先在终端运行 qwen 完成登录或配置模型提供商":"；请先配置 DeepSeek Harness 的模型提供商和凭据";
+        text+=settings.backend=="qwen"?"；请先在终端运行 qwen 完成登录或配置模型提供商":settings.backend=="commandcode-cli"?"；请先在终端运行 cmd login 登录 Command Code":"；请先配置 DeepSeek Harness 的模型提供商和凭据";
     return text.left(700);
 }
 void AcpClient::openSession() {

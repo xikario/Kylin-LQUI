@@ -9,6 +9,7 @@
 #include "Conversation.h"
 #include "AgentClient.h"
 class QLabel;
+class QBoxLayout;
 class QPushButton;
 class QVBoxLayout;
 class QDialog;
@@ -45,6 +46,7 @@ public:
     void prepareResident();
     QWidget *settingsBridgeRoot();
 public slots:
+    Q_SCRIPTABLE void PetChatAt(const QString &character,int x,int y,int width,int height);
     Q_SCRIPTABLE void Show();
     Q_SCRIPTABLE void Hide();
     Q_SCRIPTABLE void Toggle();
@@ -53,6 +55,8 @@ public slots:
     Q_SCRIPTABLE void Preferences();
     Q_SCRIPTABLE void PreferencesAt(int x,int y,int width,int height);
     Q_SCRIPTABLE bool ImportDropAt(const QString &manifest,int x,int y,int width,int height);
+    // A quick action chosen at the orb after a drop: send it with a matching prompt.
+    Q_SCRIPTABLE bool ImportDropActionAt(const QString &manifest,const QString &action,int x,int y,int width,int height);
     Q_SCRIPTABLE void Reload();
     Q_SCRIPTABLE QString State() const;
     Q_SCRIPTABLE void Quit();
@@ -64,6 +68,9 @@ protected:
     void keyPressEvent(QKeyEvent *) override;
     bool eventFilter(QObject *,QEvent *) override;
 private:
+    QString chatCharacter,turnCharacter;
+    void setChatCharacter(const QString &id);
+    void reactPet(const QString &phase,const QString &text={});
     friend class Edge;
     void buildInterface();
     void connectClient();
@@ -95,6 +102,9 @@ private:
     Edge *edge=nullptr;
     ChatView *view=nullptr;
     Composer *input=nullptr;
+    QBoxLayout *identityLayout=nullptr;
+    QLabel *petPortrait=nullptr;
+    QPushButton *petTools=nullptr;
     QLabel *statusLabel=nullptr,*contextLabel=nullptr,*replyModeLabel=nullptr;
     QPushButton *pin=nullptr,*contextButton=nullptr,*quickReplyButton=nullptr,*newConversationButton=nullptr;
     QWidget *replyModeRow=nullptr;

@@ -20,6 +20,8 @@ struct Settings {
     bool normalFast=false,quickFast=false;
     QString serviceTierForTurn; // Runtime override only; never changes global CLI settings.
     QJsonObject backendProfiles; // Each backend keeps its command and model selection.
+    // Command Code provider key. Kept only in the user's 0600 settings file, never in source.
+    QString commandCodeApiKey;
     static QString backendName(const QString &id);
     static QString defaultCommand(const QString &id);
     void selectBackend(const QString &id);

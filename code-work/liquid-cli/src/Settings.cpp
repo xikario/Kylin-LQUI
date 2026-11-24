@@ -38,12 +38,14 @@ Settings Settings::load(const QString &path) {
         s.normalFast=o.value("normalFast").toBool(false);
         s.backend=o.value("backend").toString("codex");s.sessionMode=o.value("sessionMode").toString();
         s.backendProfiles=o.value("backendProfiles").toObject();
+        s.commandCodeApiKey=o.value("commandCodeApiKey").toString();
     }
     s.normalize();return s;
 }
 void Settings::normalize() {
     if(defaultReplyMode!="quick")defaultReplyMode="normal";
-    if(backend!="qwen"&&backend!="deepseek")backend="codex";
+    if(backend!="qwen"&&backend!="deepseek"&&backend!="commandcode"&&backend!="commandcode-cli")backend="codex";
+    commandCodeApiKey=commandCodeApiKey.trimmed();
     cliName=backendName(backend);
     width=qBound(360,width,1000);height=qBound(420,height,1400);animationMs=qBound(80,animationMs,500);
     liquid=qBound(0,liquid,100);darken=qBound(0,darken,65);hideDelay=qBound(200,hideDelay,3000);fontSize=qBound(8,fontSize,20);
@@ -59,8 +61,9 @@ void Settings::normalize() {
     quickModel=quickModel.trimmed();if(quickModel.isEmpty())quickModel="gpt-6-luna";
     quickReasoningEffort=quickReasoningEffort.trimmed();
 }
-QString Settings::backendName(const QString &id) {return id=="qwen"?QString("千问 Qwen Code"):id=="deepseek"?QString("DeepSeek Harness"):QString("Codex");}
-QString Settings::defaultCommand(const QString &id) {return id=="qwen"?QString("qwen"):id=="deepseek"?QString("dsh"):QString("codex");}
+QString Settings::backendName(const QString &id) {return id=="qwen"?QString("千问 Qwen Code"):id=="deepseek"?QString("DeepSeek Harness"):id=="commandcode"?QString("Command Code API"):id=="commandcode-cli"?QString("Command Code 命令行"):QString("Codex");}
+// Command Code is reached over its HTTP provider API; the command is not run.
+QString Settings::defaultCommand(const QString &id) {return id=="qwen"?QString("qwen"):id=="deepseek"?QString("dsh"):id=="commandcode"?QString("commandcode-api"):id=="commandcode-cli"?QString("cmd"):QString("codex");}
 void Settings::selectBackend(const QString &id) {
     if(id==backend)return;
     backendProfiles[backend]=QJsonObject{{"command",command},{"directory",directory},{"model",model},{"reasoningEffort",reasoningEffort},{"sessionMode",sessionMode},{"permissions",permissions}};
@@ -74,7 +77,8 @@ QJsonObject Settings::json() const {
         {"liquid",liquid},{"darken",darken},{"hideDelay",hideDelay},{"fontSize",fontSize},{"directory",directory},
         {"command",command},{"permissions",permissions},{"contextLimitK",contextLimitK},{"idleStopMinutes",idleStopMinutes},
         {"model",model},{"reasoningEffort",reasoningEffort},{"defaultReplyMode",defaultReplyMode},
-        {"quickModel",quickModel},{"quickReasoningEffort",quickReasoningEffort},{"quickFast",quickFast},{"normalFast",normalFast}};
+        {"quickModel",quickModel},{"quickReasoningEffort",quickReasoningEffort},{"quickFast",quickFast},{"normalFast",normalFast},
+        {"commandCodeApiKey",commandCodeApiKey}};
 }
 bool Settings::save(QString *error) const {
     QDir().mkpath(QFileInfo(file).absolutePath());QSaveFile f(file);

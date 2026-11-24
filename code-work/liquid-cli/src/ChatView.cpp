@@ -31,16 +31,25 @@ constexpr qreal kUserWidth=.84;
 // One rounded glass surface per message; user and assistant differ only in tint.
 class Bubble:public QFrame {
 public:
-    Bubble(bool user,QWidget *parent):QFrame(parent),mine(user){setAttribute(Qt::WA_TranslucentBackground);}
+    Bubble(bool user,const UiColors &style,QWidget *parent):QFrame(parent),mine(user),colors(style){setAttribute(Qt::WA_TranslucentBackground);}
+    void recolor(const UiColors &style){colors=style;update();}
 protected:
     void paintEvent(QPaintEvent *)override {
         QPainter p(this);p.setRenderHint(QPainter::Antialiasing);QPainterPath path;
-        path.addRoundedRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5),mine?16:14,mine?16:14);
-        const auto colors=UiColors::forSurface(property("lightSurface").toBool());
+        const QRectF r=QRectF(rect()).adjusted(.5,.5,-.5,-.5);
+        if(colors.paper.isEmpty())path.addRoundedRect(r,mine?16:14,mine?16:14);
+        else {
+            const qreal radius=qMin(16.,r.height()/2),left=mine?radius:5.,right=mine?5.:radius;
+            path.moveTo(r.left()+left,r.top());
+            path.lineTo(r.right()-right,r.top());path.quadTo(r.topRight(),QPointF(r.right(),r.top()+right));
+            path.lineTo(r.right(),r.bottom()-radius);path.quadTo(r.bottomRight(),QPointF(r.right()-radius,r.bottom()));
+            path.lineTo(r.left()+radius,r.bottom());path.quadTo(r.bottomLeft(),QPointF(r.left(),r.bottom()-radius));
+            path.lineTo(r.left(),r.top()+left);path.quadTo(r.topLeft(),QPointF(r.left()+left,r.top()));path.closeSubpath();
+        }
         p.fillPath(path,UiColors::color(mine?colors.userBubble:colors.bubble));
         p.setPen(QPen(UiColors::color(colors.border),1));p.drawPath(path);
     }
-private: bool mine;
+private: bool mine;UiColors colors;
 };
 class Thumb:public QLabel {
 public:
@@ -77,8 +86,8 @@ public:
             menu.exec(mapToGlobal(at));
         });
     }
-    void setSurface(bool light){
-        const auto colors=UiColors::forSurface(light);ink=colors.text;
+    void setSurface(const UiColors &colors){
+        ink=colors.text;
         setPalette(colors.palette(palette()));viewport()->setPalette(colors.palette(viewport()->palette()));
         setStyleSheet(QString("QTextBrowser{color:%1;background:transparent;border:0;padding:0;selection-background-color:#397d73;selection-color:white;}").arg(ink));
     }
@@ -98,8 +107,8 @@ private:
         if(height!=this->height())setFixedHeight(height);
     });}
 };
-MessageText *textLabel(const QString &raw,const QString &html,bool light,QWidget *parent) {
-    auto *label=new MessageText(parent);label->setSurface(light);label->render(raw,html);return label;
+MessageText *textLabel(const QString &raw,const QString &html,const UiColors &colors,QWidget *parent) {
+    auto *label=new MessageText(parent);label->setSurface(colors);label->render(raw,html);return label;
 }
 QString userHtml(const QString &text){return Markdown::escape(text).replace('\n',"<br>");}
 }
@@ -133,12 +142,12 @@ ChatView::ChatView(QWidget *parent):QScrollArea(parent) {
     connect(bar,&QScrollBar::valueChanged,this,[this,bar](int value){follow=value>=bar->maximum()-kFollowSlack;});
     connect(bar,&QScrollBar::rangeChanged,this,[this,bar](int,int max){if(follow)bar->setValue(max);});
 }
-void ChatView::setColors(bool light) {
-    lightSurface=light;const auto c=UiColors::forSurface(light);setPalette(c.palette(palette()));
+void ChatView::setColors(bool light,const QString &character) {
+    lightSurface=light;petId=character;const auto c=UiColors::chat(light,petId);setPalette(c.palette(palette()));
     setStyleSheet(QString("QLabel{color:%1;background:transparent;} QLabel#messageMeta,QLabel[note=true]{color:%2;font-size:11px;padding-left:6px;}"
         "QLabel#typingWord,QLabel#typingDots{color:%2;} QPushButton#earlierMessages{color:%2;}").arg(c.text,c.muted));
-    for(auto *bubble:findChildren<QFrame*>())if(bubble->objectName()=="userBubble"||bubble->objectName()=="assistantBubble") {bubble->setProperty("lightSurface",light);bubble->update();}
-    for(auto *label:findChildren<QTextBrowser*>("messageText")){auto *message=static_cast<MessageText*>(label);message->setSurface(light);const auto raw=label->property("raw").toString();message->render(raw,label->property("markdown").toBool()?Markdown::toHtml(raw,light):userHtml(raw));}
+    for(auto *bubble:findChildren<QFrame*>())if(bubble->objectName()=="userBubble"||bubble->objectName()=="assistantBubble") {static_cast<Bubble*>(bubble)->recolor(c);}
+    for(auto *label:findChildren<QTextBrowser*>("messageText")){auto *message=static_cast<MessageText*>(label);message->setSurface(c);const auto raw=label->property("raw").toString();message->render(raw,label->property("markdown").toBool()?Markdown::toHtml(raw,light):userHtml(raw));}
 }
 void ChatView::setTextPoint(int value) {
     point=value;QFont f=font();f.setPointSize(point);content->setFont(f);fitUserBubbles();
@@ -151,7 +160,7 @@ QWidget *ChatView::buildRow(const ChatMessage &m) {
         note->setProperty("note",true);line->addWidget(note);return row;
     }
     const bool user=m.role=="user";
-    auto *bubble=new Bubble(user,row);bubble->setObjectName(user?"userBubble":"assistantBubble");bubble->setProperty("lightSurface",lightSurface);
+    auto *bubble=new Bubble(user,UiColors::chat(lightSurface,petId),row);bubble->setObjectName(user?"userBubble":"assistantBubble");
     auto *inside=new QVBoxLayout(bubble);inside->setContentsMargins(13,9,13,9);inside->setSpacing(7);
     if(!m.images.isEmpty()) {
         auto *gallery=new QScrollArea(bubble);gallery->setObjectName("messageImages");gallery->setFrameShape(QFrame::NoFrame);gallery->setMinimumWidth(0);
@@ -161,7 +170,7 @@ QWidget *ChatView::buildRow(const ChatMessage &m) {
         int height=0;for(const auto &path:m.images){auto *thumb=new Thumb(path,items);strip->addWidget(thumb);height=qMax(height,thumb->sizeHint().height());}
         items->adjustSize();gallery->setWidget(items);gallery->setFixedHeight(height+gallery->horizontalScrollBar()->sizeHint().height()+2);inside->addWidget(gallery);
     }
-    if(!m.text.isEmpty()||!user){auto *label=textLabel(m.text,user?userHtml(m.text):Markdown::toHtml(m.text,lightSurface),lightSurface,bubble);label->setProperty("markdown",!user);inside->addWidget(label);}
+    if(!m.text.isEmpty()||!user){auto *label=textLabel(m.text,user?userHtml(m.text):Markdown::toHtml(m.text,lightSurface),UiColors::chat(lightSurface,petId),bubble);label->setProperty("markdown",!user);inside->addWidget(label);}
     if(user){line->addStretch(1);line->addWidget(bubble);}
     else {
         auto *column=new QVBoxLayout;column->setSpacing(3);column->addWidget(bubble);

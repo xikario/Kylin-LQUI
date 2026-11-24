@@ -12,7 +12,7 @@ class ChatView:public QScrollArea {
 public:
     explicit ChatView(QWidget *parent=nullptr);
     void setTextPoint(int point);
-    void setColors(bool light);
+    void setColors(bool light,const QString &character={});
     void reset(const QVector<ChatMessage> &messages);
     void append(const ChatMessage &message);
     void updateLast(const ChatMessage &message);
@@ -39,4 +39,5 @@ private:
     bool follow=true;
     int point=11;
     bool lightSurface=false;
+    QString petId;
 };

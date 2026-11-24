@@ -1,4 +1,10 @@
+#include <QFileInfo>
+#include <QStandardPaths>
+#include <QProcessEnvironment>
+#include <QProcess>
+#include <QRegularExpression>
 #include "Drawer.h"
+#include "PetEntry.h"
 #include "CodexOptions.h"
 #include "SettingsBridge.h"
 #include "ResidentStartup.h"
@@ -92,8 +98,32 @@ void Drawer::Preferences() {
         auto *w=new QComboBox(fields);w->setObjectName(name);for(const auto &i:items)w->addItem(i.first,i.second);
         w->setCurrentIndex(qMax(0,w->findData(current)));form->addRow(label,w);return w;
     };
+    QSettings entry(PetEntry::path(),QSettings::IniFormat);
+    auto *entryMode=choice("入口模式","settingCornerEntry",{{"AI 小站","station"},{"AI 宠物","pet"}},entry.value("entry/mode","station").toString());
+    auto *character=choice("宠物形象","settingPetCharacter",PetEntry::characters(),entry.value("entry/character","claude").toString());
+    character->setEnabled(entryMode->currentData()=="pet");
+    const auto saveEntry=[this,entryMode,character] {
+        const bool pet=entryMode->currentData()=="pet";
+        character->setEnabled(pet);
+        QSettings saved(PetEntry::path(),QSettings::IniFormat);
+        saved.setValue("entry/mode",entryMode->currentData());saved.setValue("entry/character",character->currentData());saved.sync();
+        if(!chatCharacter.isEmpty())setChatCharacter(pet?character->currentData().toString():QString());
+    };
+    connect(entryMode,QOverload<int>::of(&QComboBox::activated),dialog,saveEntry);
+    connect(character,QOverload<int>::of(&QComboBox::activated),dialog,saveEntry);
     auto draft=std::make_shared<Settings>(settings);
-    auto *backendChoice=choice("AI 后台","settingBackend",{{"Codex","codex"},{"千问 Qwen Code","qwen"},{"DeepSeek Harness","deepseek"}},settings.backend);
+    auto *backendChoice=choice("AI 后台","settingBackend",{{"Codex","codex"},{"千问 Qwen Code","qwen"},{"DeepSeek Harness","deepseek"},{"Command Code 命令行","commandcode-cli"},{"Command Code API","commandcode"}},settings.backend);
+    // What the selected backend can do, and whether its program is installed.
+    auto *capability=new QLabel(fields);capability->setObjectName("backendCapability");capability->setWordWrap(true);capability->setTextFormat(Qt::PlainText);
+    form->addRow(QString(),capability);
+    // Command Code is reached over HTTP with the user's own key; it is kept only in
+    // the local 0600 settings file.
+    auto *keyRow=new QWidget(fields);auto *keyLayout=new QHBoxLayout(keyRow);keyLayout->setContentsMargins(0,0,0,0);keyLayout->setSpacing(6);
+    auto *apiKey=new QLineEdit(settings.commandCodeApiKey,keyRow);apiKey->setObjectName("settingCommandCodeKey");apiKey->setEchoMode(QLineEdit::Password);
+    apiKey->setPlaceholderText("粘贴 Command Code API Key");apiKey->setAccessibleName("Command Code API Key");apiKey->setClearButtonEnabled(true);
+    auto *revealKey=new QPushButton("显示",keyRow);revealKey->setObjectName("revealCommandCodeKey");revealKey->setCheckable(true);
+    keyLayout->addWidget(apiKey,1);keyLayout->addWidget(revealKey);form->addRow("API Key",keyRow);
+    connect(revealKey,&QPushButton::toggled,keyRow,[apiKey,revealKey](bool on){apiKey->setEchoMode(on?QLineEdit::Normal:QLineEdit::Password);revealKey->setText(on?"隐藏":"显示");});
     auto *replyDefault=choice("默认问答模式","settingDefaultReplyMode",{{"普通思考","normal"},{"快问快答","quick"}},settings.defaultReplyMode);
     replyDefault->setAccessibleName("默认问答模式");
     auto *replyHelp=new QLabel("默认模式下次启动生效。普通思考与快问快答分别保存模型配置和聊天上下文。",fields);
@@ -203,7 +233,7 @@ void Drawer::Preferences() {
     });
     connect(quickEffort,&QSlider::valueChanged,dialog,[=]{saveQuick();});
     connect(quickFast,&QCheckBox::toggled,dialog,[=]{saveQuick();});
-    const auto followText=[=]{return draft->backend=="codex"?QString("跟随 Codex 配置"):QString("跟随会话配置");};
+    const auto followText=[=]{return draft->backend=="codex"?QString("跟随 Codex 配置"):draft->backend=="commandcode"?QString("默认模型"):QString("跟随会话配置");};
     auto updateEfforts=[=](const QString &wanted){
         QString selected=model->currentData().toString();const bool follow=selected.isEmpty();if(follow)selected=catalog->model;
         QJsonObject entry;
@@ -220,7 +250,7 @@ void Drawer::Preferences() {
         draft->command=command->text();draft->directory=directory->text();draft->model=model->currentData().toString();
         draft->reasoningEffort=effort->property("efforts").toStringList().value(effort->value());
         draft->sessionMode=sessionMode->currentData().toString();draft->permissions=permissions->currentData().toString();
-        draft->normalFast=normalFast->isChecked();
+        draft->normalFast=normalFast->isChecked();draft->commandCodeApiKey=apiKey->text().trimmed();
     };
     const auto updateModelStatus=[=]{
         if(!catalog->ready)return;
@@ -251,7 +281,7 @@ void Drawer::Preferences() {
     };
     connect(model,QOverload<int>::of(&QComboBox::activated),dialog,[=]{
         updateEfforts(draft->reasoningEffort);saveModel();
-        if(draft->backend!="codex")refresh->click(); // Model-dependent ACP options.
+        if(draft->backend!="codex"&&draft->backend!="commandcode")refresh->click(); // Model-dependent ACP options.
     });
     connect(sessionMode,QOverload<int>::of(&QComboBox::activated),dialog,[=]{saveModel();});
     connect(normalFast,&QCheckBox::toggled,dialog,[=]{saveModel();});
@@ -277,7 +307,11 @@ void Drawer::Preferences() {
         quickStatus->setVisible(codex);quickModel->setEnabled(false);quickEffort->setEnabled(false);quickFast->setEnabled(false);
         if(auto *caption=qobject_cast<QLabel*>(form->labelForField(modelRow)))caption->setText(codex?"普通思考模型":"模型版本");
         if(auto *caption=qobject_cast<QLabel*>(form->labelForField(effort->parentWidget())))caption->setText(codex?"普通思考强度":"思考强度");
-        sessionMode->setVisible(!codex);form->labelForField(sessionMode)->setVisible(!codex);
+        const bool provider=draft->backend=="commandcode";
+        sessionMode->setVisible(!codex&&!provider);form->labelForField(sessionMode)->setVisible(!codex&&!provider);
+        keyRow->setVisible(provider);form->labelForField(keyRow)->setVisible(provider);
+        for(auto *w:QList<QWidget*>{command,directory}){w->setVisible(!provider);form->labelForField(w)->setVisible(!provider);}
+        if(provider){const QSignalBlocker block(apiKey);apiKey->setText(draft->commandCodeApiKey);}
         {const QSignalBlocker block(sessionMode);sessionMode->clear();sessionMode->addItem("跟随会话配置",QString());if(!draft->sessionMode.isEmpty())sessionMode->addItem(draft->sessionMode,draft->sessionMode);sessionMode->setCurrentIndex(qMax(0,sessionMode->findData(draft->sessionMode)));}
         updateEfforts(draft->reasoningEffort);
         updateQuickOptions(draft->quickReasoningEffort);
@@ -314,10 +348,51 @@ void Drawer::Preferences() {
         connect(current,&AgentClient::modelsFailed,dialog,[=](const QString &error){if(*probe!=current)return;modelStatus->setText("读取失败："+error.left(220));refresh->setEnabled(true);model->setEnabled(true);});
         current->discoverModels();
     });
-    connect(backendChoice,QOverload<int>::of(&QComboBox::activated),dialog,[=]{
-        collectSelection();draft->selectBackend(backendChoice->currentData().toString());resetBackend();refresh->click();
+    // A changed key is saved at once (only to the local settings file) and the
+    // model list is read again with it.
+    connect(apiKey,&QLineEdit::editingFinished,dialog,[=]{
+        const auto value=apiKey->text().trimmed();if(value==draft->commandCodeApiKey&&value==settings.commandCodeApiKey)return;
+        draft->commandCodeApiKey=value;auto next=settings;next.commandCodeApiKey=value;
+        QString error;if(!next.save(&error)){modelStatus->setText("API Key 保存失败："+error);return;}
+        applySettings(next);if(draft->backend=="commandcode")refresh->click();
     });
-    resetBackend();
+    auto loginCheck=std::make_shared<int>(0);
+    const auto updateCapability=[=]{
+        const QString id=draft->backend;
+        if(id=="commandcode") {
+            capability->setText("无需安装，用 API Key 直接连接 Command Code。只能对话（可带图片），不能读写本机文件或运行命令，“执行权限”不适用。需要操作本机请改选“Command Code 命令行”。");
+            return;
+        }
+        // First word of the command line, as the desktop session would resolve it.
+        QString program=command->text().trimmed();
+        if(program.startsWith('"')||program.startsWith('\''))program=program.mid(1).section(program.at(0),0,0);else program=program.section(QRegularExpression("\\s+"),0,0);
+        QStringList dirs=qEnvironmentVariable("PATH").split(':',QString::SkipEmptyParts);dirs.prepend(QDir::homePath()+"/.local/bin");
+        const QString found=program.contains('/')?(QFileInfo(program).isExecutable()?program:QString()):QStandardPaths::findExecutable(program,dirs);
+        const QString name=Settings::backendName(id);
+        const QString install=id=="codex"?QString("npm i -g @openai/codex"):id=="qwen"?QString("npm i -g @qwen-code/qwen-code"):id=="commandcode-cli"?QString("npm i -g command-code（需要 Node 22 以上）"):QString("按 DeepSeek Harness 的说明安装 dsh");
+        QString text="需要在本机安装 "+name+" 命令行。可读写本机文件、运行命令："+(id=="codex"?QString("受“执行权限”设置控制。"):QString("每次操作前在小站里请你确认。"));
+        if(found.isEmpty())text+="\n未找到命令 "+(program.isEmpty()?Settings::defaultCommand(id):program)+"，当前不可用。安装方法："+install+"。";
+        else text+="\n已找到："+found;
+        if(id=="commandcode-cli"&&!found.isEmpty())text+="\n首次使用请在终端运行 cmd login 登录（小站不代为登录）。";
+        capability->setText(text);
+        if(id!="commandcode-cli"||found.isEmpty())return;
+        // Login state is only known to the CLI itself; ask it without blocking.
+        const int ticket=++*loginCheck;auto *status=new QProcess(capability);
+        connect(status,QOverload<int,QProcess::ExitStatus>::of(&QProcess::finished),capability,[=]{
+            status->deleteLater();if(ticket!=*loginCheck||draft->backend!="commandcode-cli")return;
+            const QString out=QString::fromUtf8(status->readAllStandardOutput()+status->readAllStandardError());
+            if(out.contains("Not authenticated",Qt::CaseInsensitive))capability->setText(capability->text().replace("首次使用请在终端运行 cmd login 登录（小站不代为登录）。","尚未登录：请在终端运行 cmd login 登录后再使用（小站不代为登录）。"));
+            else if(out.contains("Authenticated",Qt::CaseInsensitive)||out.contains("Logged in",Qt::CaseInsensitive))capability->setText(capability->text().replace("首次使用请在终端运行 cmd login 登录（小站不代为登录）。","已登录 Command Code。"));
+        });
+        QTimer::singleShot(6000,status,[status]{if(status->state()!=QProcess::NotRunning)status->kill();});
+        auto env=QProcessEnvironment::systemEnvironment();env.insert("PATH",QDir::homePath()+"/.local/bin:"+env.value("PATH"));env.insert("NO_COLOR","1");
+        status->setProcessEnvironment(env);status->start(found,{"status"});
+    };
+    connect(command,&QLineEdit::editingFinished,dialog,[=]{updateCapability();});
+    connect(backendChoice,QOverload<int>::of(&QComboBox::activated),dialog,[=]{
+        collectSelection();draft->selectBackend(backendChoice->currentData().toString());resetBackend();updateCapability();refresh->click();
+    });
+    resetBackend();updateCapability();
     auto *restoreDefaults=new QPushButton("恢复外观与日常设置默认值",dialog);restoreDefaults->setObjectName("restoreAppearanceDefaults");layout->addWidget(restoreDefaults,0,Qt::AlignLeft);
     connect(restoreDefaults,&QPushButton::clicked,dialog,[=]{
         const Settings defaults;
@@ -359,6 +434,7 @@ void Drawer::Preferences() {
         {"settingTranslationLanguage","截图翻译使用的目标语言。点击翻译后立即处理截图，不会发送已有草稿。"},
         {"settingResident","只保持界面常驻并预热背景；不会提前连接模型。模型后台休眠不关闭窗口进程。"},
         {"settingBackend","选择 CLI 后台；每个后台分别保留聊天和草稿，点击应用后切换。"},
+        {"settingCommandCodeKey","Command Code 的 API Key，只保存在本机设置文件（仅本人可读）。填好后按回车或离开输入框，会自动读取可用模型。"},
         {"settingDefaultReplyMode","选择下次启动时使用快问快答还是普通思考；即时保存，不打断当前对话。两种模式分别保存模型配置和上下文。"},
         {"settingQuickModel","模型和可用强度来自当前 Codex，修改从该模式的下一条消息生效。"},
         {"settingQuickEffort","此模式独立保存思考强度，可选档位随模型变化。"},

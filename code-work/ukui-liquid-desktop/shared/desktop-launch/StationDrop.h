@@ -13,6 +13,8 @@
 #include <QUuid>
 #include <QUrl>
 #include <QDateTime>
+#include <QImageReader>
+#include <QList>
 #include <unistd.h>
 
 namespace StationDrop {
@@ -55,5 +57,34 @@ inline QJsonObject read(const QString &path) {
 }
 inline void discard(const QString &path) {
     const auto payload=read(path);const QString image=payload.value("image").toString();if(owns(image))QFile::remove(image);if(owns(path))QFile::remove(path);
+}
+// What a drop contains decides which quick actions the orb offers after release.
+// The ids are shared with AI小站 (Drawer::ImportDropActionAt), which owns prompts.
+inline bool isImageFile(const QString &path){return !QImageReader::imageFormat(path).isEmpty();}
+inline QString kind(const QJsonObject &payload) {
+    const auto files=payload.value("files").toArray();
+    if(payload.contains("image"))return "image";
+    if(!files.isEmpty()) {
+        bool images=true;for(const auto &f:files)images&=isImageFile(f.toString());
+        return images?"image":"files";
+    }
+    return "text";
+}
+struct DropAction {QString id,label;};
+inline QList<DropAction> actions(const QJsonObject &payload) {
+    const QString type=kind(payload);
+    if(type=="image")return {{"ocr","图片识别"},{"translate","翻译图中文字"},{"summary","总结图片内容"},{"explain","解释图片"},{"insert","放入输入框"}};
+    if(type=="files")return {{"summary","总结文件"},{"organize","梳理要点"},{"translate","翻译"},{"todo","加入待办"},{"insert","放入输入框"}};
+    return {{"todo","加入待办"},{"organize","文字梳理"},{"translate","文本翻译"},{"summary","总结要点"},{"explain","解释说明"},{"polish","润色改写"},{"insert","放入输入框"}};
+}
+// One-line todo title from the dropped text or file names (no AI involved).
+inline QString todoTitle(const QJsonObject &payload) {
+    QString text=payload.value("text").toString();
+    if(text.trimmed().isEmpty()) {
+        QStringList names;for(const auto &f:payload.value("files").toArray())names<<QFileInfo(f.toString()).fileName();
+        text=names.join(QStringLiteral("、"));
+    }
+    text=text.simplified();
+    return text.size()>200?text.left(199)+QChar(0x2026):text;
 }
 }

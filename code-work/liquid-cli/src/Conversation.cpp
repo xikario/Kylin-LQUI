@@ -13,7 +13,7 @@
 
 Conversation::Conversation(QString folder):base(folder.isEmpty()?QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)+"/liquid-cli":std::move(folder)),root(base){}
 void Conversation::useBackend(const QString &id,bool quickReply) {
-    root=id=="qwen"||id=="deepseek"?base+"/backends/"+id:base;
+    root=id=="qwen"||id=="deepseek"||id=="commandcode"||id=="commandcode-cli"?base+"/backends/"+id:base;
     if(id=="codex"&&quickReply)root+="/quick-reply";
     items.clear();threadId.clear();contextTokens=0;contextWindow=0;
     writable=true;

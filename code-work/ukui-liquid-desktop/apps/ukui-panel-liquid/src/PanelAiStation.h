@@ -15,6 +15,8 @@ public:
 public slots:
     Q_SCRIPTABLE QString State() const;
     Q_SCRIPTABLE bool OpenCalendar();
+    Q_SCRIPTABLE bool OpenPetChat(const QString &character);
+    Q_SCRIPTABLE bool PetDrop(const QString &description);
 protected:
     bool eventFilter(QObject *,QEvent *) override;
 private slots:

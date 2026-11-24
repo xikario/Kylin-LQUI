@@ -839,6 +839,8 @@ class SettingsWindow(QtWidgets.QMainWindow):
         for i in range(self.navigation.count()):
             item=self.navigation.item(i);key=item.data(QtCore.Qt.UserRole);cached=self.page_cache.get(key,[])
             matches=not query or query in item.text().casefold() or any(query in searchable_text(f) for f in cached) or any(query in title.casefold() for title in self.page_group_cache.get(key,[]))
+            if key=='ai:general' and query:
+                matches=matches or any(query.replace(' ','') in name for name in ('ai小站','ai宠物','宠物形象'))
             group=item.data(QtCore.Qt.UserRole+2)
             if group:item.setText(('▸  ' if group in self.collapsed else '▾  ')+MODULES[group][0])
             subgroup=item.data(QtCore.Qt.UserRole+5)

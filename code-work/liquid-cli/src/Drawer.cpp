@@ -1,4 +1,6 @@
 #include "Drawer.h"
+#include "PetEntry.h"
+#include <QDBusConnection>
 #include "DockPopupMotion.h"
 #include "PopupStyle.h"
 #include "LiquidPopup.h"
@@ -8,6 +10,8 @@
 #include "Composer.h"
 #include "RegionCapture.h"
 #include "CaptureEditor.h"
+#include "DropActions.h"
+#include <QMimeDatabase>
 #include "NextKdeGlassView.h"
 #include "LiquidOpticsRenderer.h"
 #include <QApplication>
@@ -182,7 +186,10 @@ void Drawer::buildInterface() {
     auto *header=new QHBoxLayout;header->setSpacing(4);
     auto *title=new QLabel("AI小站",this);title->setObjectName("drawerTitle");
     statusLabel=new ElidedLabel(this);statusLabel->setObjectName("cliStatus");
-    header->addWidget(title);header->addSpacing(6);header->addWidget(statusLabel,1);
+    petPortrait=new QLabel(this);petPortrait->setObjectName("petPortrait");petPortrait->setFixedSize(46,46);
+    petPortrait->setAlignment(Qt::AlignCenter);petPortrait->hide();header->addWidget(petPortrait);
+    identityLayout=new QBoxLayout(QBoxLayout::LeftToRight);identityLayout->setSpacing(6);
+    identityLayout->addWidget(title);identityLayout->addWidget(statusLabel,1);header->addLayout(identityLayout,1);
     newConversationButton=new QPushButton("+",this);newConversationButton->setObjectName("newConversation");newConversationButton->setFixedSize(30,30);
     newConversationButton->setAccessibleName("新对话");newConversationButton->setToolTip("新对话 · 保留旧记录，输入框草稿可继续使用");newConversationButton->setCursor(Qt::PointingHandCursor);
     header->addWidget(newConversationButton);connect(newConversationButton,&QPushButton::clicked,this,[this]{startNewConversation();});
@@ -197,7 +204,19 @@ void Drawer::buildInterface() {
     pin=toolButton("pin","固定展开",this);pin->setObjectName("pinDrawer");pin->setCheckable(true);
     auto *gear=toolButton("settings","设置",this);gear->setObjectName("preferences");
     auto *collapse=toolButton("collapse","收起（Esc）",this);collapse->setObjectName("collapseDrawer");
-    header->addWidget(pin);header->addWidget(gear);header->addWidget(collapse);outer->addLayout(header);
+    petTools=new QPushButton(this);petTools->setObjectName("petTools");
+    petTools->setToolTip("对话工具");petTools->setAccessibleName("对话工具");petTools->setFixedSize(32,32);
+    petTools->setCursor(Qt::PointingHandCursor);petTools->hide();
+    connect(petTools,&QPushButton::clicked,this,[this]{
+        QMenu menu(this);
+        auto *keep=menu.addAction("固定对话");keep->setCheckable(true);keep->setChecked(pin->isChecked());
+        connect(keep,&QAction::triggered,pin,&QPushButton::setChecked);
+        auto *context=menu.addAction(contextButton->text()+" · 压缩");context->setEnabled(contextButton->isEnabled());
+        connect(context,&QAction::triggered,contextButton,&QPushButton::click);
+        menu.addAction("助手设置…",this,&Drawer::Preferences);
+        menu.exec(petTools->mapToGlobal(QPoint(0,petTools->height())));
+    });
+    header->addWidget(pin);header->addWidget(gear);header->addWidget(petTools);header->addWidget(collapse);outer->addLayout(header);
     connect(pin,&QPushButton::toggled,this,[this](bool on){pinned=on;if(on)hideTimer.stop();else scheduleHide();});
     connect(gear,&QPushButton::clicked,this,&Drawer::Preferences);connect(collapse,&QPushButton::clicked,this,&Drawer::Hide);
     replyModeRow=new QWidget(this);
@@ -245,6 +264,10 @@ void Drawer::connectClient() {
             ChatMessage note{"note",error.isEmpty()?QStringLiteral("已停止，没有收到回复"):"没有完成："+error,{},{},0};
             history.append(note);view->setTyping(false);view->append(note);
         }
+        if(!turnCharacter.isEmpty()) {
+            reactPet(state=="completed"?"reply":"error",answerIndex>=0?history.messages().at(answerIndex).text:QString());
+            turnCharacter.clear();
+        }
         answerIndex=-1;view->setTyping(false);input->setBusy(backend->busy());persist();
         if(!opened)unread=true;edge->refresh();
     });
@@ -264,13 +287,61 @@ void Drawer::connectClient() {
     });
 }
 
+void Drawer::setChatCharacter(const QString &id) {
+    if(chatCharacter==id)return;
+    chatCharacter=id;
+    const QString name=PetEntry::label(id);
+    const QString title=name.isEmpty()?QStringLiteral("AI小站"):name;
+    findChild<QLabel*>("drawerTitle")->setText(title);
+    setWindowTitle(name.isEmpty()?title:QStringLiteral("和%1聊天").arg(name));
+    setWindowIcon(name.isEmpty()?icon("app"):QIcon(PetEntry::icon(id)));
+    const bool pet=!name.isEmpty();
+    identityLayout->setDirection(pet?QBoxLayout::TopToBottom:QBoxLayout::LeftToRight);
+    identityLayout->setSpacing(pet?1:6);
+    petTools->setVisible(pet);petPortrait->setVisible(pet);pin->setVisible(!pet);
+    contextButton->setVisible(!pet);findChild<QPushButton*>("preferences")->setVisible(!pet);
+    if(pet) {
+        const qreal dpr=devicePixelRatioF();const QSize size=petPortrait->size();
+        QPixmap portrait(size*dpr);portrait.setDevicePixelRatio(dpr);portrait.fill(Qt::transparent);
+        QPainter brush(&portrait);brush.setRenderHint(QPainter::Antialiasing);brush.setRenderHint(QPainter::SmoothPixmapTransform);
+        const auto colors=UiColors::chat(true,id);const QRectF face=QRectF(QPointF(),size).adjusted(1,1,-1,-1);
+        QPainterPath circle;circle.addEllipse(face);brush.setClipPath(circle);brush.fillPath(circle,QColor(colors.userBubble));
+        const QPixmap art(PetEntry::icon(id));brush.drawPixmap(face,art,QRectF(art.rect()));
+        brush.setClipping(false);brush.setBrush(Qt::NoBrush);brush.setPen(QPen(QColor(colors.border),1));brush.drawEllipse(face);
+        brush.end();petPortrait->setPixmap(portrait);
+    }
+    refreshColors();update();
+}
+void Drawer::PetChatAt(const QString &id,int x,int y,int width,int height) {
+    if(PetEntry::label(id).isEmpty()||capturing)return;
+    const QRect anchor(x,y,width,height);
+    if(!anchor.isValid()||width>=4096||height>=4096||!QGuiApplication::screenAt(anchor.center()))return;
+    if(opened&&chatCharacter==id){Hide();return;}
+    const bool reposition=opened&&anchor!=panelAnchor;
+    panelAnchor=anchor;setChatCharacter(id);
+    if(reposition){motion.stop();place(1);rebuildGlass();}
+    reveal(true);
+}
+void Drawer::reactPet(const QString &phase,const QString &text) {
+    auto call=QDBusMessage::createMethodCall("org.ukui.AiPet","/Pet","org.ukui.AiPet","React");
+    call.setAutoStartService(false);call.setArguments({turnCharacter,phase,text.left(36)});
+    QDBusConnection::sessionBus().call(call,QDBus::NoBlock);
+}
+
 void Drawer::submit(const QString &text,const QStringList &images) {sendMessage(text,images,true);}
 void Drawer::sendMessage(const QString &text,const QStringList &images,bool clearComposer) {
     if(!history.canSave()){setStatus("原聊天记录读取失败，已保留原件；请恢复文件或在设置中开始新对话。");return;}
     if(backend->busy()||(text.isEmpty()&&images.isEmpty()))return;
     ChatMessage m{"user",text,images,{},0};history.append(m);view->append(history.messages().last());
     view->followBottom();if(clearComposer)input->clear();answerIndex=-1;view->setTyping(true);input->setBusy(true);
-    backend->setThreadId(history.threadId);backend->send(text,images);
+    QString prompt=text;
+    turnCharacter=clearComposer?chatCharacter:QString();
+    if(!turnCharacter.isEmpty()){
+        const QString name=PetEntry::label(turnCharacter);
+        prompt=QString("【桌宠对话 · %1】本条消息请以%1的身份回答。\n%2").arg(name,text);
+        reactPet("thinking");
+    }
+    backend->setThreadId(history.threadId);backend->send(prompt,images);
     persist();edge->refresh();
 }
 void Drawer::attachImage(const QImage &image) {
@@ -397,6 +468,7 @@ void Drawer::positionEdge() {
 }
 // Called before the drawer is shown, so the screen grab holds what lies behind it.
 void Drawer::captureBackdrop() {
+    if(!chatCharacter.isEmpty())return;
     if(!(LquiEffects::liveCapture()&&LquiEffects::glassMaterial())){
         ++openSerial;fadeAnimation.stop();fade=1;material=QImage();previousMaterial=QImage();lastCapture=QImage();lastSignature.clear();return;
     }
@@ -442,7 +514,8 @@ void Drawer::adoptGlass(const QByteArray &signature) {
 }
 void Drawer::refreshColors() {
     lightSurface=false;   // the popup glass is always dark-toned
-    const auto c=UiColors::forSurface(lightSurface);setPalette(c.palette(palette()));
+    const bool pet=!chatCharacter.isEmpty();
+    const auto c=UiColors::chat(lightSurface,chatCharacter);setPalette(c.palette(palette()));
     setStyleSheet(QString(
         "QWidget#liquidCliDrawer{color:%1;} QLabel{background:transparent;color:%1;}"
         "QLabel#drawerTitle{font-size:17px;font-weight:600;} QLabel#cliStatus{color:%2;font-size:11px;padding-top:3px;}"
@@ -457,7 +530,21 @@ void Drawer::refreshColors() {
         "QScrollBar:vertical{background:transparent;width:7px;} QScrollBar::handle:vertical{background:rgba(145,175,185,100);min-height:24px;border-radius:3px;}"
         "QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;} QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical{background:transparent;}")
         .arg(c.text,c.muted,c.accent,c.field,c.border));
-    view->setColors(lightSurface);input->setColors(lightSurface);
+    if(pet)setStyleSheet(styleSheet()+QString(
+        "QLabel#drawerTitle{color:%1;font-weight:700;font-size:18px;}"
+        "QLabel#cliStatus{color:%2;font-size:11px;padding:0;}"
+        "QPushButton#petTools,QPushButton#newConversation{color:%2;font-weight:bold;}"
+        "QPushButton:hover,QPushButton:checked,QFrame#notice QPushButton{background:%3;}"
+        "QScrollBar::handle:vertical{background:%4;}"
+        "QPlainTextEdit{color:%1;background:%5;}")
+        .arg(c.text,c.muted,c.userBubble,c.border,c.field));
+    if(pet) {
+        QPixmap dots(QSize(18,18)*devicePixelRatioF());dots.setDevicePixelRatio(devicePixelRatioF());dots.fill(Qt::transparent);
+        QPainter painter(&dots);painter.setRenderHint(QPainter::Antialiasing);painter.setBrush(QColor(c.muted));painter.setPen(Qt::NoPen);
+        for(const int x:{4,9,14})painter.drawEllipse(QPointF(x,9),1.55,1.55);
+        painter.end();petTools->setIcon(QIcon(dots));
+    }
+    view->setColors(pet||lightSurface,chatCharacter);input->setColors(pet||lightSurface,chatCharacter);
     // SVG strokes must follow the same foreground as the labels.
     for(const auto &pair:QList<QPair<QString,QString>>{{"pinDrawer","pin"},{"preferences","settings"},{"collapseDrawer","collapse"}}) {
         auto *button=findChild<QPushButton*>(pair.first);if(!button)continue;
@@ -468,6 +555,15 @@ void Drawer::refreshColors() {
 }
 void Drawer::paintEvent(QPaintEvent *) {
     QPainter p(this);p.setRenderHint(QPainter::Antialiasing);p.setCompositionMode(QPainter::CompositionMode_Source);p.fillRect(rect(),Qt::transparent);p.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    if(!chatCharacter.isEmpty()) {
+        const auto c=UiColors::chat(true,chatCharacter);
+        const QRectF frame=QRectF(rect()).adjusted(.8,.8,-.8,-.8);
+        QPainterPath sheet;sheet.addRoundedRect(frame,23,23);
+        QLinearGradient paper(frame.topLeft(),QPointF(frame.width()*.6,frame.height()));
+        paper.setColorAt(0,QColor(c.wash));paper.setColorAt(.36,QColor(c.paper));paper.setColorAt(1,QColor(c.paper));
+        p.fillPath(sheet,paper);p.setPen(QPen(QColor(c.border),1));p.drawPath(sheet);
+        return;
+    }
     if(!material.isNull()) {
         if(fade<1&&!previousMaterial.isNull())p.drawImage(rect(),previousMaterial);
         p.setOpacity(previousMaterial.isNull()?1.:fade);p.drawImage(rect(),material);p.setOpacity(1);
@@ -506,13 +602,14 @@ void Drawer::prepareResident() {
         }
     });
 }
-void Drawer::Show(){reveal(true);}
+void Drawer::Show(){setChatCharacter({});reveal(true);}
 void Drawer::Hide(){if(capturing)return;hideTimer.stop();if(!opened)return;opened=false;engaged=false;animate(false);}
 void Drawer::Toggle(){if(opened&&shown>.5)Hide();else Show();}
 void Drawer::ToggleAt(int x,int y,int width,int height) {
+    const bool fromPet=!chatCharacter.isEmpty();setChatCharacter({});
     const QRect next(x,y,width,height);
     if(width>0&&height>0&&width<4096&&height<4096&&QGuiApplication::screenAt(next.center()))panelAnchor=next;
-    Toggle();
+    if(fromPet&&opened)reveal(true);else Toggle();
 }
 void Drawer::CaptureAt(int x,int y,int width,int height) {
     if(capturing)return;
@@ -533,6 +630,36 @@ bool Drawer::ImportDropAt(const QString &manifest,int x,int y,int width,int heig
     if(StationDrop::owns(image)){QImageReader reader(image);reader.setAutoTransform(true);attachImage(reader.read());}
     const QString text=payload.value("text").toString();if(!text.isEmpty())paths<<text;
     input->appendText(paths.join('\n'));StationDrop::discard(manifest);input->setHint("已放入输入区 · 检查后按 Enter 发送");persist();return true;
+}
+bool Drawer::ImportDropActionAt(const QString &manifest,const QString &action,int x,int y,int width,int height) {
+    const auto payload=StationDrop::read(manifest);if(payload.isEmpty())return false;
+    if(action=="insert"||DropActions::prompt(action,settings.translationLanguage,QStringLiteral("x"),false).isEmpty())
+        return ImportDropAt(manifest,x,y,width,height);
+    if(backend->busy()||!history.canSave()) {
+        const bool ok=ImportDropAt(manifest,x,y,width,height);
+        if(ok)input->setHint("AI 正在回复，内容已放入输入框；稍后按 Enter 发送");return ok;
+    }
+    const QRect anchor(x,y,width,height);if(width>0&&height>0&&QGuiApplication::screenAt(anchor.center()))panelAnchor=anchor;
+    // Images are copied into the conversation; small text files are inlined so
+    // that HTTP backends see their content too; other files are referenced.
+    constexpr qint64 InlineTextBytes=256*1024;
+    QStringList images,parts;QString error;
+    auto keepImage=[&](const QString &path){QImageReader reader(path);reader.setAutoTransform(true);const auto stored=history.storeImage(reader.read(),&error);if(!stored.isEmpty())images<<stored;};
+    const QString staged=payload.value("image").toString();if(StationDrop::owns(staged))keepImage(staged);
+    const QMimeDatabase types;
+    for(const auto &value:payload.value("files").toArray()) {
+        const QString path=value.toString();if(!QDir::isAbsolutePath(path))continue;const QFileInfo info(path);
+        if(info.isFile()&&StationDrop::isImageFile(path)){keepImage(path);continue;}
+        QFile file(path);
+        if(info.isFile()&&info.size()<=InlineTextBytes&&types.mimeTypeForFile(info).inherits("text/plain")&&file.open(QIODevice::ReadOnly))
+            parts<<"【文件："+info.fileName()+"】\n"+QString::fromUtf8(file.readAll());
+        else parts<<"文件："+path;
+    }
+    const QString text=payload.value("text").toString();if(!text.isEmpty())parts.prepend(text);
+    const QString prompt=DropActions::prompt(action,settings.translationLanguage,parts.join("\n\n"),!images.isEmpty());
+    StationDrop::discard(manifest);
+    if(prompt.isEmpty()||(images.isEmpty()&&parts.isEmpty())){setStatus(error.isEmpty()?QStringLiteral("没有可处理的内容"):error);return false;}
+    reveal(true);sendMessage(prompt,images,false);return true;
 }
 void Drawer::place(qreal value) {
     shown=value;const QRect target=targetGeometry();
@@ -690,6 +817,7 @@ QString Drawer::State() const {
         {"x",x()},{"y",y()},{"width",width()},{"height",height()},{"edgeX",edge->x()},{"edgeY",edge->y()},
         {"panelHosted",panelHosted},{"edgeVisible",edge->isVisible()},{"mouseGrabbed",QWidget::mouseGrabber()!=nullptr},
         {"settingsVisible",preferences&&preferences->isVisible()},{"draftCharacters",input->editor()->toPlainText().size()},{"draftImages",input->images().size()}};
+    state["chatCharacter"]=chatCharacter;
     state["replyMode"]=quickReply?"quick":"normal";
     state["defaultReplyMode"]=settings.defaultReplyMode;
     state["effectiveModel"]=effectiveSettings().model;state["effectiveEffort"]=effectiveSettings().reasoningEffort;

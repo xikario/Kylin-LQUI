@@ -24,7 +24,9 @@ int main(int argc,char **argv) {
     parser.addOption({"settings","打开设置"});parser.addOption({"reload","重新读取设置"});parser.addOption({"quit","退出当前实例"});parser.addOption({"state","读取当前实例状态"});
     parser.addOption({"anchor","任务栏入口的逻辑坐标 x,y,w,h","rect"});
     parser.addOption({"drop","接收拖放内容","manifest"});
+    parser.addOption({"drop-action","拖放后直接执行的快捷操作","action"});
     parser.addOption({"capture","打开 AI 小站的框选截图"});
+    parser.addOption({"pet-chat","在入口上方打开宠物对话","character"});
     parser.process(app);
     const auto values=parser.value("anchor").split(',');QList<int> anchor;
     if(parser.isSet("anchor")) {
@@ -48,12 +50,16 @@ int main(int argc,char **argv) {
         return 0;
     }
     if(!bus.registerService(service)) {
+        if(parser.isSet("pet-chat")) {
+            if(anchor.size()!=4)return 2;
+            return remote("PetChatAt",{parser.value("pet-chat"),anchor[0],anchor[1],anchor[2],anchor[3]}).type()==QDBusMessage::ErrorMessage?1:0;
+        }
         if(parser.isSet("resident"))return 0;
         if(parser.isSet("drop")||parser.isSet("capture")) {
             const auto a=anchor.size()==4?anchor:QList<int>{0,0,0,0};
             const bool drop=parser.isSet("drop");
             for(int attempt=0;attempt<30;++attempt) {
-                const auto reply=drop?remote("ImportDropAt",{parser.value("drop"),a[0],a[1],a[2],a[3]})
+                const auto reply=drop?(parser.isSet("drop-action")?remote("ImportDropActionAt",{parser.value("drop"),parser.value("drop-action"),a[0],a[1],a[2],a[3]}):remote("ImportDropAt",{parser.value("drop"),a[0],a[1],a[2],a[3]}))
                                      :remote("CaptureAt",{a[0],a[1],a[2],a[3]});
                 if(reply.type()!=QDBusMessage::ErrorMessage)return !drop||!StationDrop::owns(parser.value("drop"))?0:1;
                 if(reply.errorName()!="org.freedesktop.DBus.Error.UnknownObject")return 1;
@@ -67,9 +73,10 @@ int main(int argc,char **argv) {
         return reply.type()!=QDBusMessage::ErrorMessage?0:1;
     }
     Drawer drawer(Settings::load());
-    auto *settingsBridge=new LquiSettings::Bridge("ai",[&drawer](const QString &){return drawer.settingsBridgeRoot();},[]{return QJsonArray{QJsonObject{{"id","general"},{"title","AI 小站"},{"group","AI"}}};},&drawer);settingsBridge->registerOnSession();
+    auto *settingsBridge=new LquiSettings::Bridge("ai",[&drawer](const QString &){return drawer.settingsBridgeRoot();},[]{return QJsonArray{QJsonObject{{"id","general"},{"title","任务栏 AI 助手"},{"group","AI"}}};},&drawer);settingsBridge->registerOnSession();
     bus.registerObject("/Cli",&drawer,QDBusConnection::ExportScriptableSlots);
-    if(parser.isSet("drop")){const auto a=anchor.size()==4?anchor:QList<int>{0,0,0,0};if(!drawer.ImportDropAt(parser.value("drop"),a[0],a[1],a[2],a[3]))return 1;}
+    if(parser.isSet("drop")){const auto a=anchor.size()==4?anchor:QList<int>{0,0,0,0};const bool ok=parser.isSet("drop-action")?drawer.ImportDropActionAt(parser.value("drop"),parser.value("drop-action"),a[0],a[1],a[2],a[3]):drawer.ImportDropAt(parser.value("drop"),a[0],a[1],a[2],a[3]);if(!ok)return 1;}
+    else if(parser.isSet("pet-chat")&&anchor.size()==4)drawer.PetChatAt(parser.value("pet-chat"),anchor[0],anchor[1],anchor[2],anchor[3]);
     else if(parser.isSet("capture")){const auto a=anchor.size()==4?anchor:QList<int>{0,0,0,0};drawer.CaptureAt(a[0],a[1],a[2],a[3]);}
     else if(anchor.size()==4){if(parser.isSet("settings"))drawer.PreferencesAt(anchor[0],anchor[1],anchor[2],anchor[3]);else drawer.ToggleAt(anchor[0],anchor[1],anchor[2],anchor[3]);}
     else if(parser.isSet("settings"))drawer.Preferences();else if(parser.isSet("show")||parser.isSet("toggle"))drawer.Show();

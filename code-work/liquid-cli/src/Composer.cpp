@@ -1,5 +1,6 @@
 #include "Composer.h"
 #include "UiColors.h"
+#include "PetEntry.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QFileInfo>
@@ -81,10 +82,14 @@ Composer::Composer(QWidget *parent):QFrame(parent) {
     setBusy(false);fitHeight();
 }
 void Composer::setBackendName(const QString &name) {
-    input->setAccessibleDescription("给 "+name+" 发消息");input->setProperty("backendPlaceholder","给 "+name+" 发消息…");input->viewport()->update();
+    backendName=name;
+    const QString recipient=petId.isEmpty()?name:PetEntry::label(petId);
+    input->setAccessibleDescription("给 "+recipient+" 发消息");
+    input->setProperty("backendPlaceholder","给 "+recipient+" 发消息…");input->viewport()->update();
 }
-void Composer::setColors(bool light) {
-    lightSurface=light;const auto c=UiColors::forSurface(light);
+void Composer::setColors(bool light,const QString &character) {
+    lightSurface=light;petId=character;const auto c=UiColors::chat(light,petId);
+    setBackendName(backendName);fitHeight();
     setPalette(c.palette(palette()));
     input->setStyleSheet(QString("QPlainTextEdit{background:transparent;color:%1;selection-background-color:#397d73;selection-color:white;}").arg(c.text));
     // An explicit placeholder role is required by the OEM UKUI editor style.
@@ -96,6 +101,10 @@ void Composer::setColors(bool light) {
         "QPushButton#captureButton:hover{background:rgba(120,185,165,35);}"
         "QPushButton#sendButton{background:rgba(120,185,165,80);}QPushButton#sendButton:hover{background:rgba(120,185,165,120);}"
         "QPushButton#sendButton:disabled{background:rgba(120,185,165,22);color:%2;}QPushButton:focus{border:1px solid %3;}").arg(c.text,c.muted,c.accent));
+    if(!petId.isEmpty())setStyleSheet(styleSheet()+QString(
+        "QPushButton#sendButton{background:%1;color:white;font-weight:bold;}"
+        "QPushButton#sendButton:hover{background:%2;} QPushButton#captureButton:hover{background:%3;}")
+        .arg(c.accent,c.text,c.userBubble));
     QPixmap pixmap=QIcon(":/icons/capture.svg").pixmap(QSize(20,20)*devicePixelRatioF());
     QPainter painter(&pixmap);painter.setCompositionMode(QPainter::CompositionMode_SourceIn);painter.fillRect(pixmap.rect(),QColor(c.text));painter.end();
     capture->setIcon(QIcon(pixmap));update();
@@ -103,7 +112,7 @@ void Composer::setColors(bool light) {
 void Composer::paintEvent(QPaintEvent *) {
     QPainter p(this);p.setRenderHint(QPainter::Antialiasing);QPainterPath path;
     path.addRoundedRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5),18,18);
-    const auto colors=UiColors::forSurface(lightSurface);
+    const auto colors=UiColors::chat(lightSurface,petId);
     p.fillPath(path,UiColors::color(colors.field));
     p.setPen(QPen(UiColors::color(input->hasFocus()?colors.accent:colors.border),1));p.drawPath(path);
 }
@@ -163,5 +172,5 @@ void Composer::rebuildStrip() {
 void Composer::fitHeight() {
     const QFontMetrics metrics(input->font());
     int lines=0;for(auto block=input->document()->begin();block.isValid();block=block.next())lines+=qMax(1,block.layout()->lineCount());
-    input->setFixedHeight(qBound(3,lines,kMaxLines)*metrics.lineSpacing()+16);
+    input->setFixedHeight(qBound(petId.isEmpty()?3:2,lines,kMaxLines)*metrics.lineSpacing()+16);
 }

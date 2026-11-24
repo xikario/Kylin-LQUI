@@ -9,7 +9,7 @@ MODULES = {
     'fences': ('桌面与小组件', 'org.ukui.fences', '◈'),
     'panel': ('任务栏与 Dock', 'org.ukui.AiStationPanel', '▰'),
     'launcher': ('开始菜单', 'org.ukui.kaishicaidan.v2', '▦'),
-    'ai': ('AI 小站', 'org.ukui.LiquidCli', '✦'),
+    'ai': ('任务栏 AI 助手', 'org.ukui.LiquidCli', '✦'),
     'input': ('输入法', 'org.kde.impanel', '文'),
     'space': ('AI 空间', 'io.github.xikario.AiSpace', '◇'),
     'peony': ('文件管理与扩展', '', '▣'),

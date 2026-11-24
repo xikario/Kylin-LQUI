@@ -12,7 +12,7 @@ class Composer:public QFrame {
 public:
     explicit Composer(QWidget *parent=nullptr);
     void setBusy(bool busy);
-    void setColors(bool light);
+    void setColors(bool light,const QString &character={});
     void setBackendName(const QString &name);
     void addImage(const QString &path);
     void appendText(const QString &text);
@@ -42,5 +42,6 @@ private:
     QWidget *stripHost=nullptr;
     QLabel *hint=nullptr;
     QStringList attached;
+    QString backendName,petId;
     bool working=false,lightSurface=false,heightQueued=false;
 };

@@ -20,6 +20,7 @@
 | 统一设置、快捷控制中心 | `code-work/ukui-liquid-desktop/apps/kylin-lqui-settings` |
 | 公共玻璃材质、图标、设置桥接、弹窗 | `code-work/ukui-liquid-desktop/shared` |
 | AI 小站（Codex / ACP 客户端） | `code-work/liquid-cli` |
+| 任务栏 AI 宠物与四角色素材 | [code-work/kylin-ai-pet](code-work/kylin-ai-pet/README.md) |
 | Fcitx 4 液态候选前端 | `code-work/fcitx-liquid-panel` |
 | 输入法兼容材质库 | `code-work/shared` |
 | AI 空间、本地索引与检索 | `code-work/ai-space` |

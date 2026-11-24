@@ -1,0 +1,16 @@
+{
+  "name": "kylin-ai-pet",
+  "productName": "AI 宠物",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Kylin-LQUI 任务栏 AI 助手的四角色桌宠",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --show",
+    "check": "node scripts/check.js"
+  },
+  "devDependencies": {
+    "electron": "33.2.1"
+  },
+  "license": "MIT"
+}

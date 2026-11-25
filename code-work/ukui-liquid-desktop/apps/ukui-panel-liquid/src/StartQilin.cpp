@@ -11,6 +11,7 @@
 namespace {
 constexpr qreal Pi = 3.14159265358979323846;
 constexpr int Tile = 112;
+constexpr qreal SceneSide=TaskbarPetLayout::tileSide;
 using StartQilinScenes::ramp;
 qreal pulse(qreal t,qreal start,qreal end) {
     return std::pow(std::sin(Pi*ramp(t,start,end)),2);
@@ -110,6 +111,41 @@ struct Rig {
         return result;
     }
 };
+
+// Ground-level props need the hoof space. Let them take the lip's place
+// during the action and settle the character back behind it on landing.
+qreal perchDepth(StartQilin::Move move,qreal t) {
+    switch(move){
+    case StartQilin::Stamp: case StartQilin::Ripple: case StartQilin::Trot:
+    case StartQilin::CloudRide: case StartQilin::MistStep: case StartQilin::RibbonSpin:
+    case StartQilin::DoubleBounce: case StartQilin::Kickflip:
+        return 1-ramp(t,0,.16)*(1-ramp(t,.84,1));
+    default:return 1;
+    }
+}
+QPainterPath perchRim(qreal depth) {
+    const QRectF r=TaskbarPetLayout::restingMark();
+    const qreal y=r.bottom()+10-depth*43;
+    QPainterPath rim;rim.moveTo(-SceneSide,y);rim.lineTo(r.left(),y);
+    rim.cubicTo(r.left()+r.width()*.29,y+9,r.right()-r.width()*.29,y+9,r.right(),y);
+    rim.lineTo(2*SceneSide,y);
+    return rim;
+}
+QPainterPath rimSide(QPainterPath rim,qreal farY) {
+    rim.lineTo(2*SceneSide,farY);rim.lineTo(-SceneSide,farY);rim.closeSubpath();
+    return rim;
+}
+void paintPerch(QPainter &p,const QPainterPath &rim) {
+    static const auto outline=TaskbarPetLayout::bust(TaskbarPetLayout::restingMark());
+    p.save();p.setClipPath(outline,Qt::IntersectClip);p.setClipPath(rimSide(rim,2*SceneSide),Qt::IntersectClip);
+    QLinearGradient jade(15,112,127,152);
+    jade.setColorAt(0,QColor("#65b1c4"));jade.setColorAt(.5,QColor("#377e9c"));jade.setColorAt(1,QColor("#27567b"));
+    p.fillRect(outline.boundingRect(),jade);
+    p.setPen(Qt::NoPen);p.setBrush(QColor(148,219,231,45));
+    p.drawPolygon(QPolygonF({{0,114},{61,125},{42,150}}));
+    p.setBrush(QColor(14,64,102,42));p.drawPolygon(QPolygonF({{87,151},{107,123},{151,116}}));
+    p.setPen(QPen(QColor("#a6dce7"),2.2));p.setBrush(Qt::NoBrush);p.drawPath(rim);p.restore();
+}
 }
 
 StartQilin::StartQilin() {
@@ -180,7 +216,11 @@ QPixmap StartQilin::render(Move move,qreal time,qreal extraLift) const {
     p.translate((TaskbarPetLayout::tileSide-TaskbarPetLayout::restSide)/2,TaskbarPetLayout::restTop);
     StartQilinScenes::paintBehind(p,move,time,extraLift);
     const QTransform body=StartQilinScenes::bodyTransform(move,time);
-    p.save();p.translate(0,-extraLift);p.setTransform(body,true);
+    const qreal depth=perchDepth(move,time);
+    const auto rim=depth>0?perchRim(depth):QPainterPath();
+    p.save();
+    if(!rim.isEmpty())p.setClipPath(rimSide(rim,-2*SceneSide),Qt::IntersectClip);
+    p.translate(0,-extraLift);p.setTransform(body,true);
     if(move==MistStep)p.setOpacity(1-ramp(time,.10,.40)*(1-ramp(time,.58,.90)));
     if(outline.isEmpty()){
         // Some themes have no vector mesh. Keep the bundled character and effects.
@@ -217,6 +257,7 @@ QPixmap StartQilin::render(Move move,qreal time,qreal extraLift) const {
         stroke({57,47},{64,45},QColor("#075684"),1.6+3*pose.voice);
     }
     p.restore();
+    if(!rim.isEmpty())paintPerch(p,rim);
     StartQilinScenes::paintInFront(p,move,time,body.map(rig.map(QPointF(67,45))),
                                  body.map(rig.map(QPointF(72,1))));
     return image;

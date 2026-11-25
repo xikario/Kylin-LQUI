@@ -218,6 +218,31 @@ private slots:
         for(int i=flip.frames/2;i<flip.frames;++i)QMetaObject::invokeMethod(timer,"timeout");
         QVERIFY(!wing||!wing->isVisible());QVERIFY(!timer->isActive());QVERIFY(idle->isActive());
     }
+    void qilinPerchSharesPortraitCurve(){
+        StartQilin art;
+        const auto idle=art.render(StartQilin::Rest,0).toImage();
+        const int side=idle.width();
+        const qreal scale=side/TaskbarPetLayout::tileSide;
+        const qreal left=(TaskbarPetLayout::tileSide-TaskbarPetLayout::restSide)/2;
+        QImage reference(idle.size(),QImage::Format_ARGB32_Premultiplied);reference.fill(Qt::transparent);
+        {
+            QPainter p(&reference);p.setRenderHint(QPainter::Antialiasing);
+            p.scale(scale,scale);p.translate(left,TaskbarPetLayout::restTop);
+            p.fillPath(TaskbarPetLayout::bust(TaskbarPetLayout::restingMark()),Qt::white);
+        }
+        // The lower band is a solid front lip. No toes should protrude outside the arc.
+        for(int y=qCeil((TaskbarPetLayout::restTop+.87*TaskbarPetLayout::restSide)*scale);y<side;++y)
+            for(int x=0;x<side;++x){
+                const int expected=qAlpha(reference.pixel(x,y)),actual=qAlpha(idle.pixel(x,y));
+                if(expected==255)QVERIFY(actual>240);
+                if(expected==0)QVERIFY(actual<12);
+            }
+        const QPoint foot(qRound((left+75)*scale),qRound((TaskbarPetLayout::restTop+143)*scale));
+        const auto flight=art.render(StartQilin::Flip,.5,StartQilinScenes::flightLift(StartQilin::Flip,.5)).toImage();
+        QCOMPARE(flight.pixel(foot+QPoint(0,flight.height()-side)),idle.pixel(foot));
+        QVERIFY(qAlpha(art.render(StartQilin::MistStep,.5).toImage().pixel(foot))<12);
+        QCOMPARE(art.render(StartQilin::MistStep,1).toImage().pixel(foot),idle.pixel(foot));
+    }
     void taskbarPetsShareOpticalHeight(){
         StartQilin art;
         if(art.silhouette().isEmpty())QSKIP("Original Kylin mark not installed");

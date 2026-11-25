@@ -9,6 +9,7 @@
 #include <QBuffer>
 #include "StationMetrics.h"
 #include "StartQilin.h"
+#include "StartQilinScenes.h"
 #include "../../../shared/desktop-launch/StartIconPreference.h"
 #include <QFileSystemWatcher>
 #include "StationDrop.h"
@@ -137,6 +138,44 @@ void paintOrbSurface(QPainter &p,const QRectF &r,bool hovered) {
     QRadialGradient glow(c+QPointF(7,5),size*.65);QColor light=palette.orbGlow;light.setAlpha(theme==LquiIcon::Theme::Mist?70:190);glow.setColorAt(0,light);light.setAlpha(0);glow.setColorAt(1,light);p.fillRect(r,glow);
     p.setPen(QPen(QColor(235,255,255,theme==LquiIcon::Theme::Mist?55:150),1.1));p.setBrush(Qt::NoBrush);p.drawArc(r.adjusted(4,3,-4,-3),35*16,120*16);p.restore();
 }
+// Only the part of an airborne sprite above the button is mapped onto the desktop.
+// The native button paints the lower half and remains the sole interaction target.
+class QilinFlightWindow final : public QWidget {
+public:
+    QilinFlightWindow():QWidget(nullptr,Qt::ToolTip|Qt::FramelessWindowHint|Qt::NoDropShadowWindowHint|
+            Qt::WindowDoesNotAcceptFocus|Qt::WindowTransparentForInput|Qt::X11BypassWindowManagerHint) {
+        setObjectName("qilinFlightWindow");setWindowTitle("Qilin flight");
+        setAttribute(Qt::WA_TranslucentBackground);setAttribute(Qt::WA_ShowWithoutActivating);
+        setAttribute(Qt::WA_TransparentForMouseEvents);setAttribute(Qt::WA_QuitOnClose,false);
+        setFocusPolicy(Qt::NoFocus);
+    }
+    void present(const QPixmap &frame,const QRectF &desktopTarget,const QRect &band){
+        sprite=frame;target=desktopTarget.translated(-band.topLeft());
+        if(geometry()!=band)setGeometry(band);
+        if(!isVisible())show();
+        update();
+    }
+protected:
+    void paintEvent(QPaintEvent *) override{
+        QPainter p(this);p.setCompositionMode(QPainter::CompositionMode_Source);
+        p.fillRect(rect(),Qt::transparent);p.setRenderHint(QPainter::SmoothPixmapTransform);
+        p.drawPixmap(target,sprite,QRectF(sprite.rect()));
+    }
+private:
+    QPixmap sprite;
+    QRectF target;
+};
+
+bool flightCompositorAvailable(){
+    if(QGuiApplication::platformName()!="xcb")return false;
+    Display *display=XOpenDisplay(nullptr);
+    if(!display)return false;
+    const QByteArray name="_NET_WM_CM_S"+QByteArray::number(DefaultScreen(display));
+    const Atom atom=XInternAtom(display,name.constData(),True);
+    const bool available=atom && XGetSelectionOwner(display,atom)!=0;
+    XCloseDisplay(display);return available;
+}
+
 class StartOrbFace final : public QObject {
 public:
     explicit StartOrbFace(QWidget *widget):QObject(widget),button(widget) {
@@ -171,7 +210,7 @@ protected:
     bool eventFilter(QObject *,QEvent *e) override {
         switch(e->type()){
         case QEvent::Enter:play(true);button->update();break;
-        case QEvent::Leave:if(greeting)rest();button->update();break;
+        case QEvent::Leave:if(greeting&&!jumpLaunched)rest();button->update();break;
         case QEvent::Show:schedule();break;
         case QEvent::Hide:rest(false);break;
         case QEvent::MouseButtonPress:rest(false);break;
@@ -204,7 +243,8 @@ private:
             waitTimer.start(QRandomGenerator::global()->bounded(18000,38001));
     }
     void rest(bool rearm=true){
-        frameTimer.stop();waitTimer.stop();active=StartQilin::Rest;greeting=false;
+        frameTimer.stop();waitTimer.stop();active=StartQilin::Rest;greeting=false;jumpLaunched=false;
+        if(flightWindow)flightWindow->hide();
         button->update();
         if(rearm)schedule();
     }
@@ -220,22 +260,44 @@ private:
     void play(bool hover){
         if(!petMode||reduceMotion||!button->isVisible())return;
         if(QApplication::mouseButtons()!=Qt::NoButton||QApplication::activePopupWidget()){schedule();return;}
-        if(active!=StartQilin::Rest&&(!hover||greeting))return;
-        waitTimer.stop();active=choose();greeting=hover;frame=0;
+        if(active!=StartQilin::Rest&&(!hover||greeting||jumpLaunched))return;
+        waitTimer.stop();active=choose();greeting=hover;frame=0;checkedCompositor=false;
         paintFrame();
+    }
+    QRectF frameTarget(const QPixmap &sprite) const {
+        QRectF target=StartQilin::targetRect(button->rect());
+        if(sprite.height()>sprite.width())target.setTop(target.top()-target.height());
+        return target;
     }
     void paintFrame(){
         const auto timing=StartQilin::timing(active);
-        current=art.render(active,(frame+1.)/(timing.frames+1.));
+        const qreal t=(frame+1.)/(timing.frames+1.);
+        qreal lift=StartQilinScenes::flightLift(active,t);
+        QRectF desktopTarget;
+        QRect band;
+        if(lift>0){
+            jumpLaunched=true;
+            if(!checkedCompositor){canComposite=flightCompositorAvailable();checkedCompositor=true;}
+            const QPoint origin=button->mapToGlobal(QPoint());
+            const auto *screen=QGuiApplication::screenAt(button->mapToGlobal(button->rect().center()));
+            desktopTarget=StartQilin::targetRect(button->rect()).translated(origin);
+            desktopTarget.setTop(desktopTarget.top()-desktopTarget.height());
+            band=desktopTarget.toAlignedRect();band.setBottom(origin.y()-1);
+            if(!canComposite||!screen||band.isEmpty()||!screen->geometry().contains(band))lift=0;
+        }
+        current=art.render(active,t,lift);
+        if(lift>0){
+            if(!flightWindow)flightWindow=std::make_unique<QilinFlightWindow>();
+            flightWindow->present(current,desktopTarget,band);
+        }else if(flightWindow)flightWindow->hide();
         frameTimer.start(timing.delayAfter(frame));button->update();
     }
     void paint() const {
         QPainter p(button);
         const QPointF center=QRectF(button->rect()).center();
         if(petMode){
-            const QRectF target=StartQilin::targetRect(button->rect());
             const QPixmap &sprite=active==StartQilin::Rest?idle:current;
-            p.setRenderHint(QPainter::SmoothPixmapTransform);p.drawPixmap(target,sprite,QRectF(sprite.rect()));
+            p.setRenderHint(QPainter::SmoothPixmapTransform);p.drawPixmap(frameTarget(sprite),sprite,QRectF(sprite.rect()));
             return;
         }
         const qreal diameter=qMin(30,button->height()-8);
@@ -254,6 +316,8 @@ private:
     StartQilin art;
     QPainterPath glyph;
     QPixmap idle,current;
+    std::unique_ptr<QilinFlightWindow> flightWindow;
+    bool checkedCompositor=false,canComposite=false,jumpLaunched=false;
     QTimer frameTimer,waitTimer;
     QFileSystemWatcher watch;
     bool initialized=false,petMode=false,reduceMotion=false,greeting=false;
@@ -262,7 +326,8 @@ private:
         StartQilin::Roar,StartQilin::Tail,StartQilin::Leap,StartQilin::Bow,StartQilin::Listen,
         StartQilin::Stamp,StartQilin::Stretch,StartQilin::Trot,StartQilin::Blink,
         StartQilin::CloudRide,StartQilin::MistStep,StartQilin::Star,StartQilin::Ripple,StartQilin::Flame,
-        StartQilin::Rain,StartQilin::Ball
+        StartQilin::Rain,StartQilin::Ball,StartQilin::Flip,StartQilin::RibbonSpin,
+        StartQilin::DoubleBounce,StartQilin::Kickflip
     }};
     size_t next=order.size();
     int frame=0;

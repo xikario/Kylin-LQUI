@@ -254,6 +254,116 @@ void beachBall(QPainter &p,qreal t,QPointF snout) {
     }
     p.setBrush(QColor("#fff8df"));p.drawEllipse(QPointF(-2,-3),2.8,2.8);
 }
+
+// A parabolic flight gives each takeoff and landing a distinct contact frame.
+qreal flight(qreal t,qreal takeoff,qreal landing) {
+    const qreal u=qBound(0.,(t-takeoff)/(landing-takeoff),1.);
+    return 4*u*(1-u);
+}
+QTransform bodyPose(QPointF pivot,QPointF offset,qreal angle,qreal sx,qreal sy) {
+    QTransform m;
+    m.translate(pivot.x()+offset.x(),pivot.y()+offset.y());
+    m.rotate(angle);m.scale(sx,sy);m.translate(-pivot.x(),-pivot.y());
+    return m;
+}
+struct FlipPose {
+    qreal air, fold, squash, turn;
+    explicit FlipPose(qreal t):air(flight(t,.21,.79)),
+        fold(ramp(t,.12,.32)*(1-ramp(t,.66,.85))),
+        squash(pulse(t,.03,.22)+pulse(t,.78,.98)),turn(ramp(t,.22,.78)) {}
+    QTransform body() const {
+        const qreal size=1-.33*fold;
+        return bodyPose({74,78},{4*air,12*squash-20*air},360*turn,
+                        size+.06*squash,size-.18*squash);
+    }
+};
+void flipArc(QPainter &p,qreal t,qreal extraLift) {
+    const FlipPose pose(t);
+    p.setPen(Qt::NoPen);p.setBrush(QColor(112,195,225,qRound(110*pose.air)));
+    p.drawEllipse(QPointF(75,144),27-13*pose.air,4);
+    if(pose.air<=0)return;
+    p.translate(0,-extraLift);
+    // The short trail travels with the tumble instead of framing the icon.
+    const int angle=qRound((128-360*pose.turn)*16);
+    p.setOpacity(pose.air);p.setBrush(Qt::NoBrush);p.setPen(pen("#8ee7ff",3.8));
+    p.drawArc(QRectF(19,9,111,105),angle,59*16);
+    p.setPen(pen("#cafffa",2.5));p.drawArc(QRectF(24,14,102,95),angle+8*16,27*16);
+}
+qreal spinAngle(qreal t) {return 2*Pi*ramp(t,.12,.87);}
+void ribbon(QPainter &p,qreal t,bool front) {
+    const qreal angle=spinAngle(t);
+    // Split the helix at the body plane; the same silk passes behind and in front.
+    QPainterPath line;bool drawing=false;
+    for(int i=0;i<=28;++i){
+        const qreal u=i/28.,a=angle+u*1.65*Pi;
+        const QPointF point(75+(51+13*u)*std::cos(a),113-58*u+9*std::sin(a));
+        if((std::sin(a)>0)==front){
+            if(drawing)line.lineTo(point);else line.moveTo(point);
+            drawing=true;
+        }else drawing=false;
+    }
+    p.setBrush(Qt::NoBrush);p.setPen(pen(front?"#ffb46b":"#ce765e",front?5.8:4));
+    p.drawPath(line);p.setPen(pen("#ffe499",1.8));p.drawPath(line);
+}
+void spinProfile(QPainter &p,qreal t) {
+    // At a quarter turn the flat logo is edge-on. Its chest and mane give it depth.
+    const qreal side=1-ramp(std::abs(std::cos(spinAngle(t))),.05,.37);
+    if(side<=0)return;
+    p.save();p.setOpacity(side);p.translate(75,0);
+    p.setPen(pen("#9bdff2",2));p.setBrush(QColor("#168ac1"));
+    p.drawPolygon(QPolygonF({{-3,17},{2,6},{4,29},{11,40},{8,63},{13,87},
+                              {5,111},{5,138},{0,146},{-4,138},{-3,109},{-12,90},{-9,57},{-8,40}}));
+    p.setPen(Qt::NoPen);p.setBrush(QColor("#80d8f0"));
+    p.drawPolygon(QPolygonF({{-8,45},{2,31},{5,58},{-3,77}}));p.restore();
+}
+struct BouncePose {
+    qreal stage, small, high, spring;
+    explicit BouncePose(qreal t):stage(appear(t,.13,.89)),small(flight(t,.17,.42)),
+        high(flight(t,.47,.84)),spring(pulse(t,.04,.18)+pulse(t,.39,.48)+pulse(t,.82,.96)) {}
+    QTransform body() const {
+        const qreal size=1-.29*stage;
+        return bodyPose({72,146},{7*small-5*high,-13*stage-15*small-37*high+6*spring},
+                        5*small-5*high,size+.055*spring,size-.11*spring);
+    }
+};
+void trampoline(QPainter &p,qreal t) {
+    const BouncePose pose(t);
+    const qreal bed=135+6*pose.spring;
+    p.setBrush(Qt::NoBrush);p.setPen(pen("#d7d6f7",2.9));
+    for(const int x:{39,107}){
+        QPainterPath coil;coil.moveTo(x,bed+1);coil.lineTo(x-4,bed+4);
+        coil.lineTo(x+4,(bed+150)/2+1);coil.lineTo(x-3,150);p.drawPath(coil);
+    }
+    p.setPen(pen("#62558c",3.5));p.drawLine(QPointF(32,151),QPointF(115,151));
+    p.setPen(pen("#f9bbfa",3.5));p.setBrush(QColor("#8b65bf"));p.drawEllipse(QRectF(24,bed-5,100,10));
+}
+struct BoardPose {
+    qreal stage, air, pop, land, roll, x;
+    explicit BoardPose(qreal t):stage(appear(t,.15,.91)),air(flight(t,.27,.76)),
+        pop(pulse(t,.15,.34)),land(pulse(t,.74,.94)),roll(ramp(t,.32,.71)),
+        x(72+(-14+28*ramp(t,.15,.83))*stage) {}
+    QTransform body() const {
+        const qreal size=1-.25*stage;
+        return bodyPose({72,143},{x-72,-12*stage-31*air+6*(pop+land)},
+                        -12*pop+8*air,size+.04*land,size-.10*(pop+land));
+    }
+};
+void skateboard(QPainter &p,qreal t) {
+    const BoardPose pose(t);
+    p.translate(pose.x,135-18*pose.air);p.rotate(-24*pose.pop+11*pose.air);
+    const qreal face=std::cos(2*Pi*pose.roll);
+    p.setPen(Qt::NoPen);p.setBrush(QColor("#ffbb77"));
+    for(const int x:{-24,24})p.drawEllipse(QPointF(x,7*face),4.5,4.5);
+    p.scale(1,.22+.78*std::abs(face)+.8*qMax(0.,-face));p.setPen(pen("#f6daae",3));
+    p.setBrush(face>=0?QColor("#36586a"):QColor("#ed7564"));
+    QPainterPath deck;deck.moveTo(-42,-6);deck.quadTo(-36,-1,-29,-1);deck.lineTo(29,-1);
+    deck.quadTo(36,-1,42,-7);deck.quadTo(45,3,29,6);deck.lineTo(-29,6);
+    deck.quadTo(-43,2,-42,-6);p.drawPath(deck);
+    if(face<0){
+        QPainterPath bolt;bolt.moveTo(-16,4);bolt.lineTo(-3,0);bolt.lineTo(1,4);bolt.lineTo(15,0);
+        p.setPen(pen("#ffedb2",2.7));p.setBrush(Qt::NoBrush);p.drawPath(bolt);
+    }
+}
 } // namespace
 
 QTransform StartQilinScenes::bodyTransform(StartQilin::Move move,qreal t) {
@@ -273,17 +383,36 @@ QTransform StartQilinScenes::bodyTransform(StartQilin::Move move,qreal t) {
         return around({58,133},1-.16*w,{10*arch,-3*arch});
     case StartQilin::Rain:
         return around({55,145},1-.21*w,{0,2*w});
+    case StartQilin::Flip:return FlipPose(t).body();
+    case StartQilin::RibbonSpin:
+        return bodyPose({75,141},{0,-4*arch},-5*std::sin(spinAngle(t)),
+                        (1-.07*arch)*std::cos(spinAngle(t)),1-.06*arch);
+    case StartQilin::DoubleBounce:return BouncePose(t).body();
+    case StartQilin::Kickflip:return BoardPose(t).body();
     default:return {};
     }
 }
 
-void StartQilinScenes::paintBehind(QPainter &p,StartQilin::Move move,qreal t) {
+qreal StartQilinScenes::flightLift(StartQilin::Move move,qreal t) {
+    switch(move){
+    case StartQilin::Flip:return 113*flight(t,.21,.79);
+    case StartQilin::DoubleBounce:return 35*flight(t,.17,.42)+103*flight(t,.47,.84);
+    case StartQilin::Kickflip:return 82*flight(t,.27,.76);
+    default:return 0;
+    }
+}
+
+void StartQilinScenes::paintBehind(QPainter &p,StartQilin::Move move,qreal t,qreal extraLift) {
     p.save();p.setOpacity(appear(t));
     switch(move){
     case StartQilin::Leap:hoop(p,t,false);break;
     case StartQilin::Tail:pinwheel(p,t);break;
     case StartQilin::Trot:finishFlag(p,t);break;
     case StartQilin::Rain:rainShower(p,t);break;
+    case StartQilin::Flip:flipArc(p,t,extraLift);break;
+    case StartQilin::RibbonSpin:ribbon(p,t,false);spinProfile(p,t);break;
+    case StartQilin::DoubleBounce:trampoline(p,t);break;
+    case StartQilin::Kickflip:p.translate(0,-.46*extraLift);skateboard(p,t);break;
     default:break;
     }
     p.restore();
@@ -312,6 +441,7 @@ void StartQilinScenes::paintInFront(QPainter &p,StartQilin::Move move,qreal t,QP
     case StartQilin::Flame:lantern(p,t,snout);break;
     case StartQilin::Rain:umbrella(p,t);break;
     case StartQilin::Ball:beachBall(p,t,snout);break;
+    case StartQilin::RibbonSpin:ribbon(p,t,true);break;
     default:break;
     }
     p.restore();

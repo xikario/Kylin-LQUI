@@ -59,6 +59,21 @@ Pose poseAt(StartQilin::Move move, qreal t) {
     case StartQilin::Ball:
         p.head=11*pulse(t,.10,.31)-22*pulse(t,.29,.49);
         p.fore=-21*pulse(t,.25,.52); p.hind=7*pulse(t,.40,.62); p.tail=17*beat; break;
+    case StartQilin::Flip:{
+        const qreal tuck=ramp(t,.18,.39)*(1-ramp(t,.60,.78));
+        p.head=19*tuck; p.fore=-35*tuck; p.hind=32*tuck; p.tail=-25*tuck; break;
+    }
+    case StartQilin::RibbonSpin:
+        p.head=-9*arch; p.fore=-32*arch; p.hind=9*arch;
+        p.tail=25*arch-13*beat; break;
+    case StartQilin::DoubleBounce:{
+        const qreal first=pulse(t,.17,.42),second=pulse(t,.47,.84);
+        p.fore=-19*first+24*second; p.hind=16*first-29*second;
+        p.tail=12*first-22*second; p.head=-8*second; break;
+    }
+    case StartQilin::Kickflip:
+        p.fore=21*pulse(t,.20,.35)-27*pulse(t,.33,.70);
+        p.hind=30*pulse(t,.27,.71); p.tail=-19*pulse(t,.31,.70); p.head=11*arch; break;
     default: break;
     }
     return p;
@@ -134,7 +149,7 @@ QRectF StartQilin::targetRect(const QRectF &button) {
 
 StartQilin::Timing StartQilin::timing(Move move) {
     static constexpr std::array<Timing,Count> times{{
-        // Moving frames are rendered at 14–18 fps. A held pose needs no repaint.
+        // Moving frames are rendered at 14–20 fps. A held pose needs no repaint.
         {1,0},       // Rest
         {34,63,230}, // Roar
         {39,59},     // Tail
@@ -151,20 +166,25 @@ StartQilin::Timing StartQilin::timing(Move move) {
         {40,61},     // Ripple
         {39,69,190}, // Flame
         {49,57,140}, // Rain
-        {51,55}      // Ball
+        {51,55},     // Ball
+        {54,51,110}, // Flip
+        {52,52},     // RibbonSpin
+        {57,50},     // DoubleBounce
+        {52,54,90}   // Kickflip
     }};
     return times[move];
 }
 
-QPixmap StartQilin::render(Move move,qreal time) const {
+QPixmap StartQilin::render(Move move,qreal time,qreal extraLift) const {
     const Pose pose=poseAt(move,time);
     const Rig rig(pose);
-    QPixmap image(Tile,Tile);image.fill(Qt::transparent);
+    QPixmap image(Tile,extraLift>0?2*Tile:Tile);image.fill(Qt::transparent);
     QPainter p(&image);p.setRenderHints(QPainter::Antialiasing|QPainter::SmoothPixmapTransform);
+    p.translate(0,image.height()-Tile);
     p.scale(Tile/176.,Tile/176.);p.translate(13,15);
-    StartQilinScenes::paintBehind(p,move,time);
+    StartQilinScenes::paintBehind(p,move,time,extraLift);
     const QTransform body=StartQilinScenes::bodyTransform(move,time);
-    p.save();p.setTransform(body,true);
+    p.save();p.translate(0,-extraLift);p.setTransform(body,true);
     if(move==MistStep)p.setOpacity(1-ramp(time,.10,.40)*(1-ramp(time,.58,.90)));
     if(outline.isEmpty()){
         // Some themes have no vector mesh. Keep the bundled character and effects.
@@ -172,8 +192,9 @@ QPixmap StartQilin::render(Move move,qreal time) const {
         switch(move){
         case Rest:break;
         case Roar:case Listen:case Flame:case Ball:action="roar";break;
-        case Tail:case Blink:case MistStep:action="tail";break;
-        case Leap:case Trot:case Stamp:case CloudRide:case Ripple:action="leap";break;
+        case Tail:case Blink:case MistStep:case RibbonSpin:action="tail";break;
+        case Leap:case Trot:case Stamp:case CloudRide:case Ripple:
+        case Flip:case DoubleBounce:case Kickflip:action="leap";break;
         default:action="bow";break;
         }
         const QPixmap strip=action?QPixmap(QString(":/start-qilin/%1.png").arg(action)):fallback;

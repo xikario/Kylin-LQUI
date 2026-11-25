@@ -1,5 +1,6 @@
 #include "StartIconPreference.h"
 #include "StartQilin.h"
+#include "StartQilinScenes.h"
 #include "PanelAiStation.h"
 #include "StationMetrics.h"
 #include <QtTest>
@@ -17,12 +18,16 @@
 #include <QTemporaryDir>
 #include <QContextMenuEvent>
 #include <QMenu>
+#include <QLibrary>
+#include <memory>
 #include <QPainter>
 #include <QElapsedTimer>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include "StationDrop.h"
 #include "PetEntry.h"
+#include <X11/Xlib.h>
+#undef Bool
 
 class UKUIPanel:public QWidget { Q_OBJECT public:using QWidget::QWidget; };
 class LunarCalendarWidget:public QWidget { Q_OBJECT public:using QWidget::QWidget; };
@@ -148,6 +153,69 @@ private slots:
         QVERIFY(nose.width()>=3&&bounce.width()>=3);
         QVERIFY(bounce.center().x()-nose.center().x()>8);
         QVERIFY(bounce.center().y()-nose.center().y()>15);
+    }
+    void qilinAirborneFrames(){
+        StartQilin art;
+        const auto tile=art.render(StartQilin::Rest,0).width();
+        for(const auto move:{StartQilin::Flip,StartQilin::DoubleBounce,StartQilin::Kickflip}){
+            int above=0,highest=0;const int frames=StartQilin::timing(move).frames;
+            for(int f=0;f<frames;++f){
+                const qreal t=(f+1.)/(frames+1.),lift=StartQilinScenes::flightLift(move,t);
+                const auto image=art.render(move,t,lift).toImage();
+                QCOMPARE(image.width(),tile);QCOMPARE(image.height(),lift>0?2*tile:tile);
+                int first=image.height();
+                for(int y=0;y<image.height();++y)for(int x=0;x<tile;++x){
+                    if(qAlpha(image.pixel(x,y))<12)continue;
+                    first=qMin(first,y);
+                    QVERIFY(x>0&&x<tile-1&&y>0&&y<image.height()-1);
+                }
+                if(lift>0&&first<tile){++above;highest=qMax(highest,tile-first);}
+            }
+            QVERIFY(above>=frames/4);QVERIFY(highest>=tile/3);
+            QCOMPARE(StartQilinScenes::flightLift(move,1),0.);
+        }
+    }
+    void qilinFlightIsInputTransparent(){
+        if(QGuiApplication::platformName()!="xcb")QSKIP("X11 input shape");
+        std::unique_ptr<Display,decltype(&XCloseDisplay)> display(XOpenDisplay(nullptr),XCloseDisplay);
+        QVERIFY(display);auto *d=display.get();
+        const QByteArray name="_NET_WM_CM_S"+QByteArray::number(DefaultScreen(d));
+        const Atom atom=XInternAtom(d,name.constData(),False);
+        const bool composited=XGetSelectionOwner(d,atom)!=0;
+        StartSettingsFixture config;config.setPet(true);
+        UKUIPanel panel;panel.setGeometry(250,250,180,48);
+        QPushButton button(&panel);button.setObjectName("StartMenuButton");button.setFixedSize(44,44);
+        panel.show();PanelAiStation adapter(&panel);
+        QTRY_VERIFY(button.findChild<QTimer*>("qilinGestureFrame"));
+        auto *timer=button.findChild<QTimer*>("qilinGestureFrame");
+        auto *idle=button.findChild<QTimer*>("qilinIdleWait");
+        const auto flip=StartQilin::timing(StartQilin::Flip);
+        QEvent leave(QEvent::Leave);
+        for(int i=1;i<StartQilin::Count;++i){
+            QEvent enter(QEvent::Enter);QApplication::sendEvent(&button,&enter);
+            if(timer->interval()==flip.ms)break;
+            QApplication::sendEvent(&button,&leave);
+        }
+        QCOMPARE(timer->interval(),flip.ms);
+        Window before=0,after=0;int revert=0;XGetInputFocus(d,&before,&revert);
+        for(int i=0;i<flip.frames/2;++i)QMetaObject::invokeMethod(timer,"timeout");
+        QApplication::sendEvent(&button,&leave);QVERIFY(timer->isActive()); // Land even if the cursor moves away.
+        QGuiApplication::sync();
+        QWidget *wing=nullptr;
+        for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="qilinFlightWindow")wing=w;
+        if(composited){
+            QVERIFY(wing && wing->isVisible());
+            QVERIFY(wing->geometry().bottom()<button.mapToGlobal(QPoint()).y());
+            QLibrary ext("Xext",6);
+            using ShapeRects=XRectangle*(*)(Display*,Window,int,int*,int*);
+            auto rects=reinterpret_cast<ShapeRects>(ext.resolve("XShapeGetRectangles"));QVERIFY(rects);
+            int count=-1,order=0;
+            auto *result=rects(d,wing->winId(),2,&count,&order);if(result)XFree(result);
+            QCOMPARE(count,0); // Empty native ShapeInput lets other apps receive the click.
+            XGetInputFocus(d,&after,&revert);QCOMPARE(after,before);
+        }else QVERIFY(!wing||!wing->isVisible());
+        for(int i=flip.frames/2;i<flip.frames;++i)QMetaObject::invokeMethod(timer,"timeout");
+        QVERIFY(!wing||!wing->isVisible());QVERIFY(!timer->isActive());QVERIFY(idle->isActive());
     }
     void qilinFitsRoundedStartButton(){
         StartQilin art;

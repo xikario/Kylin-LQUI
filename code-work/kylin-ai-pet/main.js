@@ -1,4 +1,4 @@
-// 克劳德大小姐桌宠主进程：透明置顶窗口 + 本地事件接口 + 作息感知。
+// 克劳德大小姐桌宠主进程：透明角色窗口 + 本地事件接口 + 作息感知。
 const { app, BrowserWindow, ipcMain, Menu, Tray, screen, powerMonitor, shell } = require('electron');
 const characters = require('./renderer/characters');
 const path = require('path');
@@ -19,7 +19,7 @@ if (!app.requestSingleInstanceLock()) process.exit(0);
 
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
 let cfg = {
-  size: '中', atHome: true, x: null, y: null, quiet: false, lastMorning: '', top: true, whisper: true, fling: true,
+  size: '中', atHome: true, x: null, y: null, quiet: false, lastMorning: '', top: false, whisper: true, fling: true,
 };
 function loadCfg() {
   try {
@@ -145,9 +145,10 @@ function createWindow() {
   const x = cfg.x ?? home.x;
   const y = cfg.y ?? home.y;
   win = new BrowserWindow({
-    width: w, height: h, x, y, show: !cfg.atHome,
+    width: w, height: h, x, y, show: false,
     ...(process.platform === 'linux' ? { type: 'toolbar' } : {}),
     transparent: true, frame: false, resizable: false, hasShadow: false,
+    // X11 下 focusable:false 会绕过窗口管理器，其他应用就盖不住桌宠。
     alwaysOnTop: cfg.top, skipTaskbar: true, focusable: true,
     backgroundColor: '#00000000',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
@@ -159,6 +160,10 @@ function createWindow() {
   hideTaskbarEntry(win);
   win.on('minimize', () => goHome(false));
   win.setAlwaysOnTop(cfg.top, 'floating');
+  win.once('ready-to-show', () => {
+    if (process.argv.includes('--show')) showPet();
+    else if (!cfg.atHome) win.showInactive();
+  });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'), {query:{character}});
   if (process.platform !== 'linux') win.setIgnoreMouseEvents(true, { forward: true });
   win.on('will-resize', (e) => e.preventDefault());
@@ -217,8 +222,7 @@ function showPet() {
     cfg.atHome = false;
     saveCfg();
   }
-  if (win.isMinimized()) win.restore();
-  win.show();
+  win.showInactive();
   win.moveTop();
 }
 
@@ -513,7 +517,6 @@ app.whenReady().then(() => {
   fs.watch(entryDir(),(_event, name) => {
     if (!name || name === 'ai-entry.ini') { clearTimeout(refreshTimer);refreshTimer=setTimeout(refreshEntry,60); }
   });
-  if(process.argv.includes('--show')) cfg.atHome=false;
   loadPetCfg();
   createTray();
   createWindow();
@@ -522,6 +525,8 @@ app.whenReady().then(() => {
   powerMonitor.on('resume', () => { away = true; });
 });
 
-app.on('second-instance', showPet);
+app.on('second-instance', (_event, argv) => {
+  if (argv.includes('--show')) showPet();
+});
 
 app.on('window-all-closed', () => app.quit());

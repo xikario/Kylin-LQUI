@@ -199,7 +199,7 @@ QPixmap StartQilin::render(Move move,qreal time,qreal extraLift) const {
             p.drawPixmap(QRectF(-13,-15,176,176),strip,QRectF(qBound(0,int(time*n),n-1)*side,0,side,side));
         }
     } else {
-        p.setPen(QPen(QColor("#9bdff2"),2.8,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
+        p.setPen(QPen(QColor("#9bdff2"),TaskbarPetLayout::outlineWidth,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
         p.setBrush(QColor("#0078bc"));p.drawPolygon(rig.map(outline));
         for (const auto &facet:facets) {
             p.setPen(QPen(facet.color,.34,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));

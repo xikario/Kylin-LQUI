@@ -1,6 +1,8 @@
 #include "PanelLayoutCompat.h"
 #include <QApplication>
+#include <QAbstractButton>
 #include <QEvent>
+#include <QMouseEvent>
 #include <QGuiApplication>
 #include <QLayout>
 #include <QMetaMethod>
@@ -35,6 +37,22 @@ TaskbarRealign taskbarRealign(QWidget *bar) {
 }
 QString nativeConfig() {
     return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation) + "/ukui/panel.conf";
+}
+bool showBlankAreaMenu(QWidget *panel,const QMouseEvent *release) {
+    if(release->buttons()!=Qt::NoButton || !panel->rect().contains(release->pos()) || QApplication::activePopupWidget()
+        || panel->contextMenuPolicy()!=Qt::DefaultContextMenu)return false;
+    // Child handlers have already had this release. Keep icon-specific menus
+    // with their buttons even if a release from an icon propagates to the panel.
+    for(auto *w=panel->childAt(release->pos());w&&w!=panel;w=w->parentWidget()){
+        if(qobject_cast<QAbstractButton*>(w))return false;
+    }
+    // The OEM release handler calls realign() before opening this same menu.
+    // Route a background release directly to its exported menu entry point.
+    using ShowMenu=void (*)(QWidget *);
+    static const auto showMenu=reinterpret_cast<ShowMenu>(dlsym(RTLD_DEFAULT,"_ZN9UKUIPanel15showContextMenuEv"));
+    if(!showMenu)return false;
+    showMenu(panel);
+    return true;
 }
 }
 PanelLayoutCompat::PanelLayoutCompat(QWidget *panel, const QString &preferences, QObject *parent)
@@ -414,6 +432,13 @@ bool PanelLayoutCompat::eventFilter(QObject *object, QEvent *event) {
     auto *widget = qobject_cast<QWidget *>(object);
     if (!widget || !m_panel || m_applying) return false;
     if (widget != m_panel && !m_panel->isAncestorOf(widget)) return false;
+    if(widget==m_panel && event->type()==QEvent::MouseButtonRelease){
+        const auto *release=static_cast<QMouseEvent*>(event);
+        if(release->button()==Qt::RightButton && centered() && backend()!=Backend::Unsupported
+            && showBlankAreaMenu(widget,release)){
+            event->accept();return true;
+        }
+    }
     if (event->type() == QEvent::MouseButtonPress) m_immediateReady = true;
     switch (event->type()) {
     case QEvent::Move: case QEvent::Resize:

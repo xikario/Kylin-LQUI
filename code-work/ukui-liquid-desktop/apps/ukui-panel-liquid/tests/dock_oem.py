@@ -11,6 +11,7 @@ parser.add_argument('--calendar-native',action='store_true')
 parser.add_argument('--cohesive',action='store_true')
 parser.add_argument('--system-items',action='store_true')
 parser.add_argument('--system-items-only',action='store_true')
+parser.add_argument('--blank-menu-only',action='store_true',help='Check centered Dock geometry across native background context menus')
 parser.add_argument('--calendar-regression-only',action='store_true')
 parser.add_argument('--calendar-editor-only',action='store_true')
 parser.add_argument('--indicators-only',action='store_true')
@@ -223,13 +224,32 @@ with tempfile.TemporaryDirectory(prefix='panel-dock-oem-') as directory:
             check(not any(w.get('dockWindows') or w.get('dockGroupActive') for w in nodes(closed['panel']) if w['class']=='UKUITaskButton' and w['visible']),'closed applications and pinned launchers have no marker')
             call('shutdown',wait=0);check(process.wait(timeout=8)==0,'indicator fixture shuts down cleanly')
             raise SystemExit(0)
-        if args.system_items:
+        if args.system_items or args.blank_menu_only:
             snapshot=fixed(initial)
             before_rapid=call(wait=500)
             rapid=call('rapidBlank',wait=1400)
             check(rapid['dock']['materialFallbacks']==before_rapid['dock']['materialFallbacks'],'rapid native blank-area clicks never replace finished glass with a placeholder')
             check(rapid['dock']['materialBuilds']<=before_rapid['dock']['materialBuilds']+1,'transient OEM press geometry is coalesced before material preparation')
             check(fixed(rapid)==snapshot,'rapid blank clicks preserve the fixed Dock geometry')
+            anchors=dict(snapshot)
+            for name in (rapid['panel']['name'],'StatusNotifier','ukui-panel_plugin_QFrame_statusnotifier','ukui-panel_plugin_QFrame_calendar'):
+                w=named(rapid,name)
+                if w:anchors[name]=tuple(w[k] for k in ('x','y','w','h'))
+            call('traceDock',value=True,wait=0)
+            for _ in range(2):
+                opened=call('blankMenu',wait=350)
+                check(opened['panelMenuVisible'],'right-clicking the empty Dock opens the native panel menu')
+                subprocess.run(['xdotool','key','Escape'],check=True)
+                closed=call(wait=300)
+                check(not closed['panelMenuVisible'],'Escape closes the native menu')
+            failures=[e for e in closed['dockMotion'] if e['name'] in anchors
+                      and tuple(e[k] for k in ('x','y','w','h'))!=anchors[e['name']]]
+            check(fixed(closed)==snapshot and not failures,'right-side widgets stay in place throughout menu open and close')
+            call('traceDock',value=False,wait=0)
+            if args.blank_menu_only:
+                call('shutdown',wait=0);check(process.wait(timeout=8)==0,'blank-menu fixture exits cleanly')
+                raise SystemExit(0)
+        if args.system_items:
             core=[w for w in nodes(initial['panel']) if w.get('accessibleName') in ['ukui-panel_sni_QToolButton_'+name for name in ('kylin-nm','ukui-volume-control-applet-qt','ukui-power-manager-tray','ukui-sidebar','ukui-bluetooth')]]
             check(len(core)==5 and all(w['w']==25 for w in core if w['visible']),'all five system controls exist and visible entries remain compact')
             compact_width=named(initial,'StatusNotifier')['w']

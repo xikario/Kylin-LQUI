@@ -104,7 +104,7 @@ class LayoutProbe : public QObject {
             QTimer::singleShot(150,qApp,&QCoreApplication::quit);
         } else if(action=="traceDock") {
             traceDock=request.value("value").toBool();if(traceDock)dockMotion=QJsonArray();
-        } else if(panel && action=="rapidBlank") {
+        } else if(panel && (action=="rapidBlank" || action=="blankMenu")) {
             QAbstractScrollArea *bar=nullptr;
             for(auto *area:panel->findChildren<QAbstractScrollArea*>())if(area->inherits("UKUITaskBar")){bar=area;break;}
             ok=false;
@@ -114,7 +114,9 @@ class LayoutProbe : public QObject {
                 for(auto *w=hit;w&&w!=bar;w=w->parentWidget())if(qobject_cast<QAbstractButton*>(w)){button=true;break;}
                 if(hit&&!button) {
                     const qreal scale=panel->devicePixelRatioF();
-                    ok=QProcess::startDetached("xdotool",{"mousemove",QString::number(qRound(point.x()*scale)),QString::number(qRound(point.y()*scale)),"click","--repeat","12","--delay","35","1"});break;
+                    QStringList args{"mousemove",QString::number(qRound(point.x()*scale)),QString::number(qRound(point.y()*scale)),"click"};
+                    if(action=="blankMenu")args<<"3";else args<<"--repeat"<<"12"<<"--delay"<<"35"<<"1";
+                    ok=QProcess::startDetached("xdotool",args);break;
                 }
             }
         } else if(panel && action=="dragTask") {
@@ -272,6 +274,8 @@ class LayoutProbe : public QObject {
         QTimer::singleShot(request.value("wait").toInt(650),this,[=]{
             if(!guard)return;QJsonObject result{{"ok",ok},{"controlSyncs",qApp->property("lquiControlSyncs").toInt()},{"systemControls",qApp->property("liquidSystemControlsEnabled").toBool()},{"controlLauncher",qEnvironmentVariable("LQUI_CONTROL_CENTER_LAUNCHER")}};
             result["calendarGeometryRedirects"]=qApp->property("lquiCalendarGeometryRedirects").toInt();
+            auto *popup=qobject_cast<QMenu*>(QApplication::activePopupWidget());
+            result["panelMenuVisible"]=popup && popup->isVisible() && popup->property("liquidPanelMenu").toBool();
             result["calendarPreloadInherited"]=qEnvironmentVariable("LD_PRELOAD").contains("liblqui-calendar-geometry-bridge.so");
             if(panel) {
                 result.insert("panel",item(panel));result.insert("winId",QString::number(panel->winId()));
@@ -295,7 +299,10 @@ class LayoutProbe : public QObject {
             auto *w=qobject_cast<QWidget*>(o);auto *mouse=static_cast<QMouseEvent*>(e);
             if(w)dndEvents.append(QJsonObject{{"widget",w->objectName()},{"class",w->metaObject()->className()},{"type",int(e->type())},{"x",mouse->pos().x()},{"y",mouse->pos().y()},{"dpr",w->devicePixelRatioF()}});
         }
-        if(traceDock&&o->inherits("UKUITaskButton")&&(e->type()==QEvent::Paint||e->type()==QEvent::Move||e->type()==QEvent::Resize)&&dockMotion.size()<10000){
+        if(traceDock&&(e->type()==QEvent::Paint||e->type()==QEvent::Move||e->type()==QEvent::Resize)&&dockMotion.size()<10000
+            &&(o==panel||o->inherits("UKUITaskButton")||o->objectName()=="aiStationCluster"||o->objectName()=="aiStationOrb"
+                ||o->objectName()=="Calendar"||o->objectName()=="StatusNotifier"
+                ||o->objectName()=="ukui-panel_plugin_QFrame_statusnotifier"||o->objectName()=="ukui-panel_plugin_QFrame_calendar")){
             auto *w=qobject_cast<QWidget*>(o);if(w&&w->isVisible()){
                 const QPoint pt=w->mapToGlobal(QPoint());dockMotion.append(QJsonObject{{"name",w->objectName()},{"type",int(e->type())},{"x",pt.x()},{"y",pt.y()},{"w",w->width()},{"h",w->height()},{"pressed",QApplication::mouseButtons()!=Qt::NoButton}});
             }

@@ -65,6 +65,8 @@
       this.pokeFlip = 0;
       this.cfg = FALLBACK;
       this.sticky = '';
+      this.idleBag = [];
+      this.lastIdleAction = null;
 
       this.layer = document.createElement('div');
       this.layer.className = 'pet-layer';
@@ -90,8 +92,15 @@
         this.videos[name] = v;
       }
 
+      this.stage.ownerDocument.addEventListener('visibilitychange', () => {
+        if (this.stage.ownerDocument.hidden && this.clips[this.current]?.lazyVideo) {
+          this.queue = [];
+          this._next();
+        } else {
+          this._scheduleIdle();
+        }
+      });
       this._show('A01');
-      this._scheduleIdle();
     }
 
     // 现在该循环的动作：Claude 在忙就循环对应动作，否则按姿势待机
@@ -108,6 +117,8 @@
 
     setConfig(cfg) {
       this.cfg = cfg && cfg.animations ? cfg : FALLBACK;
+      this.idleBag = [];
+      this._scheduleIdle();
       if (this._whisperOn) this.setWhisper(true);
     }
 
@@ -129,7 +140,7 @@
       this.queue = [];
       const need = cfg.pose;
       if (need && need !== this.pose) this.queue.push(TO[need]);
-      this.queue.push({ name, say: opts.say });
+      this.queue.push({ name, say: opts.say, hold: !!opts.hold });
       this._next();
     }
 
@@ -137,19 +148,21 @@
       let item = this.queue.shift();
       let name = item && (item.name || item);
       const say = item && item.name ? item.say : undefined;
+      let hold = Boolean(item?.hold);
       if (!name) {
         name = this._restClip();
+        hold = true;
         const need = this.clips[name].pose;
         if (need !== this.pose) {
-          this.queue.push(name);
+          this.queue.push({ name, hold: true });
           name = TO[need];
         }
       }
-      this._show(name, say);
+      this._show(name, say, hold);
     }
 
     // 真正切换画面：新片段出第一帧后淡入，旧片段同时淡出
-    _show(name, sayOverride) {
+    _show(name, sayOverride, hold = false) {
       const v = this.videos[name];
       const cfg = this.clips[name];
       this.current = name;
@@ -157,7 +170,13 @@
       this.onClip(name);
       clearTimeout(this._poseTimer);
       if (cfg.lazyVideo && !v.hasAttribute('src')) v.src = this.base + cfg.file;
-      if (v.play) v.currentTime = 0;
+      // A pose may be a persistent work state or a one-off interaction.
+      // Only the actual rest pose and an explicitly held state may loop.
+      const keep = cfg.loop && (name === IDLE[this.pose] || hold);
+      if (v.play) {
+        v.loop = !!keep;
+        v.currentTime = 0;
+      }
       const reveal = () => {
         if (this.current !== name) return;
         for (const o of Object.values(this.videos)) o.classList.toggle('on', o === v);
@@ -177,7 +196,7 @@
       };
       if (!v.play) {
         reveal();
-        if (!cfg.loop) this._poseTimer = setTimeout(() => this._next(), 1600);
+        if (!keep) this._poseTimer = setTimeout(() => this._next(), 1600);
       } else {
         const playing = v.play();
         if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(reveal);
@@ -239,7 +258,7 @@
       const base = ((this.cfg.eventsRefreshSec || {}).whisper || 240) * 1000;
       const next = () => {
         this._whisperTimer = setTimeout(() => {
-          const free = this.claude === 'idle' && this.current === IDLE[this.pose] && !this.bubble.classList.contains('on');
+          const free = this._canIdle() && !this.bubble.classList.contains('on');
           if (free) this.whisper();
           next();
         }, base * (0.6 + Math.random() * 0.8));
@@ -277,6 +296,7 @@
         this.claude = 'idle';
         this.sticky = '';
         if (this.current !== IDLE[this.pose]) this.play('A01');
+        else if (this._idleTimer === null) this._scheduleIdle();
         this._restoreBubble();
         return;
       }
@@ -288,7 +308,7 @@
         const same = this.claude === state;
         this.claude = state;
         this.sticky = text;
-        if (!same && clip) this.play(clip, { say: null });
+        if (!same && clip) this.play(clip, { say: null, hold: true });
         if (!same) this.say(text, true);
       } else {
         this.claude = 'idle';
@@ -323,11 +343,38 @@
 
     // 空闲时按权重抽：继续待机，或者从各分类里抽一个动作（和 DSH 的 categories 一样）
     // 捧着茶时偶尔喝一口，或者把茶杯收起来
+    _canIdle() {
+      return !this.stage.ownerDocument.hidden && this.claude === 'idle' && this.current === IDLE[this.pose];
+    }
+
+    _nextIdleAction(actions) {
+      if (!this.idleBag.length) {
+        this.idleBag = actions.slice();
+        for (let i = this.idleBag.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [this.idleBag[i], this.idleBag[j]] = [this.idleBag[j], this.idleBag[i]];
+        }
+        const end = this.idleBag.length - 1;
+        if (end > 0 && this.idleBag[end] === this.lastIdleAction) {
+          [this.idleBag[0], this.idleBag[end]] = [this.idleBag[end], this.idleBag[0]];
+        }
+      }
+      this.lastIdleAction = this.idleBag.pop();
+      return this.lastIdleAction;
+    }
+
     _scheduleIdle() {
       clearTimeout(this._idleTimer);
-      const wait = this.idleMin + Math.random() * (this.idleMax - this.idleMin);
+      this._idleTimer = null;
+      if (!this._canIdle()) return;
+      const rotation = this.cfg.animations.autoMotion;
+      const min = rotation?.minMs ?? this.idleMin;
+      const max = rotation?.maxMs ?? this.idleMax;
+      const wait = min + Math.random() * (max - min);
       this._idleTimer = setTimeout(() => {
-        if (this.stage.ownerDocument.hidden || this.claude !== 'idle' || this.current !== IDLE[this.pose]) return this._scheduleIdle();
+        this._idleTimer = null;
+        if (!this._canIdle()) return;
+        if (rotation?.clips.length) return this.play(this._nextIdleAction(rotation.clips));
         if (this.pose === 'tea') return this.play(Math.random() < 0.6 ? 'C01' : 'A01');
         const cats = (this.cfg.animations.categories || []).filter((c) => c.weight > 0 && c.actions && c.actions.length);
         const total = (this.cfg.animationWeights || {}).idle || 0;

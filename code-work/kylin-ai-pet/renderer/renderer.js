@@ -15,9 +15,6 @@ if (role.stillPlacement) {
     img.style.top = 'auto';
     img.style.bottom = bottom + '%';
   }
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && pet.clips[pet.current]?.lazyVideo) pet.play('A01');
-  });
 }
 
 // X11 的穿透窗口收不到鼠标移动。用原作各动作的轮廓设定可见、可点击的窗口区域。

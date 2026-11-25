@@ -36,6 +36,11 @@
         actions.categories.push({id:category, weight:30, actions:ids});
       }
     }
+    actions.autoMotion = {
+      minMs: 12000,
+      maxMs: 20000,
+      clips: actions.categories.flatMap(category => category.actions).filter(id => role.clips[id].lazyVideo),
+    };
     role.stillPlacement = pack.stillPlacement;
   }
   if (typeof module === 'object') module.exports = cast;

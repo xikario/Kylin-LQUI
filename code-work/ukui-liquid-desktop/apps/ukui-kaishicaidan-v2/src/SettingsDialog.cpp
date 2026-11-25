@@ -1,5 +1,6 @@
 #include "SettingsDialog.h"
 #include "StartMenu.h"
+#include "../../../shared/desktop-launch/StartIconPreference.h"
 
 #include <QVBoxLayout>
 #include <QFormLayout>
@@ -24,6 +25,15 @@ void SettingsDialog::buildUi()
     auto *root = new QVBoxLayout(this);
     root->setContentsMargins(20, 20, 20, 20);
     root->setSpacing(12);
+
+    auto *iconBox = new QGroupBox(tr("开始按钮"), this);
+    auto *iconForm = new QFormLayout(iconBox);
+    m_iconCombo = new QComboBox(iconBox);
+    m_iconCombo->setObjectName("launcherStartIcon");
+    m_iconCombo->addItem(tr("经典麒麟（带圆环）"), false);
+    m_iconCombo->addItem(tr("麒麟宠物"), true);
+    iconForm->addRow(tr("图标样式"), m_iconCombo);
+    root->addWidget(iconBox);
 
     // 字体组
     auto *fontBox = new QGroupBox(QString::fromUtf8("字体"), this);
@@ -65,6 +75,8 @@ void SettingsDialog::buildUi()
 
 void SettingsDialog::loadCurrent()
 {
+    QSettings settings(StartIconPreference::path(), QSettings::IniFormat);
+    m_iconCombo->setCurrentIndex(m_iconCombo->findData(StartIconPreference::pet(settings)));
     StartMenuConfig &cfg = StartMenuConfig::instance();
     const QString fam = cfg.fontFamily();
     if (!fam.isEmpty())
@@ -74,6 +86,8 @@ void SettingsDialog::loadCurrent()
 
 void SettingsDialog::apply()
 {
+    QSettings settings(StartIconPreference::path(), QSettings::IniFormat);
+    StartIconPreference::save(settings, m_iconCombo->currentData().toBool());
     StartMenuConfig &cfg = StartMenuConfig::instance();
     const QString family=m_fontCombo->currentFont().family();
     if(!cfg.setAppearance(Skin::EcoLiquid,family,m_sizeSpin->value(),cfg.panelOpacity()))return;
@@ -82,6 +96,7 @@ void SettingsDialog::apply()
 
 void SettingsDialog::reset()
 {
+    m_iconCombo->setCurrentIndex(0);
     m_fontCombo->setCurrentFont(QFont("sans-serif"));
     m_sizeSpin->setValue(14);
     apply();

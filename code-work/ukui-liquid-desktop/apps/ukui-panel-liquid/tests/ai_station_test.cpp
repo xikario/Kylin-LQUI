@@ -1,3 +1,5 @@
+#include "StartIconPreference.h"
+#include "StartQilin.h"
 #include "PanelAiStation.h"
 #include "StationMetrics.h"
 #include <QtTest>
@@ -48,6 +50,20 @@ public slots:
     Q_SCRIPTABLE void CaptureAt(int x,int y,int w,int h){++captures;captureAnchor=QRect(x,y,w,h);capturePopup=QApplication::activePopupWidget()!=nullptr;}
     Q_SCRIPTABLE bool ImportDropActionAt(const QString &manifest,const QString &name,int x,int y,int w,int h){payload=StationDrop::read(manifest);action=name;dropAnchor=QRect(x,y,w,h);++actionDrops;StationDrop::discard(manifest);return !payload.isEmpty();}
     Q_SCRIPTABLE bool ImportDropAt(const QString &manifest,int x,int y,int w,int h){payload=StationDrop::read(manifest);dropAnchor=QRect(x,y,w,h);++drops;StationDrop::discard(manifest);return !payload.isEmpty();}
+};
+// Keep all start-button mode changes out of the user's launcher settings.
+class StartSettingsFixture {
+    QTemporaryDir dir;
+    QByteArray previous=qgetenv("XDG_CONFIG_HOME");
+public:
+    StartSettingsFixture(){ qputenv("XDG_CONFIG_HOME",dir.path().toUtf8()); }
+    ~StartSettingsFixture(){
+        if(previous.isNull())qunsetenv("XDG_CONFIG_HOME");else qputenv("XDG_CONFIG_HOME",previous);
+    }
+    void setPet(bool value){
+        QSettings settings(StartIconPreference::path(),QSettings::IniFormat);
+        StartIconPreference::save(settings,value);
+    }
 };
 class StationTest:public QObject {
     Q_OBJECT
@@ -110,19 +126,30 @@ private slots:
         QFile::remove(root.path()+"/class/hwmon/hwmon0/temp1_input");QVERIFY(metrics.temperature(340000).current<0);
     }
     void qilinGreetsOncePerVisit(){
+        StartSettingsFixture config;
         UKUIPanel panel;panel.resize(180,48);
         QPushButton button(&panel);button.setObjectName("StartMenuButton");button.setFixedSize(44,44);
-        PanelAiStation adapter(&panel);
+        panel.show();PanelAiStation adapter(&panel);
         QTRY_VERIFY(button.findChild<QTimer*>("qilinGestureFrame"));
         auto *timer=button.findChild<QTimer*>("qilinGestureFrame");
         QVERIFY(timer->isSingleShot());QVERIFY(!timer->isActive());
         QEvent enter(QEvent::Enter),leave(QEvent::Leave);
+        auto *wait=button.findChild<QTimer*>("qilinIdleWait");QVERIFY(wait);
+        QApplication::sendEvent(&button,&enter);
+        QVERIFY(!button.property("petFaceActive").toBool());QVERIFY(!timer->isActive());QVERIFY(!wait->isActive());
+        config.setPet(true);QTRY_VERIFY(button.property("petFaceActive").toBool());
+        QVERIFY(wait->isSingleShot());QVERIFY(wait->isActive());
+        QMetaObject::invokeMethod(wait,"timeout");QVERIFY(timer->isActive());QVERIFY(!wait->isActive());
+        QTRY_VERIFY(!timer->isActive());QVERIFY(wait->isActive());
+        for(int i=1;i<StartQilin::Count-1;++i){
+            QApplication::sendEvent(&button,&enter);QApplication::sendEvent(&button,&leave);
+        }
         QSet<int> all;int last=-1;
         for(int round=0;round<3;++round){
             QSet<int> seen;
-            for(int i=0;i<4;++i){
+            for(int i=0;i<StartQilin::Count-1;++i){
                 QApplication::sendEvent(&button,&enter);QVERIFY(timer->isActive());
-                // Each gesture has its own cadence. A full bag visits all four.
+                // Each gesture has its own cadence. A full bag visits every move.
                 const int beat=timer->interval();QVERIFY(beat!=last);QVERIFY(!seen.contains(beat));
                 seen.insert(beat);last=beat;
                 QApplication::sendEvent(&button,&leave);QVERIFY(!timer->isActive());
@@ -131,13 +158,17 @@ private slots:
         }
         QSignalSpy frames(timer,&QTimer::timeout);
         QApplication::sendEvent(&button,&enter);QTRY_VERIFY(!timer->isActive());
-        const int played=frames.count();QVERIFY(played>=12&&played<=14);
+        const int played=frames.count();QVERIFY(played>=14&&played<=26);
         QTest::qWait(180);QCOMPARE(frames.count(),played);
         QApplication::sendEvent(&button,&enter);QVERIFY(timer->isActive());
         QSignalSpy clicks(&button,&QPushButton::clicked);
         QTest::mouseClick(&button,Qt::LeftButton);QCOMPARE(clicks.count(),1);QVERIFY(!timer->isActive());
+        panel.hide();QVERIFY(!wait->isActive());panel.show();QTRY_VERIFY(wait->isActive());
+        config.setPet(false);QTRY_VERIFY(!button.property("petFaceActive").toBool());
+        QVERIFY(!timer->isActive());QVERIFY(!wait->isActive());
     }
     void nativeLayoutClickAndIdle(){
+        StartSettingsFixture startConfig;startConfig.setPet(true);
         FakeStation fake;auto bus=QDBusConnection::sessionBus();
         QVERIFY(bus.registerObject("/Cli",&fake,QDBusConnection::ExportScriptableSlots));QVERIFY(bus.registerService("org.ukui.LiquidCli"));
         UKUIPanel panel;panel.resize(660,48);panel.move(20,100);panel.setStyleSheet("UKUIPanel{background:#132b2b;color:white;}");

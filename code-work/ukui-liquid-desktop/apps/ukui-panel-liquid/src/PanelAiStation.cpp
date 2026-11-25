@@ -8,6 +8,9 @@
 #include <QKeyEvent>
 #include <QBuffer>
 #include "StationMetrics.h"
+#include "StartQilin.h"
+#include "../../../shared/desktop-launch/StartIconPreference.h"
+#include <QFileSystemWatcher>
 #include "StationDrop.h"
 #include "PetEntry.h"
 #include <QApplication>
@@ -99,7 +102,7 @@ protected:
             if(motion.state()==QAbstractAnimation::Running){motion.stop();hide();setProperty("animating",false);}
             return false;
         }
-        if(event->type()==QEvent::Enter&&button->objectName()!="StartMenuButton")play(false);
+        if(event->type()==QEvent::Enter)play(false);
         if(event->type()==QEvent::MouseButtonPress&&static_cast<QMouseEvent*>(event)->button()==Qt::LeftButton)play(true);
         if(event->type()==QEvent::DynamicPropertyChange&&static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName()=="liquidOrbPressFeedback")play(true);
         if(event->type()==QEvent::Resize)setGeometry(button->rect());
@@ -134,33 +137,47 @@ void paintOrbSurface(QPainter &p,const QRectF &r,bool hovered) {
     QRadialGradient glow(c+QPointF(7,5),size*.65);QColor light=palette.orbGlow;light.setAlpha(theme==LquiIcon::Theme::Mist?70:190);glow.setColorAt(0,light);light.setAlpha(0);glow.setColorAt(1,light);p.fillRect(r,glow);
     p.setPen(QPen(QColor(235,255,255,theme==LquiIcon::Theme::Mist?55:150),1.1));p.setBrush(Qt::NoBrush);p.drawArc(r.adjusted(4,3,-4,-3),35*16,120*16);p.restore();
 }
-class StartOrbFace final:public QObject {
+class StartOrbFace final : public QObject {
 public:
-    explicit StartOrbFace(QWidget *widget):QObject(widget),button(widget),idle(":/start-qilin/idle.png") {
+    explicit StartOrbFace(QWidget *widget):QObject(widget),button(widget) {
         setObjectName("lquiStartOrbFace");
         button->setCursor(Qt::PointingHandCursor);
         button->setAutoFillBackground(false);
         button->setProperty("doNotAnimate",true);
         button->setProperty("useIconHighlightEffect",false);
-        frameTimer.setParent(this);
-        frameTimer.setObjectName("qilinGestureFrame");
-        frameTimer.setSingleShot(true);
+        glyph.addPolygon(art.silhouette());glyph.closeSubpath();
+        frameTimer.setParent(this);frameTimer.setObjectName("qilinGestureFrame");
+        waitTimer.setParent(this);waitTimer.setObjectName("qilinIdleWait");
+        frameTimer.setSingleShot(true);waitTimer.setSingleShot(true);
+        waitTimer.setTimerType(Qt::VeryCoarseTimer);
         connect(&frameTimer,&QTimer::timeout,this,[this]{
-            ++frame;
-            if(frame>=frameCount())stop();
-            else {frameTimer.start();button->update();}
+            const auto timing=StartQilin::timing(active);
+            if(++frame>=timing.frames){rest();return;}
+            paintFrame();
         });
+        connect(&waitTimer,&QTimer::timeout,this,[this]{play(false);});
+        const QString path=StartIconPreference::path();
+        for(const auto &file:{path,panelPath()}){
+            const auto dir=QFileInfo(file).absolutePath();
+            if(QDir().mkpath(dir))watch.addPath(dir);
+        }
+        connect(&watch,&QFileSystemWatcher::directoryChanged,this,[this]{reload();});
+        connect(&watch,&QFileSystemWatcher::fileChanged,this,[this]{reload();});
+        LquiEffects::onChanged(this,[this]{reload();});
         button->installEventFilter(this);
+        reload();
     }
 protected:
-    bool eventFilter(QObject *,QEvent *event) override {
-        switch(event->type()){
-        case QEvent::Enter: start();button->update();break;
-        case QEvent::Leave:
-        case QEvent::Hide:
-        case QEvent::MouseButtonPress: stop();break;
+    bool eventFilter(QObject *,QEvent *e) override {
+        switch(e->type()){
+        case QEvent::Enter:play(true);button->update();break;
+        case QEvent::Leave:if(greeting)rest();button->update();break;
+        case QEvent::Show:schedule();break;
+        case QEvent::Hide:rest(false);break;
+        case QEvent::MouseButtonPress:rest(false);break;
+        case QEvent::MouseButtonRelease:schedule();break;
         case QEvent::DynamicPropertyChange:
-            if(static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName()=="liquidOrbPressFeedback")stop();
+            if(static_cast<QDynamicPropertyChangeEvent*>(e)->propertyName()=="liquidOrbPressFeedback")rest();
             break;
         case QEvent::FocusIn:case QEvent::FocusOut:button->update();break;
         case QEvent::Paint:paint();return true;
@@ -169,61 +186,88 @@ protected:
         return false;
     }
 private:
-    struct Gesture {const char *image;int frameMs;QPixmap strip;};
-    QWidget *button;
-    QPixmap idle;
-    std::array<Gesture,4> moves{{
-        {":/start-qilin/roar.png",56,{}},{":/start-qilin/tail.png",52,{}},
-        {":/start-qilin/leap.png",48,{}},{":/start-qilin/bow.png",61,{}}
-    }};
-    std::array<int,4> order{{0,1,2,3}};
-    int next=4,last=-1,active=-1,frame=0;
-    QTimer frameTimer;
-
-    int drawGesture(){
-        if(next==int(order.size())){
-            auto *random=QRandomGenerator::global();
-            for(int i=int(order.size())-1;i>0;--i)std::swap(order[i],order[random->bounded(i+1)]);
-            if(order.front()==last)std::swap(order.front(),order[1+random->bounded(int(order.size())-1)]);
+    static QString panelPath(){return QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)+"/ukui/liquid-panel.ini";}
+    void reload(){
+        const auto path=StartIconPreference::path();
+        for(const auto &file:{path,panelPath()})
+            if(QFileInfo::exists(file)&&!watch.files().contains(file))watch.addPath(file);
+        const bool pet=StartIconPreference::pet(QSettings(path,QSettings::IniFormat));
+        const bool reduced=LquiEffects::reducedMotion(QSettings(panelPath(),QSettings::IniFormat).value("appearance/reducedMotion",false).toBool());
+        if(initialized&&pet==petMode&&reduced==reduceMotion)return;
+        initialized=true;petMode=pet;reduceMotion=reduced;
+        button->setProperty("petFaceActive",petMode);
+        if(petMode&&idle.isNull())idle=art.render(StartQilin::Rest,0);
+        rest();
+    }
+    void schedule(){
+        if(petMode&&!reduceMotion&&button->isVisible()&&active==StartQilin::Rest&&!waitTimer.isActive())
+            waitTimer.start(QRandomGenerator::global()->bounded(18000,38001));
+    }
+    void rest(bool rearm=true){
+        frameTimer.stop();waitTimer.stop();active=StartQilin::Rest;greeting=false;
+        button->update();
+        if(rearm)schedule();
+    }
+    StartQilin::Move choose(){
+        if(next==order.size()){
+            auto &random=*QRandomGenerator::global();
+            std::shuffle(order.begin(),order.end(),random);
+            if(order.front()==last)std::swap(order.front(),order.back());
             next=0;
         }
-        last=order[next++];
-        return last;
+        last=order[next++];return last;
     }
-    int frameCount() const {
-        if(active<0)return 0;
-        const QPixmap &strip=moves[active].strip;
-        return strip.isNull()?0:strip.width()/strip.height();
+    void play(bool hover){
+        if(!petMode||reduceMotion||!button->isVisible())return;
+        if(QApplication::mouseButtons()!=Qt::NoButton||QApplication::activePopupWidget()){schedule();return;}
+        if(active!=StartQilin::Rest&&(!hover||greeting))return;
+        waitTimer.stop();active=choose();greeting=hover;frame=0;
+        paintFrame();
     }
-    void start(){
-        if(active>=0||QApplication::mouseButtons()!=Qt::NoButton)return;
-        QSettings settings(QDir::homePath()+"/.config/ukui/liquid-panel.ini",QSettings::IniFormat);
-        if(LquiEffects::reducedMotion(settings.value("appearance/reducedMotion",false).toBool()))return;
-        active=drawGesture();frame=0;
-        auto &move=moves[active];
-        if(move.strip.isNull())move.strip.load(QString::fromLatin1(move.image));
-        if(!frameCount()){active=-1;return;}
-        frameTimer.start(move.frameMs);
-    }
-    void stop(){
-        frameTimer.stop();active=-1;frame=0;button->update();
+    void paintFrame(){
+        const auto timing=StartQilin::timing(active);
+        current=art.render(active,(frame+1.)/(timing.frames+1.));
+        frameTimer.start(timing.ms);button->update();
     }
     void paint() const {
         QPainter p(button);
         const QPointF center=QRectF(button->rect()).center();
-        const qreal diameter=qMin(30,button->height()-8);
-        const QRectF base(center-QPointF(diameter/2,diameter/2),QSizeF(diameter,diameter));
-        paintOrbSurface(p,base,button->underMouse()||button->hasFocus());
-        if(idle.isNull()){
-            p.drawPixmap(base.toAlignedRect(),QIcon::fromTheme("kylin-startmenu").pixmap(64,64));return;
+        if(petMode){
+            // 40 logical pixels including motion margins gives a ~34 px animal,
+            // matching the visible area of the taskbar's 35 px pet portrait.
+            const qreal side=qMax(1,qMin(40,qMin(button->width(),button->height())-2));
+            QRectF target(0,0,side,side);target.moveCenter(center);
+            const QPixmap &sprite=active==StartQilin::Rest?idle:current;
+            p.setRenderHint(QPainter::SmoothPixmapTransform);p.drawPixmap(target,sprite,QRectF(sprite.rect()));
+            return;
         }
-        const qreal side=qMin<qreal>(diameter*1.34,qMin(button->width(),button->height())-2);
-        const QRectF target(center-QPointF(side/2,side/2),QSizeF(side,side));
-        const QPixmap &strip=active>=0?moves[active].strip:idle;
-        const int tile=strip.height();
-        p.setRenderHint(QPainter::SmoothPixmapTransform);
-        p.drawPixmap(target,strip,QRectF(frame*tile,0,tile,tile));
+        const qreal diameter=qMin(30,button->height()-8);
+        QRectF face(0,0,diameter,diameter);face.moveCenter(center);
+        paintOrbSurface(p,face,button->underMouse()||button->hasFocus());
+        if(!art.silhouette().isEmpty()){
+            const QRectF bounds=glyph.boundingRect();const qreal scale=diameter*.68/qMax(bounds.width(),bounds.height());
+            p.translate(center);p.scale(scale,scale);p.translate(-bounds.center());
+            p.fillPath(glyph,QColor("#effcff"));
+        } else {
+            p.setRenderHint(QPainter::SmoothPixmapTransform);
+            p.drawPixmap(face.adjusted(3,3,-3,-3),QIcon::fromTheme("kylin-startmenu").pixmap(128,128),QRectF(0,0,128,128));
+        }
     }
+    QWidget *button;
+    StartQilin art;
+    QPainterPath glyph;
+    QPixmap idle,current;
+    QTimer frameTimer,waitTimer;
+    QFileSystemWatcher watch;
+    bool initialized=false,petMode=false,reduceMotion=false,greeting=false;
+    StartQilin::Move active=StartQilin::Rest,last=StartQilin::Rest;
+    std::array<StartQilin::Move,StartQilin::Count-1> order{{
+        StartQilin::Roar,StartQilin::Tail,StartQilin::Leap,StartQilin::Bow,StartQilin::Listen,
+        StartQilin::Stamp,StartQilin::Stretch,StartQilin::Trot,StartQilin::Blink,
+        StartQilin::CloudRide,StartQilin::MistStep,StartQilin::Star,StartQilin::Ripple,StartQilin::Flame
+    }};
+    size_t next=order.size();
+    int frame=0;
 };
 class Orb final : public QAbstractButton, public QAbstractNativeEventFilter {
 public:

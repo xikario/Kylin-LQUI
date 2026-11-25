@@ -24,7 +24,7 @@ private:
     void loadCurrent();
 
     StartMenu *m_menu;
-    QComboBox   *m_skinCombo = nullptr;
+    QComboBox   *m_iconCombo = nullptr;
     QFontComboBox *m_fontCombo = nullptr;
     QSpinBox    *m_sizeSpin  = nullptr;
     QComboBox   *m_opacityCombo = nullptr;

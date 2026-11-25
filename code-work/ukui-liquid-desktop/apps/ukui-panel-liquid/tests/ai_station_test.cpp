@@ -126,6 +126,29 @@ private slots:
         t=metrics.temperature(330000);QCOMPARE(t.current,45.);QCOMPARE(t.label,QString("机温"));QCOMPARE(t.peak,45.);
         QFile::remove(root.path()+"/class/hwmon/hwmon0/temp1_input");QVERIFY(metrics.temperature(340000).current<0);
     }
+    void qilinInteractsWithRainAndBall(){
+        StartQilin art;
+        auto propBounds=[&](StartQilin::Move move,qreal t){
+            const auto image=art.render(move,t).toImage().scaled(48,48,Qt::IgnoreAspectRatio,Qt::SmoothTransformation);
+            QRect bounds;
+            for(int y=0;y<image.height();++y)for(int x=0;x<image.width();++x){
+                const QColor c=image.pixelColor(x,y);
+                if(c.alpha()<170||c.red()<215)continue;
+                const bool canopy=c.green()>156&&c.green()<228&&c.blue()<147;
+                const bool redStripe=c.green()>55&&c.green()<137&&qAbs(c.green()-c.blue())<27;
+                if(move==StartQilin::Rain?canopy:redStripe)bounds|=QRect(x,y,1,1);
+            }
+            return bounds;
+        };
+        const auto canopy=propBounds(StartQilin::Rain,.55);
+        QVERIFY(canopy.width()>=15);
+        QVERIFY(propBounds(StartQilin::Rain,.12).width()<canopy.width()/2);
+        const auto nose=propBounds(StartQilin::Ball,.37);
+        const auto bounce=propBounds(StartQilin::Ball,.74);
+        QVERIFY(nose.width()>=3&&bounce.width()>=3);
+        QVERIFY(bounce.center().x()-nose.center().x()>8);
+        QVERIFY(bounce.center().y()-nose.center().y()>15);
+    }
     void qilinFitsRoundedStartButton(){
         StartQilin art;
         QImage coverage=art.render(StartQilin::Rest,0).toImage();

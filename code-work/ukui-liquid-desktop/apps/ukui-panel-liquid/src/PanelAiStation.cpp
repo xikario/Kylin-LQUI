@@ -261,7 +261,8 @@ private:
     std::array<StartQilin::Move,StartQilin::Count-1> order{{
         StartQilin::Roar,StartQilin::Tail,StartQilin::Leap,StartQilin::Bow,StartQilin::Listen,
         StartQilin::Stamp,StartQilin::Stretch,StartQilin::Trot,StartQilin::Blink,
-        StartQilin::CloudRide,StartQilin::MistStep,StartQilin::Star,StartQilin::Ripple,StartQilin::Flame
+        StartQilin::CloudRide,StartQilin::MistStep,StartQilin::Star,StartQilin::Ripple,StartQilin::Flame,
+        StartQilin::Rain,StartQilin::Ball
     }};
     size_t next=order.size();
     int frame=0;

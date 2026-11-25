@@ -1,8 +1,8 @@
 #include "StartQilin.h"
+#include "StartQilinScenes.h"
 #include <QFile>
 #include <QIcon>
 #include <QPainter>
-#include <QPainterPath>
 #include <QRegularExpression>
 #include <QXmlStreamReader>
 #include <cmath>
@@ -10,9 +10,9 @@
 namespace {
 constexpr qreal Pi = 3.14159265358979323846;
 constexpr int Tile = 112;
-qreal ramp(qreal value, qreal lo, qreal hi) {
-    const qreal t = qBound<qreal>(0, (value-lo)/(hi-lo), 1);
-    return t*t*(3-2*t);
+using StartQilinScenes::ramp;
+qreal pulse(qreal t,qreal start,qreal end) {
+    return std::pow(std::sin(Pi*ramp(t,start,end)),2);
 }
 
 struct Pose {
@@ -27,7 +27,7 @@ Pose poseAt(StartQilin::Move move, qreal t) {
     case StartQilin::Roar:
         p.head=9*beat-18*arch; p.ear=-8*arch; p.voice=ramp(t,.22,.42)*(1-ramp(t,.65,.92)); break;
     case StartQilin::Tail:
-        p.tail=47*arch*std::sin(3*Pi*t); p.hind=5*beat; break;
+        p.tail=19*pulse(t,.04,.30)-42*pulse(t,.24,.50)+16*pulse(t,.44,.70); p.hind=5*beat; break;
     case StartQilin::Leap:
         p.lift=-10*arch+2*std::sin(3*Pi*t); p.fore=15*arch; p.hind=-23*arch; p.tail=-21*arch; break;
     case StartQilin::Bow:
@@ -35,14 +35,14 @@ Pose poseAt(StartQilin::Move move, qreal t) {
     case StartQilin::Listen:
         p.ear=23*arch*std::sin(3*Pi*t); p.head=-8*arch; p.tail=10*beat; break;
     case StartQilin::Stamp:
-        p.fore=-29*arch*std::abs(std::sin(2*Pi*t)); p.head=8*beat; p.hind=4*arch; break;
+        p.fore=-31*pulse(t,.06,.35)-26*pulse(t,.38,.66); p.head=8*beat; p.hind=4*arch; break;
     case StartQilin::Stretch:
         p.fore=16*arch; p.hind=-17*arch; p.head=17*arch; p.tail=-25*arch; p.lean=5*arch; break;
     case StartQilin::Trot:
         p.fore=22*arch*std::sin(4*Pi*t); p.hind=-p.fore;
         p.lift=-5*std::abs(p.fore)/22; p.tail=16*beat; break;
     case StartQilin::Blink:
-        p.blink=arch*std::pow(std::sin(2*Pi*t),2)*1.7; p.head=-4*arch; p.ear=7*beat; break;
+        p.blink=pulse(t,.40,.60)+pulse(t,.65,.82); p.head=-9*pulse(t,.16,.54)+5*pulse(t,.58,.87); p.ear=11*beat; break;
     case StartQilin::CloudRide:
         p.fore=18*arch; p.hind=-20*arch; p.tail=13*beat; p.head=-4*arch; break;
     case StartQilin::MistStep:
@@ -52,7 +52,13 @@ Pose poseAt(StartQilin::Move move, qreal t) {
     case StartQilin::Ripple:
         p.fore=-24*std::pow(std::sin(Pi*ramp(t,0,.53)),2); p.head=8*arch; break;
     case StartQilin::Flame:
-        p.head=7*beat-8*arch; p.ear=-7*arch; p.voice=.7*arch; break;
+        p.head=9*pulse(t,.05,.25)-10*pulse(t,.20,.67); p.ear=-7*arch; p.voice=pulse(t,.20,.69); break;
+    case StartQilin::Rain:
+        p.head=15*pulse(t,.13,.39)-7*pulse(t,.41,.78);
+        p.ear=-15*pulse(t,.18,.42); p.blink=pulse(t,.22,.40); p.fore=-15*pulse(t,.31,.70); break;
+    case StartQilin::Ball:
+        p.head=11*pulse(t,.10,.31)-22*pulse(t,.29,.49);
+        p.fore=-21*pulse(t,.25,.52); p.hind=7*pulse(t,.40,.62); p.tail=17*beat; break;
     default: break;
     }
     return p;
@@ -88,65 +94,6 @@ struct Rig {
         return result;
     }
 };
-// Effects share the icon's local coordinates; only the current short action is painted.
-void cloud(QPainter &p, QPointF center, qreal width, QColor fill, QColor edge) {
-    p.save();p.translate(center);p.scale(width/100.,width/100.);
-    QPainterPath plume;
-    plume.moveTo(-49,9);
-    plume.cubicTo(-39,6,-45,-3,-31,-2);
-    plume.cubicTo(-26,-18,-7,-17,0,-5);
-    plume.cubicTo(10,-17,24,-12,27,-3);
-    plume.cubicTo(35,-6,41,2,50,-4);
-    plume.cubicTo(48,7,38,14,24,13);
-    plume.cubicTo(9,14,-4,10,-17,14);
-    plume.cubicTo(-29,19,-41,17,-49,9);
-    p.setPen(QPen(edge,2.8));p.setBrush(fill);p.drawPath(plume);
-    QPainterPath curl;curl.moveTo(-26,5);curl.cubicTo(-11,9,-7,-5,-16,-4);
-    curl.moveTo(3,7);curl.cubicTo(14,13,22,5,28,4);
-    p.setPen(QPen(edge,2.5,Qt::SolidLine,Qt::RoundCap));p.setBrush(Qt::NoBrush);p.drawPath(curl);p.restore();
-}
-void sparkle(QPainter &p,QPointF center,qreal radius,QColor color) {
-    QPolygonF points;
-    for(int i=0;i<8;++i){
-        const qreal angle=i*Pi/4, length=(i%2?.27:1)*radius;
-        points<<center+QPointF(std::cos(angle)*length,std::sin(angle)*length);
-    }
-    p.setPen(Qt::NoPen);p.setBrush(color);p.drawPolygon(points);
-}
-void foreground(QPainter &p,StartQilin::Move move,qreal t,const Rig &rig) {
-    const qreal arch=std::pow(std::sin(Pi*t),2);
-    p.save();
-    if(move==StartQilin::CloudRide){
-        p.setOpacity(ramp(t,0,.24)*(1-ramp(t,.76,1)));
-        cloud(p,{73+9*std::sin(2*Pi*t),134-3*arch},109* (.65+.35*arch),QColor("#84cfea"),QColor("#e3fbff"));
-    } else if(move==StartQilin::MistStep){
-        p.setOpacity(.88*ramp(t,0,.28)*(1-ramp(t,.60,1)));
-        cloud(p,{35+49*t,124-55*arch},88,QColor("#99b8e1"),QColor("#e4f4ff"));
-        cloud(p,{116-31*t,104-76*arch},65,QColor("#c3def0"),QColor("#effaff"));
-        sparkle(p,{85,69},11*arch,QColor("#fff3b5"));
-    } else if(move==StartQilin::Star){
-        p.setOpacity(arch);const auto tip=rig.map(QPointF(72,1));
-        sparkle(p,tip+QPointF(5+21*t,6-4*arch),11*arch,QColor("#ffdf80"));
-        sparkle(p,tip+QPointF(16+25*t,12+6*t),5*arch,QColor("#f4faff"));
-    } else if(move==StartQilin::Ripple&&t>.41){
-        const qreal wave=ramp(t,.41,1);
-        p.setOpacity(std::sin(Pi*wave));p.setPen(QPen(QColor("#8beaff"),3.8));p.setBrush(Qt::NoBrush);
-        p.drawEllipse(QPointF(19,145),10+18*wave,3+4*wave);
-        p.setPen(Qt::NoPen);p.setBrush(QColor("#cdfaff"));
-        p.drawEllipse(QPointF(10-9*wave,142-12*std::sin(Pi*wave)),2.3,3.5);
-        p.drawEllipse(QPointF(31+10*wave,144-10*std::sin(Pi*wave)),2.5,3.5);
-    } else if(move==StartQilin::Flame){
-        const QPointF snout=rig.map(QPointF(67,45));
-        p.translate(snout);p.setOpacity(arch);p.scale(.4+.6*arch,.5+.5*arch);
-        QPainterPath flame;flame.moveTo(2,0);flame.cubicTo(13,-2,14,-12,26,-8);
-        flame.quadTo(32,-6,41,-17+3*std::sin(6*Pi*t));flame.cubicTo(36,0,31,9,19,8);
-        flame.quadTo(11,8,2,0);p.setPen(Qt::NoPen);p.setBrush(QColor("#f28b49"));p.drawPath(flame);
-        QPainterPath core;core.moveTo(3,0);core.quadTo(12,0,19,-4);core.quadTo(20,1,29,-3);
-        core.quadTo(20,10,3,0);p.setBrush(QColor("#ffe79b"));p.drawPath(core);
-    }
-    p.restore();
-}
-
 }
 
 StartQilin::StartQilin() {
@@ -202,7 +149,9 @@ StartQilin::Timing StartQilin::timing(Move move) {
         {46,64},     // MistStep
         {35,67,180}, // Star
         {40,61},     // Ripple
-        {39,69,190}  // Flame
+        {39,69,190}, // Flame
+        {49,57,140}, // Rain
+        {51,55}      // Ball
     }};
     return times[move];
 }
@@ -213,21 +162,16 @@ QPixmap StartQilin::render(Move move,qreal time) const {
     QPixmap image(Tile,Tile);image.fill(Qt::transparent);
     QPainter p(&image);p.setRenderHints(QPainter::Antialiasing|QPainter::SmoothPixmapTransform);
     p.scale(Tile/176.,Tile/176.);p.translate(13,15);
-    p.save();
-    const qreal arch=std::pow(std::sin(Pi*time),2);
-    if(move==CloudRide){
-        p.translate(75+5*std::sin(2*Pi*time)*arch,75-13*arch);
-        p.scale(1-.19*arch,1-.19*arch);p.translate(-75,-75);
-    } else if(move==MistStep){
-        const qreal cover=ramp(time,.10,.40)*(1-ramp(time,.58,.90));
-        p.setOpacity(1-cover);p.translate((time<.5?-9:9)*cover,0);
-    }
+    StartQilinScenes::paintBehind(p,move,time);
+    const QTransform body=StartQilinScenes::bodyTransform(move,time);
+    p.save();p.setTransform(body,true);
+    if(move==MistStep)p.setOpacity(1-ramp(time,.10,.40)*(1-ramp(time,.58,.90)));
     if(outline.isEmpty()){
         // Some themes have no vector mesh. Keep the bundled character and effects.
         const char *action=nullptr;
         switch(move){
         case Rest:break;
-        case Roar:case Listen:case Flame:action="roar";break;
+        case Roar:case Listen:case Flame:case Ball:action="roar";break;
         case Tail:case Blink:case MistStep:action="tail";break;
         case Leap:case Trot:case Stamp:case CloudRide:case Ripple:action="leap";break;
         default:action="bow";break;
@@ -254,12 +198,9 @@ QPixmap StartQilin::render(Move move,qreal time) const {
             p.setBrush(Qt::white);p.drawEllipse(eye+QPointF(1,-1.1*open),1.8,1.7*open);
         }
         stroke({57,47},{64,45},QColor("#075684"),1.6+3*pose.voice);
-        if(move==Roar && pose.voice>.08){
-            QColor glint("#b8f3ff");glint.setAlphaF(pose.voice);
-            stroke({74,40},{81,36},glint,2.8);stroke({76,46},{84,46},glint,2.6);
-        }
     }
     p.restore();
-    foreground(p,move,time,rig);
+    StartQilinScenes::paintInFront(p,move,time,body.map(rig.map(QPointF(67,45))),
+                                 body.map(rig.map(QPointF(72,1))));
     return image;
 }

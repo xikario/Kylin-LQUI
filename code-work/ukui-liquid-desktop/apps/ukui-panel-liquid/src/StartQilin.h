@@ -8,7 +8,7 @@
 class StartQilin {
 public:
     enum Move { Rest, Roar, Tail, Leap, Bow, Listen, Stamp, Stretch, Trot, Blink,
-                CloudRide, MistStep, Star, Ripple, Flame, Count };
+                CloudRide, MistStep, Star, Ripple, Flame, Rain, Ball, Count };
     struct Timing {
         int frames, ms;
         int holdMs=0;

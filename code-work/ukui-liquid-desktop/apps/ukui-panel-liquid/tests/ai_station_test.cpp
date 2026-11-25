@@ -139,6 +139,7 @@ private slots:
         QVERIFY(!button.property("petFaceActive").toBool());QVERIFY(!timer->isActive());QVERIFY(!wait->isActive());
         config.setPet(true);QTRY_VERIFY(button.property("petFaceActive").toBool());
         QVERIFY(wait->isSingleShot());QVERIFY(wait->isActive());
+        QVERIFY(wait->interval()>=18000&&wait->interval()<=38000);
         QMetaObject::invokeMethod(wait,"timeout");QVERIFY(timer->isActive());QVERIFY(!wait->isActive());
         QTRY_VERIFY(!timer->isActive());QVERIFY(wait->isActive());
         for(int i=1;i<StartQilin::Count-1;++i){
@@ -157,8 +158,21 @@ private slots:
             if(round==0)all=seen;else QCOMPARE(seen,all);
         }
         QSignalSpy frames(timer,&QTimer::timeout);
-        QApplication::sendEvent(&button,&enter);QTRY_VERIFY(!timer->isActive());
-        const int played=frames.count();QVERIFY(played>=14&&played<=26);
+        QHash<int,StartQilin::Timing> timings;
+        for(int i=1;i<StartQilin::Count;++i){
+            const auto timing=StartQilin::timing(static_cast<StartQilin::Move>(i));
+            const int duration=timing.frames*timing.ms+timing.holdMs;
+            QVERIFY(duration>=2000&&duration<=3100);
+            timings.insert(timing.ms,timing);
+        }
+        QElapsedTimer elapsed;elapsed.start();
+        QApplication::sendEvent(&button,&enter);
+        QVERIFY(timings.contains(timer->interval()));
+        const auto expected=timings.value(timer->interval());
+        QTRY_VERIFY(!timer->isActive());
+        const int played=frames.count();QCOMPARE(played,expected.frames);
+        QVERIFY(elapsed.elapsed()>=(expected.frames*expected.ms+expected.holdMs)*.94);
+        QVERIFY(wait->isActive()&&wait->interval()>=18000&&wait->interval()<=38000);
         QTest::qWait(180);QCOMPARE(frames.count(),played);
         QApplication::sendEvent(&button,&enter);QVERIFY(timer->isActive());
         QSignalSpy clicks(&button,&QPushButton::clicked);

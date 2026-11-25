@@ -9,7 +9,11 @@ class StartQilin {
 public:
     enum Move { Rest, Roar, Tail, Leap, Bow, Listen, Stamp, Stretch, Trot, Blink,
                 CloudRide, MistStep, Star, Ripple, Flame, Count };
-    struct Timing { int frames, ms; };
+    struct Timing {
+        int frames, ms;
+        int holdMs=0;
+        int delayAfter(int frame) const { return ms + (frame==frames/2 ? holdMs : 0); }
+    };
     static Timing timing(Move move);
     StartQilin();
     const QPolygonF &silhouette() const { return outline; }

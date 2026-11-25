@@ -177,8 +177,22 @@ StartQilin::StartQilin() {
 
 StartQilin::Timing StartQilin::timing(Move move) {
     static constexpr std::array<Timing,Count> times{{
-        {1,0},{17,56},{18,52},{16,48},{17,61},{16,58},{18,51},{19,62},{20,47},{14,53},
-        {25,55},{26,54},{19,57},{20,59},{22,50}
+        // Moving frames are rendered at 14–18 fps. A held pose needs no repaint.
+        {1,0},       // Rest
+        {34,63,230}, // Roar
+        {39,59},     // Tail
+        {34,58,180}, // Leap
+        {32,68,230}, // Bow
+        {34,62},     // Listen
+        {36,60},     // Stamp
+        {33,70,300}, // Stretch
+        {40,56},     // Trot
+        {31,65},     // Blink
+        {42,66,260}, // CloudRide
+        {46,64},     // MistStep
+        {35,67,180}, // Star
+        {40,61},     // Ripple
+        {39,69,190}  // Flame
     }};
     return times[move];
 }

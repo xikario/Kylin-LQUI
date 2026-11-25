@@ -227,7 +227,7 @@ private:
     void paintFrame(){
         const auto timing=StartQilin::timing(active);
         current=art.render(active,(frame+1.)/(timing.frames+1.));
-        frameTimer.start(timing.ms);button->update();
+        frameTimer.start(timing.delayAfter(frame));button->update();
     }
     void paint() const {
         QPainter p(button);

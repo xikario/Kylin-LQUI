@@ -1,4 +1,5 @@
 #include "StartQilin.h"
+#include "TaskbarPetLayout.h"
 #include "StartQilinScenes.h"
 #include <QFile>
 #include <QIcon>
@@ -138,13 +139,7 @@ StartQilin::StartQilin() {
 }
 
 QRectF StartQilin::targetRect(const QRectF &button) {
-    // Leave room for the rounded left end of the dock, including the hoof ripples.
-    const QRectF inset=button.adjusted(qMin(8.,button.width()/6.),1,-2,-1);
-    if(inset.isEmpty())return {};
-    const qreal side=qMin(40.,qMin(inset.width(),inset.height()));
-    QRectF target(0,0,side,side);
-    target.moveCenter(inset.center());
-    return target;
+    return TaskbarPetLayout::canvas(button,Qt::LeftEdge);
 }
 
 StartQilin::Timing StartQilin::timing(Move move) {
@@ -181,7 +176,8 @@ QPixmap StartQilin::render(Move move,qreal time,qreal extraLift) const {
     QPixmap image(Tile,extraLift>0?2*Tile:Tile);image.fill(Qt::transparent);
     QPainter p(&image);p.setRenderHints(QPainter::Antialiasing|QPainter::SmoothPixmapTransform);
     p.translate(0,image.height()-Tile);
-    p.scale(Tile/176.,Tile/176.);p.translate(13,15);
+    p.scale(Tile/TaskbarPetLayout::tileSide,Tile/TaskbarPetLayout::tileSide);
+    p.translate((TaskbarPetLayout::tileSide-TaskbarPetLayout::restSide)/2,TaskbarPetLayout::restTop);
     StartQilinScenes::paintBehind(p,move,time,extraLift);
     const QTransform body=StartQilinScenes::bodyTransform(move,time);
     p.save();p.translate(0,-extraLift);p.setTransform(body,true);

@@ -101,10 +101,20 @@ void Drawer::Preferences() {
     QSettings entry(PetEntry::path(),QSettings::IniFormat);
     auto *entryMode=choice("入口模式","settingCornerEntry",{{"AI 小站","station"},{"AI 宠物","pet"}},entry.value("entry/mode","station").toString());
     auto *character=choice("宠物形象","settingPetCharacter",PetEntry::characters(),entry.value("entry/character","claude").toString());
+    auto *idleMotion=new QCheckBox(fields);
+    idleMotion->setObjectName("settingTaskbarPetIdleMotion");
+    idleMotion->setChecked(entry.value(PetEntry::idleMotionKey,false).toBool());
+    form->addRow("右侧宠物空闲动画",idleMotion);
     character->setEnabled(entryMode->currentData()=="pet");
-    const auto saveEntry=[this,entryMode,character] {
+    idleMotion->setEnabled(character->isEnabled());
+    connect(idleMotion,&QCheckBox::toggled,dialog,[](bool on){
+        QSettings saved(PetEntry::path(),QSettings::IniFormat);
+        saved.setValue(PetEntry::idleMotionKey,on);saved.sync();
+    });
+    const auto saveEntry=[this,entryMode,character,idleMotion] {
         const bool pet=entryMode->currentData()=="pet";
         character->setEnabled(pet);
+        idleMotion->setEnabled(pet);
         QSettings saved(PetEntry::path(),QSettings::IniFormat);
         saved.setValue("entry/mode",entryMode->currentData());saved.setValue("entry/character",character->currentData());saved.sync();
         if(!chatCharacter.isEmpty())setChatCharacter(pet?character->currentData().toString():QString());

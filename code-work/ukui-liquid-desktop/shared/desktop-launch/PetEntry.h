@@ -5,6 +5,7 @@
 #include <QStringList>
 
 namespace PetEntry {
+constexpr auto idleMotionKey="entry/animateTaskbarPet";
 inline QString path() {
     return QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation)+"/kylin-lqui/ai-entry.ini";
 }

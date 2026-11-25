@@ -9,6 +9,7 @@
 #include <QBuffer>
 #include "StationMetrics.h"
 #include "StartQilin.h"
+#include "TaskbarPetLayout.h"
 #include "StartQilinScenes.h"
 #include "../../../shared/desktop-launch/StartIconPreference.h"
 #include <QFileSystemWatcher>
@@ -343,10 +344,18 @@ public:
             if(dropDisplay){positionAtom=XInternAtom(dropDisplay,"XdndPosition",False);copyAtom=XInternAtom(dropDisplay,"XdndActionCopy",False);qApp->installNativeEventFilter(this);}
         }
         new OrbAccent(this);
-        refreshPet();
         greetingEnd.setParent(this);greetingEnd.setObjectName("petGreetingEnd");
         greetingEnd.setSingleShot(true);
-        connect(&greetingEnd,&QTimer::timeout,this,[this]{showGreetingFrame(greetingFrame+1);});
+        connect(&greetingEnd,&QTimer::timeout,this,[this]{showGreetingStep(greetingStep+1);});
+        idleWait.setParent(this);idleWait.setObjectName("rightPetIdleWait");
+        idleWait.setSingleShot(true);idleWait.setTimerType(Qt::VeryCoarseTimer);
+        connect(&idleWait,&QTimer::timeout,this,[this]{
+            const auto role=petId;
+            refreshPet();
+            if(role!=petId||!idleAllowed())return;
+            if(!QApplication::activePopupWidget()&&QApplication::mouseButtons()==Qt::NoButton)beginGreeting(true);
+        });
+        refreshPet();
         singleClick.setSingleShot(true);
         connect(&singleClick,&QTimer::timeout,this,[this]{
             refreshPet();if(petId.isEmpty())return;
@@ -371,14 +380,17 @@ public:
         QSettings cfg(PetEntry::path(),QSettings::IniFormat);
         QString next=cfg.value("entry/mode").toString()=="pet"?cfg.value("entry/character","claude").toString():QString();
         if(PetEntry::label(next).isEmpty())next.clear();
-        if(next==petId)return;
-        petId=next;
-        const QString avatar=PetEntry::icon(next);
-        petFace=avatar.isEmpty()?QPixmap():QPixmap(avatar);
-        loadGreeting(avatar);
-        setProperty("petFaceActive",!petFace.isNull());
-        const QString name=next.isEmpty()?"AI小站":PetEntry::label(next);
-        setAccessibleName(name);setToolTip(next.isEmpty()?QStringLiteral("AI小站 · 右键截图与设置"):QString());update();
+        idleEnabled=cfg.value(PetEntry::idleMotionKey,false).toBool();
+        if(next!=petId){
+            idleWait.stop();petId=next;
+            const QString avatar=PetEntry::icon(next);
+            petFace=avatar.isEmpty()?QPixmap():QPixmap(avatar);
+            loadGreeting(avatar);
+            setProperty("petFaceActive",!petFace.isNull());
+            const QString name=next.isEmpty()?"AI小站":PetEntry::label(next);
+            setAccessibleName(name);setToolTip(next.isEmpty()?QStringLiteral("AI小站 · 右键截图与设置"):QString());update();
+        }
+        syncIdle();
     }
     void petChat(const QString &id) {
         const QRect anchor(mapToGlobal(QPoint()),size());
@@ -433,16 +445,20 @@ protected:
         QTimer::singleShot(0,this,[this,manifest]{showDropMenu(manifest);});
     }
     void enterEvent(QEvent *e) override {
-        if(!greetingHolds.isEmpty()&&QApplication::mouseButtons()==Qt::NoButton&&!LquiEffects::reducedMotion())
-            showGreetingFrame(0);
+        if(!hoverSteps.isEmpty()&&QApplication::mouseButtons()==Qt::NoButton&&!LquiEffects::reducedMotion())
+            beginGreeting(false);
         else update();
         QAbstractButton::enterEvent(e);
     }
     void leaveEvent(QEvent *e) override {
-        showGreetingFrame(-1);QAbstractButton::leaveEvent(e);
+        if(!automatic)finishGreeting();
+        QAbstractButton::leaveEvent(e);
+    }
+    void showEvent(QShowEvent *e) override {
+        QAbstractButton::showEvent(e);syncIdle();
     }
     void hideEvent(QHideEvent *e) override {
-        if(greetingFrame>=0)showGreetingFrame(-1);
+        idleWait.stop();clearGreeting();
         QAbstractButton::hideEvent(e);
     }
     void contextMenuEvent(QContextMenuEvent *e) override {
@@ -464,13 +480,16 @@ protected:
     }
     void paintEvent(QPaintEvent *) override {
         QPainter p(this);p.setRenderHint(QPainter::Antialiasing);
-        const qreal size=qMin(petId.isEmpty()||petId=="claude"?30:35,height()-6);const QPointF c(width()/2.,height()/2.);QRectF r(c.x()-size/2,c.y()-size/2,size,size);
+        const qreal size=qMin(30,height()-6);const QPointF c(width()/2.,height()/2.);
+        const QRectF r=petFace.isNull()?QRectF(c.x()-size/2,c.y()-size/2,size,size):TaskbarPetLayout::portrait(rect());
         if(!petFace.isNull()) {
+            p.save();p.setClipPath(TaskbarPetLayout::bust(r));
             p.setRenderHint(QPainter::SmoothPixmapTransform);
             if(greetingFrame>=0) {
                 const int side=greetingStrip.height();
                 p.drawPixmap(r,greetingStrip,QRectF(greetingFrame*side,0,side,side));
             } else p.drawPixmap(r,petFace,QRectF(petFace.rect()));
+            p.restore();
         } else paintOrbSurface(p,r,underMouse()||hasFocus());
         if(dragOver){p.setBrush(Qt::NoBrush);p.setPen(QPen(QColor("#a0f3db"),1.6));p.drawEllipse(r.adjusted(-3,-3,3,3));}
         QFont font=p.font();font.setPixelSize(10);font.setBold(true);p.setFont(font);p.setPen(isDown()?QColor("#dcf5ff"):Qt::white);if(petFace.isNull())p.drawText(r,Qt::AlignCenter,"AI");
@@ -484,17 +503,18 @@ protected:
     }
 private:
     QTimer singleClick;bool skipRelease=false;
-    QTimer greetingEnd;
+    QTimer greetingEnd,idleWait;
     QString petId;
     QPixmap petFace,greetingStrip;
-    QVector<int> greetingHolds;
-    int greetingFrame=-1;
+    struct Step {int frame,ms;};
+    QVector<Step> hoverSteps,idleSteps;
+    int greetingStep=-1,greetingFrame=-1;
+    bool automatic=false,idleEnabled=false;
 
-    // Decode just the selected role's tiny strip when switching pets. The
-    // one-shot timer is only armed for a visible gesture, never at rest.
+    // Hover and idle playback share the selected role's already-decoded strip.
     void loadGreeting(const QString &avatar) {
-        greetingEnd.stop();greetingFrame=-1;
-        greetingHolds.clear();greetingStrip=QPixmap();
+        clearGreeting();
+        hoverSteps.clear();idleSteps.clear();greetingStrip=QPixmap();
         if(petFace.isNull())return;
         const QDir dir=QFileInfo(avatar).dir();
         QFile file(dir.filePath("../greetings.json"));
@@ -511,16 +531,39 @@ private:
         }
         const QPixmap strip(dir.filePath(image));
         if(strip.isNull()||strip.width()!=qint64(strip.height())*delays.size())return;
-        greetingStrip=strip;greetingHolds=delays;
-    }
-    void showGreetingFrame(int index) {
-        greetingEnd.stop();greetingFrame=-1;
-        if(index>=0&&index<greetingHolds.size()){
-            greetingFrame=index;greetingEnd.start(greetingHolds.at(index));
+        greetingStrip=strip;
+        for(int i=0;i<delays.size();++i){
+            hoverSteps.append({i,delays[i]});
+            idleSteps.append({i,delays[i]+delays[i]/2});
         }
+        if(petId=="gpt"&&delays.size()==1){
+            idleSteps.append({-1,245}); // open between the two blinks
+            idleSteps.append({0,165});
+        }
+    }
+    bool idleAllowed() const{
+        return idleEnabled&&isVisible()&&!dragOver&&!idleSteps.isEmpty()
+                &&!LiquidPopup::theme().reducedMotion&&!LquiEffects::reducedMotion();
+    }
+    void clearGreeting(){
+        greetingEnd.stop();greetingStep=greetingFrame=-1;automatic=false;
+    }
+    void syncIdle(){
+        if(!idleAllowed()){
+            idleWait.stop();if(automatic){clearGreeting();update();}
+        }else if(greetingStep<0&&!idleWait.isActive()){
+            idleWait.start(QRandomGenerator::global()->bounded(18000,38001));
+        }
+    }
+    void finishGreeting(){clearGreeting();update();syncIdle();}
+    void beginGreeting(bool idle){idleWait.stop();automatic=idle;showGreetingStep(0);}
+    void showGreetingStep(int index){
+        const auto &steps=automatic?idleSteps:hoverSteps;
+        if(index>=steps.size()){finishGreeting();return;}
+        greetingStep=index;greetingFrame=steps[index].frame;greetingEnd.start(steps[index].ms);
         update();
     }
-    void setDragOver(bool on){if(dragOver==on)return;dragOver=on;setProperty("dropHint",on);update();}
+    void setDragOver(bool on){if(dragOver==on)return;dragOver=on;setProperty("dropHint",on);syncIdle();update();}
     void notify(const QString &text) {
         setToolTip(text);QToolTip::showText(mapToGlobal(QPoint(width()/2,0)),text,this);
         QTimer::singleShot(4000,this,[this]{setToolTip(petId.isEmpty()?QStringLiteral("AI小站 · 右键截图与设置"):QString());});

@@ -1,5 +1,6 @@
 #include "StartIconPreference.h"
 #include "StartQilin.h"
+#include "TaskbarPetLayout.h"
 #include "StartQilinScenes.h"
 #include "PanelAiStation.h"
 #include "StationMetrics.h"
@@ -216,6 +217,30 @@ private slots:
         }else QVERIFY(!wing||!wing->isVisible());
         for(int i=flip.frames/2;i<flip.frames;++i)QMetaObject::invokeMethod(timer,"timeout");
         QVERIFY(!wing||!wing->isVisible());QVERIFY(!timer->isActive());QVERIFY(idle->isActive());
+    }
+    void taskbarPetsShareOpticalHeight(){
+        StartQilin art;
+        if(art.silhouette().isEmpty())QSKIP("Original Kylin mark not installed");
+        const auto mark=art.render(StartQilin::Rest,0);
+        for(int side:{32,44,48}){
+            const QRectF button(0,0,side,side);
+            const int n=qRound(side*qApp->devicePixelRatio());
+            auto drawnBounds=[&](bool left){
+                QImage image(n,n,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);
+                QPainter p(&image);p.scale(qreal(n)/side,qreal(n)/side);
+                p.setRenderHints(QPainter::Antialiasing|QPainter::SmoothPixmapTransform);
+                if(left)p.drawPixmap(StartQilin::targetRect(button),mark,QRectF(mark.rect()));
+                else p.fillPath(TaskbarPetLayout::bust(TaskbarPetLayout::portrait(button)),Qt::white);
+                p.end();QRect bounds;
+                for(int y=0;y<n;++y)for(int x=0;x<n;++x)
+                    if(qAlpha(image.pixel(x,y))>45)bounds|=QRect(x,y,1,1);
+                return bounds;
+            };
+            const auto left=drawnBounds(true),right=drawnBounds(false);
+            QVERIFY(qAbs(left.height()-right.height())<=2);
+            QVERIFY(qAbs(left.top()-right.top())<=1);
+            QVERIFY(qAbs(left.left()-(n-1-right.right()))<=2);
+        }
     }
     void qilinFitsRoundedStartButton(){
         StartQilin art;
@@ -439,6 +464,14 @@ private slots:
         QTest::qWait(200);QCOMPARE(ticks.count(),3);
         QApplication::sendEvent(orb,&hover);QEvent leave(QEvent::Leave);QApplication::sendEvent(orb,&leave);
         QVERIFY(!greeting->isActive());QVERIFY(showsFace(Qt::magenta));
+        auto *petWait=orb->findChild<QTimer*>("rightPetIdleWait");QVERIFY(petWait);
+        QVERIFY(!petWait->isActive());
+        entry.setValue(PetEntry::idleMotionKey,true);entry.sync();
+        QTRY_VERIFY(petWait->isActive());QVERIFY(petWait->interval()>=18000&&petWait->interval()<=38000);
+        QMetaObject::invokeMethod(petWait,"timeout");QVERIFY(greeting->isActive());QVERIFY(showsFace(Qt::green));
+        QTRY_VERIFY(!greeting->isActive());QVERIFY(petWait->isActive());QVERIFY(showsFace(Qt::magenta));
+        panel.hide();QVERIFY(!petWait->isActive());panel.show();QTRY_VERIFY(petWait->isActive());
+        entry.setValue(PetEntry::idleMotionKey,false);entry.sync();QTRY_VERIFY(!petWait->isActive());
         QTest::mouseClick(orb,Qt::LeftButton);QTRY_COMPARE(pet.toggles,2);
         QTest::mouseClick(orb,Qt::LeftButton);
         QTest::mouseDClick(orb,Qt::LeftButton);

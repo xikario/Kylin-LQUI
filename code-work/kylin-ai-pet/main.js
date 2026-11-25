@@ -50,6 +50,14 @@ function refreshEntry() {
   if (win && (next !== character || mode !== entryMode)) {
     if (next !== character) {
       character = next;loadPetCfg();
+      const {w, h} = winSize();
+      const [oldWidth, oldHeight] = win.getSize();
+      if (oldWidth !== w || oldHeight !== h) {
+        if (cfg.atHome) {
+          win.setMinimumSize(1,1); win.setMaximumSize(9999,9999);
+          win.setSize(w,h);
+        } else resize(cfg.size);
+      }
       win.loadFile(path.join(__dirname,'renderer','index.html'), {query:{character}});
     }
     if (mode === 'station' && entryMode === 'pet') goHome(false);
@@ -93,7 +101,9 @@ function loadPetCfg() {
 }
 
 function winSize() {
-  const h = SIZES[cfg.size] || SIZES['中'];
+  const bodyHeight = SIZES[cfg.size] || SIZES['中'];
+  const neutralPercent = characters[character].stillPlacement?.[0] || 100;
+  const h = Math.round(bodyHeight * 100 / neutralPercent);
   const w = Math.round(h * CLIP_W / CLIP_H);
   return { w, h: h + BUBBLE_H };
 }

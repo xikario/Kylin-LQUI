@@ -76,11 +76,12 @@
       for (const [name, cfg] of Object.entries(this.clips)) {
         const file = cfg.file || name + '.webm';
         const v = document.createElement(file.endsWith('.webp') ? 'img' : 'video');
-        v.src = this.base + file;
+        if (cfg.lazyVideo) v.preload = 'none';
+        else v.src = this.base + file;
         v.draggable = false;
         v.muted = true;
         v.playsInline = true;
-        v.preload = 'auto';
+        if (!cfg.lazyVideo) v.preload = 'auto';
         v.loop = !!cfg.loop;
         v.className = 'pet-clip';
         v.dataset.clip = name;
@@ -124,7 +125,7 @@
     // opts.say：不传就用动作自带的台词，传 null 不说话，传字符串就说这句
     play(name, opts = {}) {
       const cfg = this.clips[name];
-      if (!cfg) return;
+      if (!cfg || (cfg.lazyVideo && this.stage.ownerDocument.hidden)) return;
       this.queue = [];
       const need = cfg.pose;
       if (need && need !== this.pose) this.queue.push(TO[need]);
@@ -155,23 +156,37 @@
       if (cfg.to) this.pose = cfg.to; else if (cfg.pose) this.pose = cfg.pose;
       this.onClip(name);
       clearTimeout(this._poseTimer);
+      if (cfg.lazyVideo && !v.hasAttribute('src')) v.src = this.base + cfg.file;
       if (v.play) v.currentTime = 0;
       const reveal = () => {
         if (this.current !== name) return;
         for (const o of Object.values(this.videos)) o.classList.toggle('on', o === v);
         clearTimeout(this._fadeTimer);
-        this._fadeTimer = setTimeout(() => {
-          for (const o of Object.values(this.videos)) if (o !== this.videos[this.current]) o.pause?.();
-        }, 220);
+        const retire = () => {
+          for (const other of Object.values(this.videos)) {
+            if (other === this.videos[this.current] || !other.pause) continue;
+            other.pause();
+            if (this.clips[other.dataset.clip].lazyVideo && other.hasAttribute('src')) {
+              other.removeAttribute('src');
+              other.load();
+            }
+          }
+        };
+        if (this.stage.ownerDocument.hidden) retire();
+        else this._fadeTimer = setTimeout(retire, 220);
       };
       if (!v.play) {
         reveal();
         if (!cfg.loop) this._poseTimer = setTimeout(() => this._next(), 1600);
       } else {
-      const p = v.play();
-      if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(() => reveal());
-      else v.addEventListener('playing', reveal, { once: true });
-      if (p && p.catch) p.catch(() => reveal());
+        const playing = v.play();
+        if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(reveal);
+        else v.addEventListener('playing', reveal, { once: true });
+        if (playing) playing.catch(err => {
+          if (this.current !== name || err.name === 'AbortError') return;
+          if (cfg.lazyVideo) this._show('A01');
+          else reveal();
+        });
       }
       const line = sayOverride === undefined ? cfg.say : sayOverride;
       if (line) this.say(line);
@@ -312,7 +327,7 @@
       clearTimeout(this._idleTimer);
       const wait = this.idleMin + Math.random() * (this.idleMax - this.idleMin);
       this._idleTimer = setTimeout(() => {
-        if (this.claude !== 'idle' || this.current !== IDLE[this.pose]) return this._scheduleIdle();
+        if (this.stage.ownerDocument.hidden || this.claude !== 'idle' || this.current !== IDLE[this.pose]) return this._scheduleIdle();
         if (this.pose === 'tea') return this.play(Math.random() < 0.6 ? 'C01' : 'A01');
         const cats = (this.cfg.animations.categories || []).filter((c) => c.weight > 0 && c.actions && c.actions.length);
         const total = (this.cfg.animationWeights || {}).idle || 0;

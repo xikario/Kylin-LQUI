@@ -25,9 +25,22 @@ const clips = Object.keys(context.window.Pet.CLIPS);
 for (const name of clips) checkFile('clips', name + '.webm');
 for (const name of Object.keys(readJson('pet-config.json').names)) assert.ok(clips.includes(name), name);
 const greetings = readJson('assets/pets/greetings.json');
+let movies = 0;
 for (const [id, role] of Object.entries(roles)) {
   checkFile('assets/pets', id, 'avatar.png');
   for (const file of role.files || []) checkFile('assets/pets', id, file);
+  if (role.stillPlacement) {
+    const {idle, clicks, categories, events} = role.animations;
+    const menuIds = [...idle, ...clicks, ...categories.flatMap(c => c.actions), ...events.whisper, ...events.workStatus.flat()];
+    assert.ok(menuIds.every(k => role.clips[k]), '未知动作：' + id);
+    for (const [key, clip] of Object.entries(role.clips).filter(([, c]) => c.lazyVideo)) {
+      assert.ok(menuIds.includes(key), '菜单缺少动作：' + key);
+      assert.ok(clip.frames > 1 && clip.fps > 0 && clip.file.endsWith('.webm'));
+      const [l,t,r,b] = clip.bounds;
+      assert.ok(l>=0 && t>=0 && l<r && t<b && r<=640 && b<=360);
+      movies++;
+    }
+  }
   const {file,holdMs} = greetings[id];
   checkFile('assets/pets', id, file);
   const png = fs.readFileSync(path.join(root, 'assets/pets', id, file));
@@ -35,4 +48,4 @@ for (const [id, role] of Object.entries(roles)) {
   assert.ok(holdMs.every(n => Number.isInteger(n) && n > 0));
   assert.equal(png.readUInt32BE(16), png.readUInt32BE(20) * holdMs.length);
 }
-console.log(clips.length + ' 段原作动画、四套角色素材与悬停帧检查通过。');
+console.log(clips.length + ' 段大小姐动画、' + movies + ' 段白龙和星空猫扩展动画、四套角色素材与悬停帧检查通过。');

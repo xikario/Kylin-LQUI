@@ -7,13 +7,41 @@ const pet = new Pet(document.getElementById('stage'), {
   clips: role.clips, base: role.clips ? '../assets/pets/' + roleId + '/' : '../clips/'
 });
 
+if (role.stillPlacement) {
+  // Match the full-height stills to the source animation's neutral stance.
+  const [height, bottom] = role.stillPlacement;
+  for (const img of pet.layer.querySelectorAll('img')) {
+    img.style.height = height + '%';
+    img.style.top = 'auto';
+    img.style.bottom = bottom + '%';
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && pet.clips[pet.current]?.lazyVideo) pet.play('A01');
+  });
+}
+
 // X11 的穿透窗口收不到鼠标移动。用原作各动作的轮廓设定可见、可点击的窗口区域。
 if (api.nativeShape) {
   const masks = window.PET_MASKS;
   const envelopes = new Map();
   function clipRect(clip) {
+    const bounds = role.clips?.[clip]?.bounds;
+    if (bounds) {
+      // Native masks must cover the whole animation, including tails, musical notes and props.
+      const box = pet.layer.getBoundingClientRect();
+      const scale = Math.min(box.width / 640, box.height / 360);
+      const left = box.left + (box.width - 640 * scale) / 2;
+      const top = box.bottom - 360 * scale;
+      const pad = Math.ceil(box.height * .08);
+      const x = Math.max(0, Math.floor(left + bounds[0]*scale) - pad);
+      const y = Math.max(0, Math.floor(top + bounds[1]*scale) - pad);
+      const right = Math.min(innerWidth, Math.ceil(left + bounds[2]*scale) + pad);
+      const bottom = Math.min(innerHeight, Math.ceil(top + bounds[3]*scale) + pad);
+      return {x, y, width:Math.max(1,right-x), height:Math.max(1,bottom-y)};
+    }
     if (role.clips) {
-      const width = Math.min(innerWidth, Math.ceil(pet.layer.clientHeight * (roleId === 'fish' ? 1.36 : 1.18)));
+      const bodyHeight = pet.layer.clientHeight * (role.stillPlacement?.[0] || 100) / 100;
+      const width = Math.min(innerWidth, Math.ceil(bodyHeight * (roleId === 'fish' ? 1.36 : 1.18)));
       return { x: Math.floor((innerWidth - width) / 2), y: pet.layer.offsetTop - 10, width, height: pet.layer.clientHeight + 10 };
     }
     if (!envelopes.has(clip)) {

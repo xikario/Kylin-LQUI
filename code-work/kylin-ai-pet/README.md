@@ -18,4 +18,6 @@ python3 scripts/install-local.py
 
 在 **Kylin-LQUI 设置 → 任务栏 AI 助手 → 入口模式** 选择 **AI 宠物**，再选择形象。单击任务栏按钮呼出或收回宠物，双击开关入口上方的聊天窗口。把文字、图片、文件或文件夹拖到宠物身上，会显示小站对应的操作菜单。宠物右键菜单提供截图和「回家」。开始菜单麒麟的随机动作由面板插件内置，独立于 Electron。
 
+GPT 白龙和 Gemini 星空猫各有 18 段额外的透明动画。右键 **动作** 可选招牌、才艺、日常和点击回应。空闲时会抽取动作，思考、忙碌和庆祝也有对应片段。视频在使用时读取，播放完回到待机。
+
 动画和角色素材已放在本组件内。来源、修改及各自的授权见 [ASSETS_LICENSE.md](ASSETS_LICENSE.md)。重新生成悬停素材可运行 `python3 tools/build_taskbar_greetings.py`，需要 Pillow 和支持 libvpx-vp9 的 ffmpeg。

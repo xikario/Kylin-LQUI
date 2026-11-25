@@ -19,7 +19,7 @@ if (!app.requestSingleInstanceLock()) process.exit(0);
 
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
 let cfg = {
-  size: '中', atHome: true, x: null, y: null, quiet: false, lastMorning: '', top: false, whisper: true, fling: true,
+  size: '中', atHome: true, x: null, y: null, quiet: false, lastMorning: '', top: true, whisper: true, fling: true,
 };
 function loadCfg() {
   try {

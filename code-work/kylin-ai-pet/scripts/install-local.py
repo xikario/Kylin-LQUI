@@ -22,7 +22,7 @@ def main():
     DESKTOP.parent.mkdir(parents=True, exist_ok=True)
     # The desktop entry uses a command name. Paths to the checkout can therefore
     # contain spaces, quotes and literal percent signs without becoming field codes.
-    command = f'exec {shlex.quote(str(ELECTRON))} {shlex.quote(str(ROOT))} "$@"\n'
+    command = f'exec nice -n 5 {shlex.quote(str(ELECTRON))} {shlex.quote(str(ROOT))} "$@"\n'
     with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=LAUNCHER.parent, delete=False) as f:
         f.write('#!/bin/sh\n' + command)
         os.fchmod(f.fileno(), 0o755)

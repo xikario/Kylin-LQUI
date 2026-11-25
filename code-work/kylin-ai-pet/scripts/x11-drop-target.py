@@ -44,6 +44,24 @@ free = bind(x,'XFree',I,P)
 pending = bind(x,'XPending',I,P)
 next_event = bind(x,'XNextEvent',I,P,P)
 pet = int(sys.argv[1])
+
+# Keep the pet managed so KWin can toggle its stacking, but leave keyboard
+# input with the current app even when the user pats the floating character.
+class WMHints(C.Structure):
+    _fields_ = [('flags',C.c_long),('input',I),('initial_state',I),('icon_pixmap',UL),
+                ('icon_window',UL),('icon_x',I),('icon_y',I),('icon_mask',UL),('window_group',UL)]
+
+hints_type = C.POINTER(WMHints)
+hints = bind(x,'XGetWMHints',hints_type,P,UL)(display,pet)
+if not hints:
+    hints = bind(x,'XAllocWMHints',hints_type)()
+if hints:
+    hints.contents.flags |= 1  # ICCCM InputHint
+    hints.contents.input = 0
+    bind(x,'XSetWMHints',I,P,UL,hints_type)(display,pet,hints)
+    free(hints)
+    bind(x,'XFlush',I,P)(display)
+
 app = QApplication([])
 app.setQuitOnLastWindowClosed(False)
 

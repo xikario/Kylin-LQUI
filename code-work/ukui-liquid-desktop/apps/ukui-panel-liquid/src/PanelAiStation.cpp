@@ -233,10 +233,7 @@ private:
         QPainter p(button);
         const QPointF center=QRectF(button->rect()).center();
         if(petMode){
-            // 40 logical pixels including motion margins gives a ~34 px animal,
-            // matching the visible area of the taskbar's 35 px pet portrait.
-            const qreal side=qMax(1,qMin(40,qMin(button->width(),button->height())-2));
-            QRectF target(0,0,side,side);target.moveCenter(center);
+            const QRectF target=StartQilin::targetRect(button->rect());
             const QPixmap &sprite=active==StartQilin::Rest?idle:current;
             p.setRenderHint(QPainter::SmoothPixmapTransform);p.drawPixmap(target,sprite,QRectF(sprite.rect()));
             return;

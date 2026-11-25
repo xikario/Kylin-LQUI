@@ -17,6 +17,7 @@
 #include <QTemporaryDir>
 #include <QContextMenuEvent>
 #include <QMenu>
+#include <QPainter>
 #include <QElapsedTimer>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -124,6 +125,36 @@ private slots:
         write(root.path()+"/class/hwmon/hwmon2/temp1_input","200000");
         t=metrics.temperature(330000);QCOMPARE(t.current,45.);QCOMPARE(t.label,QString("机温"));QCOMPARE(t.peak,45.);
         QFile::remove(root.path()+"/class/hwmon/hwmon0/temp1_input");QVERIFY(metrics.temperature(340000).current<0);
+    }
+    void qilinFitsRoundedStartButton(){
+        StartQilin art;
+        QImage coverage=art.render(StartQilin::Rest,0).toImage();
+        {
+            QPainter all(&coverage);
+            for(int i=1;i<StartQilin::Count;++i){
+                const auto move=static_cast<StartQilin::Move>(i);
+                const int frames=StartQilin::timing(move).frames;
+                for(int f=0;f<frames;++f)all.drawPixmap(0,0,art.render(move,(f+1.)/(frames+1.)));
+            }
+        }
+        for(int size:{32,40,44,48}){
+            const QRectF button(0,0,size,size);
+            const auto target=StartQilin::targetRect(button);
+            QVERIFY(button.contains(target));
+            QVERIFY(target.center().x()>button.center().x());
+            QCOMPARE(target.center().y(),button.center().y());
+            const int n=qRound(size*qApp->devicePixelRatio());
+            QImage image(n,n,QImage::Format_ARGB32_Premultiplied);image.fill(Qt::transparent);
+            QPainter p(&image);p.scale(qreal(n)/size,qreal(n)/size);
+            p.setRenderHint(QPainter::SmoothPixmapTransform);p.drawImage(target,coverage);p.end();
+            const qreal radius=n/2.;
+            for(int y=0;y<n;++y)for(int x=0;x<n;++x){
+                if(qAlpha(image.pixel(x,y))<12)continue;
+                const qreal dx=qMax(0.,radius-(x+.5)),dy=y+.5-radius;
+                QVERIFY2(dx*dx+dy*dy<=(radius-1)*(radius-1)&&x<n-1,
+                         "Every pose and effect must clear the curved dock edge and the next button");
+            }
+        }
     }
     void qilinGreetsOncePerVisit(){
         StartSettingsFixture config;

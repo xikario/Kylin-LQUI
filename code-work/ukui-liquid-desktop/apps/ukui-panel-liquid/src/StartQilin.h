@@ -15,6 +15,7 @@ public:
         int delayAfter(int frame) const { return ms + (frame==frames/2 ? holdMs : 0); }
     };
     static Timing timing(Move move);
+    static QRectF targetRect(const QRectF &button);
     StartQilin();
     const QPolygonF &silhouette() const { return outline; }
     QPixmap render(Move move, qreal time) const;

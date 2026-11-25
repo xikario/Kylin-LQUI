@@ -175,6 +175,16 @@ StartQilin::StartQilin() {
     fallback.load(":/start-qilin/idle.png");
 }
 
+QRectF StartQilin::targetRect(const QRectF &button) {
+    // Leave room for the rounded left end of the dock, including the hoof ripples.
+    const QRectF inset=button.adjusted(qMin(8.,button.width()/6.),1,-2,-1);
+    if(inset.isEmpty())return {};
+    const qreal side=qMin(40.,qMin(inset.width(),inset.height()));
+    QRectF target(0,0,side,side);
+    target.moveCenter(inset.center());
+    return target;
+}
+
 StartQilin::Timing StartQilin::timing(Move move) {
     static constexpr std::array<Timing,Count> times{{
         // Moving frames are rendered at 14–18 fps. A held pose needs no repaint.

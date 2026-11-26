@@ -10,6 +10,7 @@
 #include "StationMetrics.h"
 #include "StartQilin.h"
 #include "TaskbarPetLayout.h"
+#include "TaskbarPetDailies.h"
 #include "StartQilinScenes.h"
 #include "../../../shared/desktop-launch/StartIconPreference.h"
 #include <QFileSystemWatcher>
@@ -380,7 +381,12 @@ public:
         QSettings cfg(PetEntry::path(),QSettings::IniFormat);
         QString next=cfg.value("entry/mode").toString()=="pet"?cfg.value("entry/character","claude").toString():QString();
         if(PetEntry::label(next).isEmpty())next.clear();
-        idleEnabled=cfg.value(PetEntry::idleMotionKey,false).toBool();
+        const bool enabled=cfg.value(PetEntry::idleMotionKey,false).toBool();
+        if(next!=petId||(idleEnabled&&!enabled)){
+            if(automatic){clearGreeting();update();}
+            dailies=TaskbarPetDailies();
+        }
+        idleEnabled=enabled;
         if(next!=petId){
             idleWait.stop();petId=next;
             const QString avatar=PetEntry::icon(next);
@@ -485,7 +491,8 @@ protected:
         if(!petFace.isNull()) {
             p.save();p.setClipPath(TaskbarPetLayout::bust(r));
             p.setRenderHint(QPainter::SmoothPixmapTransform);
-            if(greetingFrame>=0) {
+            if(dailyRow>=0)dailies.paint(p,r,dailyRow,greetingFrame);
+            else if(greetingFrame>=0) {
                 const int side=greetingStrip.height();
                 p.drawPixmap(r,greetingStrip,QRectF(greetingFrame*side,0,side,side));
             } else p.drawPixmap(r,petFace,QRectF(petFace.rect()));
@@ -508,6 +515,8 @@ private:
     QPixmap petFace,greetingStrip;
     struct Step {int frame,ms;};
     QVector<Step> hoverSteps,idleSteps;
+    TaskbarPetDailies dailies;
+    int dailyRow=-1;
     int greetingStep=-1,greetingFrame=-1;
     bool automatic=false,idleEnabled=false;
 
@@ -546,7 +555,7 @@ private:
                 &&!LiquidPopup::theme().reducedMotion&&!LquiEffects::reducedMotion();
     }
     void clearGreeting(){
-        greetingEnd.stop();greetingStep=greetingFrame=-1;automatic=false;
+        greetingEnd.stop();greetingStep=greetingFrame=dailyRow=-1;automatic=false;
     }
     void syncIdle(){
         if(!idleAllowed()){
@@ -556,8 +565,18 @@ private:
         }
     }
     void finishGreeting(){clearGreeting();update();syncIdle();}
-    void beginGreeting(bool idle){idleWait.stop();automatic=idle;showGreetingStep(0);}
+    void beginGreeting(bool idle){
+        idleWait.stop();automatic=idle;
+        if(idle&&!dailies.attempted)dailies.load(PetEntry::icon(petId),petId);
+        dailyRow=idle?dailies.choose():-1;
+        showGreetingStep(0);
+    }
     void showGreetingStep(int index){
+        if(dailyRow>=0){
+            const auto &holds=dailies.holds(dailyRow);
+            if(index>=holds.size()){finishGreeting();return;}
+            greetingStep=greetingFrame=index;greetingEnd.start(holds[index]);update();return;
+        }
         const auto &steps=automatic?idleSteps:hoverSteps;
         if(index>=steps.size()){finishGreeting();return;}
         greetingStep=index;greetingFrame=steps[index].frame;greetingEnd.start(steps[index].ms);

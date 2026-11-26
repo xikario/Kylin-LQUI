@@ -441,10 +441,10 @@ private slots:
         qputenv("LQUI_CALENDAR_DIR",calendarDir.path().toUtf8());
         QMimeData todo;todo.setText("  项目例会通知\n时间：2026年11月25日 10:00  ");dropMenu=dropAndMenu(todo);QVERIFY(dropMenu);dropMenu->findChild<QAction*>("aiStationDrop_todo")->trigger();
         QTRY_VERIFY(QFileInfo::exists(calendarDir.path()+"/tasks.json"));
+        QTRY_VERIFY(orb->toolTip().contains("待办"));
         {QFile out(calendarDir.path()+"/tasks.json");QVERIFY(out.open(QIODevice::ReadOnly));const auto request=QJsonDocument::fromJson(out.readAll()).object();
          QCOMPARE(request.value("action").toString(),QString("add"));QCOMPARE(request.value("title").toString(),QString("项目例会通知 时间：2026年11月25日 10:00"));
          QCOMPARE(request.value("date").toString(),QString("2026-11-25"));}
-        QTRY_VERIFY(orb->toolTip().contains("待办"));
         qunsetenv("LQUI_CALENDAR_DIR");
         // Dismissing the menu discards the staged drop.
         const int staged=QDir(StationDrop::root()).entryList(QDir::Files).size();
@@ -497,6 +497,29 @@ private slots:
         QTRY_VERIFY(!greeting->isActive());QVERIFY(petWait->isActive());QVERIFY(showsFace(Qt::magenta));
         panel.hide();QVERIFY(!petWait->isActive());panel.show();QTRY_VERIFY(petWait->isActive());
         entry.setValue(PetEntry::idleMotionKey,false);entry.sync();QTRY_VERIFY(!petWait->isActive());
+        // A newer asset pack adds two idle rows without replacing the hover strip.
+        QImage daily(72,72,QImage::Format_ARGB32);daily.fill(Qt::red);
+        { QPainter p(&daily);p.fillRect(0,36,72,36,Qt::blue); }
+        QVERIFY(daily.save(petDir+"/daily.png"));
+        write(petPrefs.path()+"/kylin-ai-pets/dailies.json",R"({"gemini":{"file":"daily.png","tile":36,"moves":[{"name":"mirror","holdMs":[80,140]},{"name":"candy","holdMs":[90,120]}]}})");
+        entry.setValue(PetEntry::idleMotionKey,true);entry.sync();panel.hide();panel.show();
+        QTRY_VERIFY(petWait->isActive());
+        int previous=-1;
+        for(int round=0;round<2;++round){
+            QSet<int> drawn;
+            for(int i=0;i<3;++i){
+                QMetaObject::invokeMethod(petWait,"timeout");
+                const int chosen=showsFace(Qt::red)?0:showsFace(Qt::blue)?1:showsFace(Qt::green)?2:-1;
+                QVERIFY(chosen>=0&&chosen!=previous&&!drawn.contains(chosen));
+                drawn.insert(chosen);previous=chosen;
+                for(int tick=0;tick<4&&greeting->isActive();++tick)QMetaObject::invokeMethod(greeting,"timeout");
+                QVERIFY(showsFace(Qt::magenta)&&petWait->isActive());
+            }
+        }
+        QMetaObject::invokeMethod(petWait,"timeout");QApplication::sendEvent(orb,&hover);
+        QVERIFY(showsFace(Qt::green));QApplication::sendEvent(orb,&leave);
+        entry.setValue(PetEntry::idleMotionKey,false);entry.sync();panel.hide();panel.show();
+        QTRY_VERIFY(!petWait->isActive());QVERIFY(showsFace(Qt::magenta));
         QTest::mouseClick(orb,Qt::LeftButton);QTRY_COMPARE(pet.toggles,2);
         QTest::mouseClick(orb,Qt::LeftButton);
         QTest::mouseDClick(orb,Qt::LeftButton);

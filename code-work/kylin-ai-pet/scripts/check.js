@@ -25,7 +25,9 @@ const clips = Object.keys(context.window.Pet.CLIPS);
 for (const name of clips) checkFile('clips', name + '.webm');
 for (const name of Object.keys(readJson('pet-config.json').names)) assert.ok(clips.includes(name), name);
 const greetings = readJson('assets/pets/greetings.json');
+const dailies = readJson('assets/pets/dailies.json');
 let movies = 0;
+let dailyCount = 0;
 for (const [id, role] of Object.entries(roles)) {
   checkFile('assets/pets', id, 'avatar.png');
   for (const file of role.files || []) checkFile('assets/pets', id, file);
@@ -47,5 +49,20 @@ for (const [id, role] of Object.entries(roles)) {
   assert.equal(png.subarray(1,4).toString(), 'PNG');
   assert.ok(holdMs.every(n => Number.isInteger(n) && n > 0));
   assert.equal(png.readUInt32BE(16), png.readUInt32BE(20) * holdMs.length);
+  const pack = dailies[id];
+  assert.ok(Number.isInteger(pack.tile) && pack.tile >= 32 && pack.tile <= 128);
+  assert.equal(path.basename(pack.file), pack.file);
+  checkFile('assets/pets', id, pack.file);
+  const atlas = fs.readFileSync(path.join(root, 'assets/pets', id, pack.file));
+  assert.equal(atlas.subarray(1,4).toString(), 'PNG');
+  assert.ok(pack.moves.length >= 2 && pack.moves.length <= 16);
+  assert.equal(new Set(pack.moves.map(move => move.name)).size, pack.moves.length);
+  for (const move of pack.moves) {
+    assert.ok(move.name && move.holdMs.length >= 2 && move.holdMs.length <= 40);
+    assert.ok(move.holdMs.every(ms => Number.isInteger(ms) && ms >= 30 && ms <= 1500));
+    dailyCount++;
+  }
+  assert.equal(atlas.readUInt32BE(16), pack.tile * Math.max(...pack.moves.map(move => move.holdMs.length)));
+  assert.equal(atlas.readUInt32BE(20), pack.tile * pack.moves.length);
 }
-console.log(clips.length + ' 段大小姐动画、' + movies + ' 段白龙和星空猫扩展动画、四套角色素材与悬停帧检查通过。');
+console.log(clips.length + ' 段大小姐动画、' + movies + ' 段白龙和星空猫扩展动画、' + dailyCount + ' 段任务栏日常动作及四套悬停帧检查通过。');

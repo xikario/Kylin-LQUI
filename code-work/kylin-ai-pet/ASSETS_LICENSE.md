@@ -6,4 +6,6 @@
 
 以上为社区同人形象，角色名称用于标识形象，实际模型由 AI 小站选择。
 
+任务栏日常图集（各角色目录的 `daily.png`）节选并重新取景了上述原片，另外在头像上制作了局部呆毛动画、手镜倒影、糖纸和吸管杯动作。各行沿用对应原素材许可；白龙和星空猫的社区视频节选沿用下述 CC BY-NC-SA 4.0。
+
 GPT 白龙和 Gemini 星空猫的桌面扩展动画来自 [hunmer/aboutme-pets](https://github.com/hunmer/aboutme-pets/tree/df864c0c7db75857854740b301f6677e50d0b29c/pets)。作者基于 CrossPet 形象制作动作。本地从两个角色包中各选 18 段，按原帧序和帧率把透明精灵图转换成静音 VP9 WebM，并计算显示范围。素材及转码版本使用 [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/)。

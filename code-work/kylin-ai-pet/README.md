@@ -22,4 +22,4 @@ GPT 白龙和 Gemini 星空猫各有 18 段额外的透明动画。右键 **动�
 
 动画和角色素材已放在本组件内。来源、修改及各自的授权见 [ASSETS_LICENSE.md](ASSETS_LICENSE.md)。重新生成悬停素材可运行 `python3 tools/build_taskbar_greetings.py`，需要 Pillow 和支持 libvpx-vp9 的 ffmpeg。
 
-在 **任务栏 AI 助手 → 右侧宠物空闲动画** 开启日常动作。每个角色的六段日常和原来的招呼动作打乱后轮流播放。任务栏按需读取当前角色的小图集；重新选帧和生成道具动画可运行 `python3 tools/build_taskbar_dailies.py`。
+鼠标移入右侧宠物图标会播放一个动作；移出再移入会换下一个。在 **任务栏 AI 助手 → 右侧宠物空闲动画** 还可以开启自动播放。两种触发方式共用当前角色的六段日常和原来的招呼动作，每轮打乱后依次播放。任务栏按需读取当前角色的小图集。重新生成图集可运行 `python3 tools/build_taskbar_dailies.py`。

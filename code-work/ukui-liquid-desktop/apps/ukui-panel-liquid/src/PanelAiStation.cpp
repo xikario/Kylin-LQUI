@@ -381,14 +381,10 @@ public:
         QSettings cfg(PetEntry::path(),QSettings::IniFormat);
         QString next=cfg.value("entry/mode").toString()=="pet"?cfg.value("entry/character","claude").toString():QString();
         if(PetEntry::label(next).isEmpty())next.clear();
-        const bool enabled=cfg.value(PetEntry::idleMotionKey,false).toBool();
-        if(next!=petId||(idleEnabled&&!enabled)){
-            if(automatic){clearGreeting();update();}
-            dailies=TaskbarPetDailies();
-        }
-        idleEnabled=enabled;
+        idleEnabled=cfg.value(PetEntry::idleMotionKey,false).toBool();
         if(next!=petId){
             idleWait.stop();petId=next;
+            dailies=TaskbarPetDailies();
             const QString avatar=PetEntry::icon(next);
             petFace=avatar.isEmpty()?QPixmap():QPixmap(avatar);
             loadGreeting(avatar);
@@ -451,13 +447,16 @@ protected:
         QTimer::singleShot(0,this,[this,manifest]{showDropMenu(manifest);});
     }
     void enterEvent(QEvent *e) override {
-        if(!hoverSteps.isEmpty()&&QApplication::mouseButtons()==Qt::NoButton&&!LquiEffects::reducedMotion())
+        refreshPet();
+        if(!hoverSteps.isEmpty()&&!dragOver&&QApplication::mouseButtons()==Qt::NoButton
+            &&!LiquidPopup::theme().reducedMotion&&!LquiEffects::reducedMotion())
             beginGreeting(false);
         else update();
         QAbstractButton::enterEvent(e);
     }
     void leaveEvent(QEvent *e) override {
-        if(!automatic)finishGreeting();
+        // Daily clips start on a neutral pose. Let a quick pass still show the action.
+        if(!automatic&&dailyRow<0)finishGreeting();
         QAbstractButton::leaveEvent(e);
     }
     void showEvent(QShowEvent *e) override {
@@ -567,8 +566,8 @@ private:
     void finishGreeting(){clearGreeting();update();syncIdle();}
     void beginGreeting(bool idle){
         idleWait.stop();automatic=idle;
-        if(idle&&!dailies.attempted)dailies.load(PetEntry::icon(petId),petId);
-        dailyRow=idle?dailies.choose():-1;
+        if(!dailies.attempted)dailies.load(PetEntry::icon(petId),petId);
+        dailyRow=dailies.choose();
         showGreetingStep(0);
     }
     void showGreetingStep(int index){

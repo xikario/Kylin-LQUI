@@ -497,27 +497,38 @@ private slots:
         QTRY_VERIFY(!greeting->isActive());QVERIFY(petWait->isActive());QVERIFY(showsFace(Qt::magenta));
         panel.hide();QVERIFY(!petWait->isActive());panel.show();QTRY_VERIFY(petWait->isActive());
         entry.setValue(PetEntry::idleMotionKey,false);entry.sync();QTRY_VERIFY(!petWait->isActive());
-        // A newer asset pack adds two idle rows without replacing the hover strip.
+        // Re-select the pet with an installed daily pack. Hover works even with idle off.
+        entry.setValue("entry/mode","station");entry.sync();panel.hide();panel.show();
         QImage daily(72,72,QImage::Format_ARGB32);daily.fill(Qt::red);
         { QPainter p(&daily);p.fillRect(0,36,72,36,Qt::blue); }
         QVERIFY(daily.save(petDir+"/daily.png"));
         write(petPrefs.path()+"/kylin-ai-pets/dailies.json",R"({"gemini":{"file":"daily.png","tile":36,"moves":[{"name":"mirror","holdMs":[80,140]},{"name":"candy","holdMs":[90,120]}]}})");
-        entry.setValue(PetEntry::idleMotionKey,true);entry.sync();panel.hide();panel.show();
-        QTRY_VERIFY(petWait->isActive());
+        entry.setValue("entry/mode","pet");entry.sync();panel.hide();panel.show();
+        const auto pose=[&](){return showsFace(Qt::red)?0:showsFace(Qt::blue)?1:showsFace(Qt::green)?2:-1;};
         int previous=-1;
         for(int round=0;round<2;++round){
+            if(round==1){
+                entry.setValue(PetEntry::idleMotionKey,true);entry.sync();panel.hide();panel.show();
+                QTRY_VERIFY(petWait->isActive());
+            }
             QSet<int> drawn;
             for(int i=0;i<3;++i){
-                QMetaObject::invokeMethod(petWait,"timeout");
-                const int chosen=showsFace(Qt::red)?0:showsFace(Qt::blue)?1:showsFace(Qt::green)?2:-1;
+                const bool idle=round==1&&i!=1;
+                if(idle)QMetaObject::invokeMethod(petWait,"timeout");else QApplication::sendEvent(orb,&hover);
+                const int chosen=pose();
                 QVERIFY(chosen>=0&&chosen!=previous&&!drawn.contains(chosen));
+                if(round==0&&i==0)QVERIFY(chosen!=2);
                 drawn.insert(chosen);previous=chosen;
+                if(!idle){
+                    QApplication::sendEvent(orb,&leave);
+                    if(chosen!=2){QVERIFY(greeting->isActive());QCOMPARE(pose(),chosen);}
+                }
                 for(int tick=0;tick<4&&greeting->isActive();++tick)QMetaObject::invokeMethod(greeting,"timeout");
-                QVERIFY(showsFace(Qt::magenta)&&petWait->isActive());
+                QVERIFY(showsFace(Qt::magenta));QCOMPARE(petWait->isActive(),round==1);
             }
         }
-        QMetaObject::invokeMethod(petWait,"timeout");QApplication::sendEvent(orb,&hover);
-        QVERIFY(showsFace(Qt::green));QApplication::sendEvent(orb,&leave);
+        QMetaObject::invokeMethod(petWait,"timeout");const auto interrupted=pose();
+        QApplication::sendEvent(orb,&hover);QVERIFY(pose()>=0&&pose()!=interrupted);QApplication::sendEvent(orb,&leave);
         entry.setValue(PetEntry::idleMotionKey,false);entry.sync();panel.hide();panel.show();
         QTRY_VERIFY(!petWait->isActive());QVERIFY(showsFace(Qt::magenta));
         QTest::mouseClick(orb,Qt::LeftButton);QTRY_COMPARE(pet.toggles,2);

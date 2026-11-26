@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <numeric>
 
-// Optional portrait atlas for one character. Row -1 is its original idle greeting.
+// Shared hover/idle shuffle for one character. Row -1 is its original greeting.
 class TaskbarPetDailies {
 public:
     bool attempted=false;
@@ -55,7 +55,8 @@ public:
         if(order.isEmpty())return -1;
         if(cursor==order.size()){
             std::shuffle(order.begin(),order.end(),*QRandomGenerator::global());
-            if(order.first()==last)std::swap(order.first(),order.last());
+            if(order.first()==last||(last==-2&&order.first()==-1))
+                std::swap(order.first(),order.last());
             cursor=0;
         }
         last=order[cursor++];return last;

@@ -40,7 +40,10 @@ Settings Settings::load(const QString &path) {
         s.backendProfiles=o.value("backendProfiles").toObject();
         s.commandCodeApiKey=o.value("commandCodeApiKey").toString();
     }
-    s.normalize();return s;
+    // Restore the saved Codex profile when opening a retired Qwen selection.
+    if (s.backend == "qwen") s.selectBackend("codex");
+    else s.normalize();
+    return s;
 }
 void Settings::normalize() {
     if(defaultReplyMode!="quick")defaultReplyMode="normal";

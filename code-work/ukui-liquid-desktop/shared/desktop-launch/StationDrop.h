@@ -1,4 +1,5 @@
 #pragma once
+#include "PetEntry.h"
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -30,6 +31,8 @@ inline QString prepare(const QMimeData *mime,QString *error=nullptr) {
     QFile::setPermissions(root(),QFile::ReadOwner|QFile::WriteOwner|QFile::ExeOwner);
     for(const auto &file:QDir(root()).entryInfoList(QDir::Files))if(file.lastModified().secsTo(QDateTime::currentDateTime())>86400&&!file.isSymLink())QFile::remove(file.absoluteFilePath());
     const QString stem=root()+"/"+QUuid::createUuid().toString(QUuid::Id128);QJsonObject payload;QJsonArray files;QStringList links,seen;
+    // Keep the selected recipient with the drop across the menu and a cold launch.
+    payload["character"]=PetEntry::activeCharacter();
     for(const auto &url:mime->urls()) {
         if(url.isLocalFile()){const QString path=QDir::cleanPath(QFileInfo(url.toLocalFile()).absoluteFilePath());if(!seen.contains(path)){files.append(path);seen<<path;}}
         else if(url.isValid())links<<url.toString();
@@ -53,7 +56,10 @@ inline QString prepare(const QMimeData *mime,QString *error=nullptr) {
 }
 inline QJsonObject read(const QString &path) {
     if(!owns(path)||!path.endsWith(".json")||QFileInfo(path).size()>kManifestBytes)return {};
-    QFile file(path);if(!file.open(QIODevice::ReadOnly))return {};const auto bytes=file.read(kManifestBytes+1);if(bytes.size()>kManifestBytes)return {};return QJsonDocument::fromJson(bytes).object();
+    QFile file(path);if(!file.open(QIODevice::ReadOnly))return {};const auto bytes=file.read(kManifestBytes+1);if(bytes.size()>kManifestBytes)return {};
+    auto payload=QJsonDocument::fromJson(bytes).object();
+    if(!payload.isEmpty()&&!payload.contains("character"))payload["character"]=PetEntry::activeCharacter();
+    return payload;
 }
 inline void discard(const QString &path) {
     const auto payload=read(path);const QString image=payload.value("image").toString();if(owns(image))QFile::remove(image);if(owns(path))QFile::remove(path);

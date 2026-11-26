@@ -70,11 +70,12 @@ protected:
 private:
     QString chatCharacter,turnCharacter;
     void setChatCharacter(const QString &id);
+    void revealChatAt(const QString &character,const QRect &anchor);
     void reactPet(const QString &phase,const QString &text={});
     friend class Edge;
     void buildInterface();
     void connectClient();
-    void sendMessage(const QString &,const QStringList &,bool clearComposer);
+    void sendMessage(const QString &,const QStringList &,bool clearComposer,const QString &character={});
     void reveal(bool activate);
     void animate(bool show);
     void place(qreal value);

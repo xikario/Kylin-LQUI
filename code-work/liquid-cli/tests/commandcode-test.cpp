@@ -1,3 +1,4 @@
+#include <QPushButton>
 // Command Code provider backend against a local fake of its HTTP API.
 // No real network and no real API key are used.
 #include "CommandCodeClient.h"
@@ -93,6 +94,8 @@ private slots:
         QVERIFY(server.listen(QHostAddress::LocalHost));
         qputenv("LIQUID_CLI_COMMANDCODE_BASE",("http://127.0.0.1:"+QString::number(server.serverPort())+"/provider/v1").toUtf8());
         qputenv("XDG_DATA_HOME",data.path().toUtf8());qunsetenv("COMMAND_CODE_API_KEY");
+        qputenv("XDG_CONFIG_HOME",(data.path()+"/config").toUtf8());
+        qputenv("DSH_HOME",(data.path()+"/harness").toUtf8());
     }
     void modelsComeFromTheProvider() {
         CommandCodeClient client;client.configure(config());
@@ -198,6 +201,33 @@ private slots:
         QMimeData again;again.setText("只放入");QVERIFY(drawer.ImportDropActionAt(StationDrop::prepare(&again),"insert",0,0,0,0));
         QVERIFY(drawer.composer()->text().contains("只放入"));QCOMPARE(drawer.conversation().messages().size(),sent);
     }
+    void petTranslationOpensTheRecipientAndKeepsTheDraft() {
+        QTemporaryDir folder;Settings s=config("deepseek/deepseek-v4-flash");s.file=folder.path()+"/settings.json";
+        Drawer drawer(s,folder.path()+"/history");
+        drawer.Show();drawer.composer()->appendText("未发送的草稿");
+        QSettings entry(PetEntry::path(),QSettings::IniFormat);
+        entry.setValue("entry/mode","pet");entry.setValue("entry/character","gemini");entry.sync();
+        QMimeData mime;mime.setText("diagnosis");
+        QVERIFY(drawer.ImportDropActionAt(StationDrop::prepare(&mime),"translate",0,0,0,0));
+        QVERIFY(drawer.expanded());QCOMPARE(drawer.windowTitle(),QString("和Gemini 星空猫聊天"));
+        QCOMPARE(drawer.composer()->text(),QString("未发送的草稿"));
+        QTRY_VERIFY_WITH_TIMEOUT(!drawer.client()->busy(),5000);
+        const auto prompt=server.requests.last().body.value("messages").toArray().last().toObject().value("content").toString();
+        QVERIFY(prompt.contains("Gemini 星空猫"));QVERIFY(prompt.contains("只输出译文"));QVERIFY(prompt.endsWith("diagnosis"));
+        const int sent=server.requests.size();
+        QVERIFY(drawer.ImportDropAt(StationDrop::prepare(&mime),0,0,0,0));
+        QVERIFY(drawer.expanded());QCOMPARE(drawer.windowTitle(),QString("和Gemini 星空猫聊天"));
+        QVERIFY(drawer.composer()->text().contains("diagnosis"));QCOMPARE(server.requests.size(),sent);
+        for(const auto &pet:PetEntry::characters()){
+            entry.setValue("entry/character",pet.second);entry.sync();
+            QVERIFY(drawer.ImportDropAt(StationDrop::prepare(&mime),0,0,0,0));
+            QCOMPARE(drawer.windowTitle(),QString("和%1聊天").arg(pet.first));
+            QCOMPARE(drawer.configuration().backend,QString("commandcode"));
+        }
+        entry.setValue("entry/mode","station");entry.sync();
+        QVERIFY(drawer.ImportDropAt(StationDrop::prepare(&mime),0,0,0,0));
+        QCOMPARE(drawer.windowTitle(),QString("AI小站"));
+    }
     void droppedImageIsAttachedForRecognition() {
         QTemporaryDir folder;Settings s=config("deepseek/deepseek-v4-flash");s.file=folder.path()+"/settings.json";
         Drawer drawer(s,folder.path()+"/history");
@@ -206,6 +236,76 @@ private slots:
         QVERIFY(drawer.ImportDropActionAt(manifest,"ocr",0,0,0,0));QVERIFY(!QFile::exists(staged));
         const auto first=drawer.conversation().messages().first();QCOMPARE(first.images.size(),1);QVERIFY(QFile::exists(first.images.first()));QVERIFY(first.text.contains("识别"));
         QTRY_VERIFY_WITH_TIMEOUT(!drawer.client()->busy(),5000);
+    }
+    void harnessCredentialEntryIsPrivate() {
+        QTemporaryDir folder;Settings s=config();s.file=folder.path()+"/settings.json";
+        Drawer drawer(s,folder.path()+"/history");drawer.Preferences();
+        auto *prefs=drawer.findChild<QDialog*>("cliPreferences");
+        for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="cliPreferences")prefs=qobject_cast<QDialog*>(w);
+        QVERIFY(prefs);
+        auto *button=prefs->findChild<QPushButton*>("configureDshAliKey");
+        auto *backend=prefs->findChild<QComboBox*>("settingBackend");QVERIFY(button&&backend);QVERIFY(!button->isVisibleTo(prefs));
+        backend->setCurrentIndex(backend->findData("deepseek"));emit backend->activated(backend->currentIndex());
+        QVERIFY(button->isVisibleTo(prefs));button->click();
+        auto *popup=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(popup);
+        auto *key=popup->findChild<QLineEdit*>("dshAliKey");QVERIFY(key);QVERIFY(key->text().isEmpty());QCOMPARE(key->echoMode(),QLineEdit::Password);
+        QVERIFY(!prefs->isAncestorOf(key));QCOMPARE(drawer.configuration().backend,QString("commandcode"));
+        auto *route=popup->findChild<QComboBox*>("dshAliRoute");QVERIFY(route);QCOMPARE(route->count(),2);
+        auto *save=popup->findChild<QPushButton*>("saveDshAliKey");QVERIFY(save);
+        if(QFileInfo::exists(QDir::homePath()+"/.local/lib/liquid-cli/dsh-runtime/node_modules/node/bin/node")){
+            QTRY_VERIFY_WITH_TIMEOUT(key->isEnabled()&&save->isEnabled(),5000);
+            QTest::keyClicks(key,"sk-only-a-local-test-fixture");QCOMPARE(route->currentData().toString(),QString("general"));
+            save->click();
+            QTRY_VERIFY_WITH_TIMEOUT(save->isEnabled()&&key->text().isEmpty(),5000);
+            QFile creds(data.path()+"/harness/.credentials.yaml");QVERIFY(creds.open(QIODevice::ReadOnly));QVERIFY(creds.readAll().contains("sk-only-a-local-test-fixture"));
+            QFile profile(data.path()+"/harness/profiles/acp/cordis.patch.yml");QVERIFY(profile.open(QIODevice::ReadOnly));QVERIFY(profile.readAll().contains("https://dashscope.aliyuncs.com/compatible-mode/v1"));
+            QCOMPARE(drawer.configuration().backend,QString("commandcode"));
+        }
+        popup->close();prefs->close();
+    }
+    void officialModelsUseOnlyTheSelectedKeyAndModel() {
+        if(!QFileInfo::exists(QDir::homePath()+"/.local/lib/liquid-cli/dsh-runtime/node_modules/node/bin/node"))
+            QSKIP("Requires the installed DeepSeek Harness credential runtime");
+        QTemporaryDir folder;QVERIFY(folder.isValid());
+        const auto mock=folder.path()+"/models.mjs";QFile script(mock);QVERIFY(script.open(QIODevice::WriteOnly));
+        script.write(R"JS(
+            globalThis.fetch = async (url, opt) => {
+                if(opt.headers.Authorization !== 'Bearer sk-official-local-fixture') throw Error();
+                const list = url === 'https://api.deepseek.com/models' && opt.method === 'GET';
+                const chat = url === 'https://api.deepseek.com/chat/completions' && JSON.parse(opt.body).model === 'test-pro';
+                if(!list && !chat) throw Error();
+                return {ok:true, json:async()=>list?{data:[{id:'test-flash'},{id:'test-pro'},{id:'test-pro'},{id:'qwen-image-3.0'}]}:{choices:[{message:{content:'OK'}}]}};
+            };
+        )JS");script.close();
+        struct RestoreEnv {
+            QByteArray old=qgetenv("NODE_OPTIONS");
+            ~RestoreEnv(){if(old.isNull())qunsetenv("NODE_OPTIONS");else qputenv("NODE_OPTIONS",old);}
+        } restore;
+        qputenv("NODE_OPTIONS",("--import="+mock).toUtf8());
+        Settings s=config();s.file=folder.path()+"/settings.json";
+        s.backendProfiles["deepseek"]=QJsonObject{{"command","/bin/false"}};
+        Drawer drawer(s,folder.path()+"/history");drawer.Preferences();
+        QDialog *prefs=nullptr;
+        for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="cliPreferences"&&w->isVisible())prefs=qobject_cast<QDialog*>(w);
+        QVERIFY(prefs);auto *backends=prefs->findChild<QComboBox*>("settingBackend");QVERIFY(backends);
+        backends->setCurrentIndex(backends->findData("deepseek"));emit backends->activated(backends->currentIndex());
+        auto *open=prefs->findChild<QPushButton*>("configureDshOfficialKey");QVERIFY(open&&open->isVisibleTo(prefs));open->click();
+        auto *dialog=qobject_cast<QDialog*>(QApplication::activeModalWidget());QVERIFY(dialog);
+        auto *key=dialog->findChild<QLineEdit*>("dshOfficialKey");auto *models=dialog->findChild<QComboBox*>("dshModel");
+        auto *fetch=dialog->findChild<QPushButton*>("fetchDshModels");auto *test=dialog->findChild<QPushButton*>("testDshAliKey");
+        auto *save=dialog->findChild<QPushButton*>("saveDshAliKey");auto *status=dialog->findChild<QLabel*>("dshAliStatus");
+        QVERIFY(key&&models&&fetch&&test&&save&&status);QCOMPARE(key->echoMode(),QLineEdit::Password);QVERIFY(!prefs->isAncestorOf(key));
+        QTRY_VERIFY_WITH_TIMEOUT(fetch->isEnabled(),5000);
+        key->setText("sk-official-local-fixture");fetch->click();
+        QTRY_COMPARE_WITH_TIMEOUT(models->count(),2,5000);QCOMPARE(models->itemText(1),QString("test-pro"));
+        models->setCurrentIndex(1);test->click();QTRY_VERIFY_WITH_TIMEOUT(status->text().contains("测试成功"),5000);
+        save->click();QTRY_VERIFY_WITH_TIMEOUT(status->text().startsWith("已保存"),5000);QVERIFY(key->text().isEmpty());
+        const auto stored=Settings::load(s.file);QCOMPARE(stored.backend,QString("commandcode"));
+        QCOMPARE(stored.backendProfiles["deepseek"].toObject()["model"].toString(),QStringLiteral(R"(["deepseek-official","test-pro"])"));
+        QFile profile(data.path()+"/harness/profiles/acp/cordis.patch.yml");QVERIFY(profile.open(QIODevice::ReadOnly));
+        const auto patch=profile.readAll();QVERIFY(patch.contains("provider: deepseek-official"));QVERIFY(patch.contains("model: test-pro"));
+        QVERIFY(patch.contains("https://api.deepseek.com/anthropic"));QVERIFY(!patch.contains("sk-official-local-fixture"));
+        dialog->close();prefs->close();
     }
     void settingsExplainWhatEachBackendCanDo() {
         QTemporaryDir folder;Settings s=config("deepseek/deepseek-v4-flash");s.file=folder.path()+"/settings.json";

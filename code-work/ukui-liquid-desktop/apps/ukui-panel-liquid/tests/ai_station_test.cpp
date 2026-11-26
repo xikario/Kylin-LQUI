@@ -380,8 +380,31 @@ private slots:
 
         QWidget *corner=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="aiStationDesktopCorner")corner=w;QVERIFY(corner);
         QCOMPARE(corner->geometry().bottomRight(),QGuiApplication::primaryScreen()->geometry().bottomRight());
+        auto *edgeButton=qobject_cast<QAbstractButton*>(corner);QVERIFY(edgeButton);
+        const auto hitArea=corner->geometry();
+        auto gripBounds=[corner] {
+            QImage image(corner->size(),QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            corner->render(&image,QPoint(),QRegion(),QWidget::DrawChildren);
+            QRect ink;
+            for(int y=0;y<image.height();++y)for(int x=0;x<image.width();++x)
+                if(qAlpha(image.pixel(x,y))>32)ink=ink.united(QRect(x,y,1,1));
+            return ink;
+        };
+        corner->setAttribute(Qt::WA_UnderMouse,false);const auto idleGrip=gripBounds();
+        corner->setAttribute(Qt::WA_UnderMouse,true);const auto hoverGrip=gripBounds();
+        edgeButton->setDown(true);const auto pressedGrip=gripBounds();
+        edgeButton->setDown(false);corner->setAttribute(Qt::WA_UnderMouse,false);
+        QVERIFY(idleGrip.isValid() && idleGrip.center()==corner->rect().center());
+        QVERIFY(hoverGrip.height()>pressedGrip.height() && pressedGrip.height()>idleGrip.height());
+        QCOMPARE(corner->geometry(),hitArea);
+        const QPoint oldPosition=panel.pos();
+        panel.move(corner->geometry().bottomRight()-QPoint(panel.width()-1,panel.height()-1));
+        QTRY_COMPARE(cluster->layout()->contentsMargins().right(),corner->width()+4);
+        QTRY_VERIFY(orb->mapToGlobal(QPoint(orb->width()-1,0)).x()<corner->geometry().left());
+        panel.move(oldPosition);QTRY_COMPARE(cluster->layout()->contentsMargins().right(),2);
         auto *readout=cluster->findChild<QWidget*>("aiStationReadout");QVERIFY(readout);QCOMPARE(readout->property("stationStyle").toString(),QString("minimal"));
-        QCOMPARE(calendar->height(),36);QVERIFY(readout->geometry().right()<calendar->geometry().left());QVERIFY(readout->width()<170);
+        QCOMPARE(calendar->height(),36);QTRY_VERIFY(readout->geometry().right()<calendar->geometry().left());QVERIFY(readout->width()<170);
         QEvent enter(QEvent::Enter);QApplication::sendEvent(orb,&enter);QTest::qWait(180);QCOMPARE(fake.calls,0);
         auto *accent=orb->findChild<QWidget*>("aiStationOrbAccent");QVERIFY(accent);QVERIFY(accent->property("animating").toBool());
         QTest::qWait(300);QVERIFY(!accent->property("animating").toBool());QVERIFY(!accent->isVisible());
@@ -537,6 +560,13 @@ private slots:
         QTest::mouseRelease(orb,Qt::LeftButton);
         QTRY_COMPARE(fake.petOpens,1);QTest::qWait(QApplication::doubleClickInterval()+80);
         QCOMPARE(pet.toggles,2);QCOMPARE(fake.calls,normalCalls);QCOMPARE(fake.chatPet,QString("gemini"));
+        const int beforePetDrop=fake.actionDrops;
+        dropMenu=dropAndMenu(mime);QVERIFY(dropMenu);dropMenu->findChild<QAction*>("aiStationDrop_translate")->trigger();
+        QTRY_COMPARE(fake.actionDrops,beforePetDrop+1);QCOMPARE(fake.payload.value("character").toString(),QString("gemini"));
+        QVERIFY(adapter.PetDrop(QStringLiteral("{\"text\":\"diagnosis\"}")));
+        auto *petDropMenu=qobject_cast<QMenu*>(QApplication::activePopupWidget());QVERIFY(petDropMenu);
+        petDropMenu->findChild<QAction*>("aiStationDrop_translate")->trigger();
+        QTRY_COMPARE(fake.actionDrops,beforePetDrop+2);QCOMPARE(fake.payload.value("character").toString(),QString("gemini"));
         QCOMPARE(fake.anchor,QRect(orb->mapToGlobal(QPoint()),orb->size()));
         bus.unregisterService("org.ukui.AiPet");bus.unregisterObject("/Pet");
         if(configHome.isNull())qunsetenv("XDG_CONFIG_HOME");else qputenv("XDG_CONFIG_HOME",configHome);

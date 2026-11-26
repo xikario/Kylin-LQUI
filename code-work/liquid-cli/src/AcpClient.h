@@ -30,10 +30,12 @@ public:
     void send(const QString &text,const QStringList &images) override;
     void compact() override;
     void discoverModels() override;
+    void providerSettingsChanged() { renewBeforeSend=true; }
     void interrupt() override;
     void answerApproval(const QJsonValue &id,const QString &decision) override;
     void stop() override;
 private:
+    bool renewBeforeSend=false;
     using Reply=std::function<void(const QJsonObject &,const QJsonObject &)>;
     struct Permission{QJsonValue id;QJsonArray options;};
     enum Phase{Stopped,Launching,Initializing,Opening,Ready};

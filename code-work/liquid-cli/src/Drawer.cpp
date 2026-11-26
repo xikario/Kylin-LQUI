@@ -317,9 +317,14 @@ void Drawer::PetChatAt(const QString &id,int x,int y,int width,int height) {
     const QRect anchor(x,y,width,height);
     if(!anchor.isValid()||width>=4096||height>=4096||!QGuiApplication::screenAt(anchor.center()))return;
     if(opened&&chatCharacter==id){Hide();return;}
-    const bool reposition=opened&&anchor!=panelAnchor;
-    panelAnchor=anchor;setChatCharacter(id);
-    if(reposition){motion.stop();place(1);rebuildGlass();}
+    revealChatAt(id,anchor);
+}
+void Drawer::revealChatAt(const QString &character,const QRect &anchor) {
+    setChatCharacter(PetEntry::label(character).isEmpty()?QString():character);
+    if(anchor.isValid()&&anchor.width()<4096&&anchor.height()<4096&&QGuiApplication::screenAt(anchor.center())&&anchor!=panelAnchor){
+        panelAnchor=anchor;
+        if(opened){motion.stop();place(1);rebuildGlass();}
+    }
     reveal(true);
 }
 void Drawer::reactPet(const QString &phase,const QString &text) {
@@ -328,14 +333,14 @@ void Drawer::reactPet(const QString &phase,const QString &text) {
     QDBusConnection::sessionBus().call(call,QDBus::NoBlock);
 }
 
-void Drawer::submit(const QString &text,const QStringList &images) {sendMessage(text,images,true);}
-void Drawer::sendMessage(const QString &text,const QStringList &images,bool clearComposer) {
+void Drawer::submit(const QString &text,const QStringList &images) {sendMessage(text,images,true,chatCharacter);}
+void Drawer::sendMessage(const QString &text,const QStringList &images,bool clearComposer,const QString &character) {
     if(!history.canSave()){setStatus("原聊天记录读取失败，已保留原件；请恢复文件或在设置中开始新对话。");return;}
     if(backend->busy()||(text.isEmpty()&&images.isEmpty()))return;
     ChatMessage m{"user",text,images,{},0};history.append(m);view->append(history.messages().last());
     view->followBottom();if(clearComposer)input->clear();answerIndex=-1;view->setTyping(true);input->setBusy(true);
     QString prompt=text;
-    turnCharacter=clearComposer?chatCharacter:QString();
+    turnCharacter=character;
     if(!turnCharacter.isEmpty()){
         const QString name=PetEntry::label(turnCharacter);
         prompt=QString("【桌宠对话 · %1】本条消息请以%1的身份回答。\n%2").arg(name,text);
@@ -619,8 +624,7 @@ void Drawer::CaptureAt(int x,int y,int width,int height) {
 }
 bool Drawer::ImportDropAt(const QString &manifest,int x,int y,int width,int height) {
     const auto payload=StationDrop::read(manifest);if(payload.isEmpty())return false;
-    const QRect anchor(x,y,width,height);if(width>0&&height>0&&QGuiApplication::screenAt(anchor.center()))panelAnchor=anchor;
-    reveal(true);QStringList paths;
+    revealChatAt(payload.value("character").toString(),QRect(x,y,width,height));QStringList paths;
     for(const auto &value:payload.value("files").toArray()) {
         const QString path=value.toString();if(!QDir::isAbsolutePath(path))continue;
         paths<<path;
@@ -639,7 +643,6 @@ bool Drawer::ImportDropActionAt(const QString &manifest,const QString &action,in
         const bool ok=ImportDropAt(manifest,x,y,width,height);
         if(ok)input->setHint("AI 正在回复，内容已放入输入框；稍后按 Enter 发送");return ok;
     }
-    const QRect anchor(x,y,width,height);if(width>0&&height>0&&QGuiApplication::screenAt(anchor.center()))panelAnchor=anchor;
     // Images are copied into the conversation; small text files are inlined so
     // that HTTP backends see their content too; other files are referenced.
     constexpr qint64 InlineTextBytes=256*1024;
@@ -659,7 +662,8 @@ bool Drawer::ImportDropActionAt(const QString &manifest,const QString &action,in
     const QString prompt=DropActions::prompt(action,settings.translationLanguage,parts.join("\n\n"),!images.isEmpty());
     StationDrop::discard(manifest);
     if(prompt.isEmpty()||(images.isEmpty()&&parts.isEmpty())){setStatus(error.isEmpty()?QStringLiteral("没有可处理的内容"):error);return false;}
-    reveal(true);sendMessage(prompt,images,false);return true;
+    revealChatAt(payload.value("character").toString(),QRect(x,y,width,height));
+    sendMessage(prompt,images,false,chatCharacter);return true;
 }
 void Drawer::place(qreal value) {
     shown=value;const QRect target=targetGeometry();

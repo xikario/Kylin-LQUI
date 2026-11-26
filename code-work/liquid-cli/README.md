@@ -1,6 +1,6 @@
 # AI小站
 
-由任务栏小球唤起的液态 AI 对话窗口，支持 Codex、千问 Qwen Code 和 DeepSeek Harness，使用 Qt5 原生界面。0.2.0 起由终端抽屉改为聊天框。
+由任务栏小球唤起的液态 AI 对话窗口，支持 Codex、DeepSeek Harness、Command Code 命令行和 Command Code API，使用 Qt5 原生界面。0.2.0 起由终端抽屉改为聊天框。
 
 ## 用起来
 
@@ -31,7 +31,7 @@
 AI小站是独立程序，由任务栏 AI 小球按需启动。Fences 不再提供显示开关、设置页或随 Fences 启动的联动。
 
 - 点击小球展开/收起，右键设置在小球附近打开。
-- 把文件、文件夹、文字、链接或图片拖到小球，内容会追加到输入区。本地文件使用绝对路径，图片另附为图像附件；不会自动发送或启动模型任务。
+- 把文件、文件夹、文字、链接或图片拖到任务栏入口后，可选择翻译、总结等动作，或选“放入输入框”保留草稿。窗口按拖入时设置的宠物角色或 AI 小站打开，并沿用当前 AI 后台。
 - 输入框至少三行，内容较多时自动增高至八行，再显示滚动条。拖入后的草稿和正常退出时的草稿会保存，下次启动恢复。
 - 每项设置停留一秒显示统一说明气泡；“压缩提醒”最高 765K，此值不扩大模型实际上下文。
 
@@ -86,15 +86,18 @@ python3 scripts/install.py
 
 所有数值使用横向滑块。字体、输入提示、链接、代码块和按钮图标按玻璃背景统一对比色；设置也使用壁纸玻璃背景。左麒麟与右 AI 的短光晕/微光仅在进入和点击时播放约 420ms，局部约 30fps，结束后动画对象停止、覆盖层隐藏。
 
-## 千问与 DeepSeek 接入
+## AI 后台接入
 
-设置中的“AI 后台”可以选择 Codex、千问 Qwen Code、DeepSeek Harness；点击“应用”切换。正在回复时先停止当前任务。启动命令、模型、思考强度和会话模式分别保存，原有 Codex 设置与记录自动沿用。
+设置中的“AI 后台”可以选择 Codex、DeepSeek Harness、Command Code 命令行和 Command Code API；点击“应用”切换。正在回复时先停止当前任务。启动命令、模型、思考强度和会话模式分别保存，原有 Codex 设置与记录自动沿用。
 
 | 后台 | 默认命令 | 小站自动添加的协议参数 |
 |---|---|---|
 | Codex | `codex` | `app-server` |
-| 千问 Qwen Code | `qwen` | `--acp` |
+| Command Code 命令行 | `cmd` | `acp` |
+| Command Code API | 无 | 通过 HTTP 调用 |
 | DeepSeek Harness | `dsh` | `--profile acp` |
+
+在“任务栏 AI 助手”选择 DeepSeek Harness 后，可打开“配置阿里云 API Key”或“配置 DeepSeek 官方 API”。点击“获取模型”读取当前服务的对话模型列表，选定模型后，“测试连接”会发起一次简短调用，“保存配置”会更新 Harness 的默认服务和模型。阿里云 Token Plan、百炼通用和 DeepSeek 官方各用独立密钥。切换 AI 后台仍需点击设置页的“应用”。
 
 使用前自行安装对应官方 CLI 并完成其登录或模型提供商配置。小站沿用 CLI 的凭据与环境，不代装 CLI，也不读取、复制账号令牌。自定义启动命令只填写程序及必要的其他参数，协议参数由小站添加。
 
@@ -110,7 +113,7 @@ ACP 接入使用官方协商的能力与配置：
 
 接入依据：[Qwen Code 官方架构](https://qwenlm.github.io/qwen-code-docs/en/developers/architecture/)、[DeepSeek 官方 ACP 合约](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/acp/acp/README.md)、[ACP v1 协议](https://agentclientprotocol.com/protocol/v1/overview)。
 
-`tests/acp-fixture.cpp` 是离线协议对端，覆盖两种启动参数、分组模型与强度切换、图片编码、授权与停止、两种会话恢复方式及历史回放过滤；不登录账号、不调用真实模型。本次接入没有执行真实千问或 DeepSeek 联调。
+`tests/acp-fixture.cpp` 是离线协议对端，覆盖两种启动参数、分组模型与强度切换、图片编码、授权与停止、两种会话恢复方式及历史回放过滤；不登录账号、不调用真实模型。千问仅通过离线协议测试，已从后台选择器移除。DeepSeek Harness 使用 `acp` 配置；模型能列出后，仍需调用服务商验证账号对该模型的权限。
 
 ## Kylin-LQUI 0.2.2 · 登录常驻
 

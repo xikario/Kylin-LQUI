@@ -1,9 +1,12 @@
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QStandardPaths>
 #include <QProcessEnvironment>
 #include <QProcess>
 #include <QRegularExpression>
 #include "Drawer.h"
+#include "DshCredentials.h"
+#include "AcpClient.h"
 #include "PetEntry.h"
 #include "CodexOptions.h"
 #include "SettingsBridge.h"
@@ -122,7 +125,7 @@ void Drawer::Preferences() {
     connect(entryMode,QOverload<int>::of(&QComboBox::activated),dialog,saveEntry);
     connect(character,QOverload<int>::of(&QComboBox::activated),dialog,saveEntry);
     auto draft=std::make_shared<Settings>(settings);
-    auto *backendChoice=choice("AI 后台","settingBackend",{{"Codex","codex"},{"千问 Qwen Code","qwen"},{"DeepSeek Harness","deepseek"},{"Command Code 命令行","commandcode-cli"},{"Command Code API","commandcode"}},settings.backend);
+    auto *backendChoice=choice("AI 后台","settingBackend",{{"Codex","codex"},{"DeepSeek Harness","deepseek"},{"Command Code 命令行","commandcode-cli"},{"Command Code API","commandcode"}},settings.backend);
     // What the selected backend can do, and whether its program is installed.
     auto *capability=new QLabel(fields);capability->setObjectName("backendCapability");capability->setWordWrap(true);capability->setTextFormat(Qt::PlainText);
     form->addRow(QString(),capability);
@@ -134,6 +137,11 @@ void Drawer::Preferences() {
     auto *revealKey=new QPushButton("显示",keyRow);revealKey->setObjectName("revealCommandCodeKey");revealKey->setCheckable(true);
     keyLayout->addWidget(apiKey,1);keyLayout->addWidget(revealKey);form->addRow("API Key",keyRow);
     connect(revealKey,&QPushButton::toggled,keyRow,[apiKey,revealKey](bool on){apiKey->setEchoMode(on?QLineEdit::Normal:QLineEdit::Password);revealKey->setText(on?"隐藏":"显示");});
+    auto *harnessRow=new QWidget(fields);auto *harnessButtons=new QHBoxLayout(harnessRow);harnessButtons->setContentsMargins(0,0,0,0);
+    auto *dshCredentials=new QPushButton("配置阿里云 API Key…",harnessRow);dshCredentials->setObjectName("configureDshAliKey");
+    auto *officialCredentials=new QPushButton("配置 DeepSeek 官方 API…",harnessRow);officialCredentials->setObjectName("configureDshOfficialKey");
+    harnessButtons->addWidget(dshCredentials);harnessButtons->addWidget(officialCredentials);harnessButtons->addStretch();
+    form->addRow("模型服务",harnessRow);
     auto *replyDefault=choice("默认问答模式","settingDefaultReplyMode",{{"普通思考","normal"},{"快问快答","quick"}},settings.defaultReplyMode);
     replyDefault->setAccessibleName("默认问答模式");
     auto *replyHelp=new QLabel("默认模式下次启动生效。普通思考与快问快答分别保存模型配置和聊天上下文。",fields);
@@ -243,6 +251,13 @@ void Drawer::Preferences() {
     });
     connect(quickEffort,&QSlider::valueChanged,dialog,[=]{saveQuick();});
     connect(quickFast,&QCheckBox::toggled,dialog,[=]{saveQuick();});
+    const auto modelLabel=[=](const QString &id){
+        if(draft->backend=="deepseek"){
+            const auto pair=QJsonDocument::fromJson(id.toUtf8()).array();
+            if(pair.size()==2&&pair.at(1).isString())return pair.at(1).toString();
+        }
+        return id;
+    };
     const auto followText=[=]{return draft->backend=="codex"?QString("跟随 Codex 配置"):draft->backend=="commandcode"?QString("默认模型"):QString("跟随会话配置");};
     auto updateEfforts=[=](const QString &wanted){
         QString selected=model->currentData().toString();const bool follow=selected.isEmpty();if(follow)selected=catalog->model;
@@ -319,6 +334,7 @@ void Drawer::Preferences() {
         if(auto *caption=qobject_cast<QLabel*>(form->labelForField(effort->parentWidget())))caption->setText(codex?"普通思考强度":"思考强度");
         const bool provider=draft->backend=="commandcode";
         sessionMode->setVisible(!codex&&!provider);form->labelForField(sessionMode)->setVisible(!codex&&!provider);
+        harnessRow->setVisible(draft->backend=="deepseek");form->labelForField(harnessRow)->setVisible(draft->backend=="deepseek");
         keyRow->setVisible(provider);form->labelForField(keyRow)->setVisible(provider);
         for(auto *w:QList<QWidget*>{command,directory}){w->setVisible(!provider);form->labelForField(w)->setVisible(!provider);}
         if(provider){const QSignalBlocker block(apiKey);apiKey->setText(draft->commandCodeApiKey);}
@@ -342,9 +358,9 @@ void Drawer::Preferences() {
         });
         connect(current,&AgentClient::modelsReady,dialog,[=](const QJsonArray &models,const QString &defaultModel,const QString &strength){
             if(*probe!=current)return;catalog->models=models;catalog->model=defaultModel;catalog->effort=strength;
-            {const QSignalBlocker block(model);model->clear();model->addItem(followText()+(defaultModel.isEmpty()?QString():" · "+defaultModel),QString());
+            {const QSignalBlocker block(model);model->clear();model->addItem(followText()+(defaultModel.isEmpty()?QString():" · "+modelLabel(defaultModel)),QString());
                 for(const auto &v:models){const auto m=v.toObject();const QString id=m.value("model").toString();if(id.isEmpty()||m.value("hidden").toBool())continue;model->addItem(m.value("displayName").toString(id),id);model->setItemData(model->count()-1,id,Qt::ToolTipRole);}
-                if(!draft->model.isEmpty()&&model->findData(draft->model)<0)model->addItem(draft->model+"（当前配置）",draft->model);
+                if(!draft->model.isEmpty()&&model->findData(draft->model)<0)model->addItem(modelLabel(draft->model)+"（当前配置）",draft->model);
                 model->setCurrentIndex(qMax(0,model->findData(draft->model)));}
             updateEfforts(draft->reasoningEffort);catalog->ready=true;model->setEnabled(true);refresh->setEnabled(true);
             if(draft->backend=="codex"){
@@ -402,6 +418,28 @@ void Drawer::Preferences() {
     connect(backendChoice,QOverload<int>::of(&QComboBox::activated),dialog,[=]{
         collectSelection();draft->selectBackend(backendChoice->currentData().toString());resetBackend();updateCapability();refresh->click();
     });
+    auto configureHarness=[=](DshService service){
+        showDshCredentials(dialog,service,[=](const QString &selected){
+            if(selected.isEmpty())return false;
+            Settings next=settings;
+            if(next.backend=="deepseek")next.model=selected;
+            else {
+                auto profile=next.backendProfiles.value("deepseek").toObject();
+                profile["model"]=selected;next.backendProfiles["deepseek"]=profile;
+            }
+            QString error;if(!next.save(&error))return false;
+            applySettings(next);draft->model=selected;
+            if(settings.backend=="deepseek")
+                if(auto *acp=qobject_cast<AcpClient*>(backend))acp->providerSettingsChanged();
+            if(auto *lookup=probe->data()){lookup->disconnect(dialog);lookup->stop();lookup->deleteLater();*probe=nullptr;}
+            refresh->setEnabled(true);
+            if(model->findData(selected)<0)model->addItem(modelLabel(selected),selected);
+            model->setCurrentIndex(model->findData(selected));refresh->click();
+            return true;
+        });
+    };
+    connect(dshCredentials,&QPushButton::clicked,dialog,[=]{configureHarness(DshService::Aliyun);});
+    connect(officialCredentials,&QPushButton::clicked,dialog,[=]{configureHarness(DshService::Official);});
     resetBackend();updateCapability();
     auto *restoreDefaults=new QPushButton("恢复外观与日常设置默认值",dialog);restoreDefaults->setObjectName("restoreAppearanceDefaults");layout->addWidget(restoreDefaults,0,Qt::AlignLeft);
     connect(restoreDefaults,&QPushButton::clicked,dialog,[=]{

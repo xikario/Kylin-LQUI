@@ -379,8 +379,7 @@ public:
     }
     void refreshPet() {
         QSettings cfg(PetEntry::path(),QSettings::IniFormat);
-        QString next=cfg.value("entry/mode").toString()=="pet"?cfg.value("entry/character","claude").toString():QString();
-        if(PetEntry::label(next).isEmpty())next.clear();
+        const QString next=PetEntry::activeCharacter(cfg);
         idleEnabled=cfg.value(PetEntry::idleMotionKey,false).toBool();
         if(next!=petId){
             idleWait.stop();petId=next;
@@ -808,6 +807,12 @@ public:
         face->restore();if(!calendar||!parentWidget()||!parentWidget()->layout())return;
         layout()->removeWidget(calendar);calendar->setParent(parentWidget());parentWidget()->layout()->addWidget(calendar);calendar->show();calendar=nullptr;
     }
+    void reserveDesktopCorner(const QRect &corner) {
+        const QRect overlap = window()->geometry().intersected(corner);
+        const int right = overlap.isEmpty() ? 2 : overlap.width() + 4;
+        if (layout()->contentsMargins().right() != right)
+            layout()->setContentsMargins(10, 0, right, 0);
+    }
     int samples=0;
 protected:
     void showEvent(QShowEvent *) override {sample();timer.start();}
@@ -837,7 +842,8 @@ public:
         setWindowFlags(Qt::Tool|Qt::FramelessWindowHint|Qt::WindowStaysOnTopHint|Qt::WindowDoesNotAcceptFocus|Qt::X11BypassWindowManagerHint);
         setObjectName("aiStationDesktopCorner");setWindowTitle("显示桌面");
         setAttribute(Qt::WA_TranslucentBackground);setAttribute(Qt::WA_ShowWithoutActivating);setAttribute(Qt::WA_X11NetWmWindowTypeDock);
-        setFocusPolicy(Qt::NoFocus);setToolTip("显示桌面");setAccessibleName("显示桌面");setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::NoFocus);setToolTip("显示桌面 · 再次点击恢复窗口");setAccessibleName("显示桌面");
+        setAccessibleDescription("单击显示桌面，再次单击恢复窗口。");setCursor(Qt::PointingHandCursor);
         connect(this,&QAbstractButton::clicked,this,[]{
             // EWMH is also what the desktop's native window-manager backend
             // uses. No shell process, desktop polling, or activation needed.
@@ -859,7 +865,8 @@ public:
         if(!owner){hide();return;}
         auto *panel=owner->window();auto *screen=QGuiApplication::screenAt(panel->geometry().center());if(!screen)screen=QGuiApplication::primaryScreen();if(!screen)return;
         const auto area=screen->geometry();const int h=qBound(28,panel->height(),64);
-        const QRect target(area.right()-11,area.bottom()-h+1,12,h);
+        constexpr int edgeWidth = 8;
+        const QRect target(area.right()-edgeWidth+1,area.bottom()-h+1,edgeWidth,h);
         setGeometry(target);owner->hide();show();setGeometry(target);raise();snapOuterEdges();
     }
     void restore() {
@@ -870,7 +877,19 @@ protected:
     void leaveEvent(QEvent *event) override{update();QAbstractButton::leaveEvent(event);}
     void paintEvent(QPaintEvent *) override {
         QPainter painter(this);
-        painter.setPen(QColor(210,236,245,underMouse()?180:85));painter.drawLine(1,5,1,height()-6);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const bool pressed = isDown();
+        const bool hovered = underMouse();
+        const qreal length = qMin(height() - 8, pressed ? 20 : hovered ? 28 : 16);
+        const qreal stroke = (hovered || pressed) ? 2.5 : 2.0;
+        const QRectF grip((width() - stroke) / 2, (height() - length) / 2, stroke, length);
+
+        // A dark rim keeps the light handle legible against wallpaper as well as the Dock.
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(17, 24, 34, hovered || pressed ? 110 : 75));
+        painter.drawRoundedRect(grip.adjusted(-1, -1, 1, 1), stroke / 2 + 1, stroke / 2 + 1);
+        painter.setBrush(pressed ? QColor(138, 207, 255) : QColor(224, 238, 250, hovered ? 245 : 145));
+        painter.drawRoundedRect(grip, stroke / 2, stroke / 2);
     }
 private:
     void snapOuterEdges() {
@@ -948,6 +967,17 @@ void PanelAiStation::attach() {
         auto *cluster=new Cluster(calendar,w);
         if(row)row->addWidget(cluster);else grid->addWidget(cluster,0,0);
         widgets.append(cluster);connect(cluster,&QObject::destroyed,this,[this]{schedule();});cluster->show();
+    }
+    for (auto widget : widgets) {
+        if (!widget) continue;
+        QRect cornerRect;
+        for (auto corner : corners) {
+            if (corner && corner->parentWidget() == widget->window() && corner->isVisible()) {
+                cornerRect = corner->geometry();
+                break;
+            }
+        }
+        static_cast<Cluster *>(widget.data())->reserveDesktopCorner(cornerRect);
     }
     const bool hosted=!widgets.isEmpty();
     if(serviceOwned&&!hosted){auto bus=QDBusConnection::sessionBus();bus.unregisterService(service);bus.unregisterObject("/AiStation");serviceOwned=false;}
@@ -1113,13 +1143,19 @@ bool PanelAiStation::PetDrop(const QString &description) {
         if(!size.isValid()||qint64(size.width())*size.height()>32000000)return false;
         const QImage image=reader.read();if(image.isNull())return false;mime.setImageData(image);
     }
-    for(auto cluster:widgets)if(cluster) {
-        auto *orb=cluster->findChild<QAbstractButton*>("aiStationOrb");if(!orb)continue;
-        const QString manifest=StationDrop::prepare(&mime);
-        if(manifest.isEmpty())return false;
-        static_cast<Orb*>(orb)->petDropMenu(manifest,QCursor::pos());return true;
+    const QPoint cursor=QCursor::pos();
+    const auto *screen=QGuiApplication::screenAt(cursor);
+    Orb *target=nullptr;
+    for(auto cluster:widgets)if(cluster&&cluster->isVisible()) {
+        auto *button=cluster->findChild<QAbstractButton*>("aiStationOrb");if(!button)continue;
+        auto *orb=static_cast<Orb*>(button);
+        if(!target)target=orb;
+        if(QGuiApplication::screenAt(orb->mapToGlobal(orb->rect().center()))==screen){target=orb;break;}
     }
-    return false;
+    if(!target)return false;
+    const auto manifest=StationDrop::prepare(&mime);
+    if(manifest.isEmpty())return false;
+    target->petDropMenu(manifest,cursor);return true;
 }
 
 bool PanelAiStation::OpenCalendar(){

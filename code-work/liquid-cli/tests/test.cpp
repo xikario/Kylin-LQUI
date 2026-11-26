@@ -183,16 +183,18 @@ private slots:
     void acpCatalog_data(){QTest::addColumn<QString>("provider");QTest::newRow("qwen")<<QString("qwen");QTest::newRow("deepseek")<<QString("deepseek");}
     void backendSettingsPicker(){
         QString marker;auto s=config(&marker);
-        for(const auto &provider:QStringList{"qwen","deepseek"}){s.selectBackend(provider);s.command=quote(qEnvironmentVariable("LIQUID_ACP_FIXTURE"))+" "+quote(marker+"-"+provider);}
+        const auto originalCodexCommand=s.command;
+        s.selectBackend("qwen");QVERIFY(s.save());
+        const auto migrated=Settings::load(s.file);QCOMPARE(migrated.backend,QString("codex"));QCOMPARE(migrated.command,originalCodexCommand);
+        s.selectBackend("deepseek");s.command=quote(qEnvironmentVariable("LIQUID_ACP_FIXTURE"))+" "+quote(marker);
         s.selectBackend("codex");Drawer d(s,folder());d.Show();d.Preferences();
         QDialog *dialog=nullptr;for(auto *w:QApplication::topLevelWidgets())if(w->objectName()=="cliPreferences")dialog=qobject_cast<QDialog*>(w);QVERIFY(dialog);
         auto *picker=dialog->findChild<QComboBox*>("settingBackend");auto *model=dialog->findChild<QComboBox*>("settingModel");auto *mode=dialog->findChild<QComboBox*>("settingSessionMode");auto *buttons=dialog->findChild<QDialogButtonBox*>();QVERIFY(picker);QVERIFY(model);QVERIFY(mode);QVERIFY(buttons);
-        for(const auto &provider:QStringList{"qwen","deepseek"}) {
-            picker->setCurrentIndex(picker->findData(provider));QMetaObject::invokeMethod(picker,"activated",Q_ARG(int,picker->currentIndex()));
-            QTRY_VERIFY_WITH_TIMEOUT(model->isEnabled()&&model->findData("fixture/deep")>=0,10000);
-            QCOMPARE(mode->isHidden(),provider=="deepseek");buttons->button(QDialogButtonBox::Apply)->click();QCOMPARE(d.configuration().backend,provider);QVERIFY(!d.client()->running());
-            QCOMPARE(Settings::load(s.file).backend,provider);QVERIFY(requests(marker+"-"+provider,"session/prompt").isEmpty());
-        }
+        QCOMPARE(picker->findData("qwen"),-1);
+        picker->setCurrentIndex(picker->findData("deepseek"));QMetaObject::invokeMethod(picker,"activated",Q_ARG(int,picker->currentIndex()));
+        QTRY_VERIFY_WITH_TIMEOUT(model->isEnabled()&&model->findData("fixture/deep")>=0,10000);
+        QVERIFY(mode->isHidden());buttons->button(QDialogButtonBox::Apply)->click();QCOMPARE(d.configuration().backend,QString("deepseek"));QVERIFY(!d.client()->running());
+        QCOMPARE(Settings::load(s.file).backend,QString("deepseek"));QVERIFY(requests(marker,"session/prompt").isEmpty());
         dialog->close();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
     }
     void acpCatalog(){

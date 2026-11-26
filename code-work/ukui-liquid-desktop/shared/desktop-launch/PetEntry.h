@@ -16,6 +16,11 @@ inline QString label(const QString &id) {
     for(const auto &item:characters()) if(item.second==id) return item.first;
     return {};
 }
+inline QString activeCharacter(const QSettings &settings=QSettings(path(),QSettings::IniFormat)) {
+    if(settings.value("entry/mode").toString()!="pet")return {};
+    const auto id=settings.value("entry/character","claude").toString();
+    return label(id).isEmpty()?QString():id;
+}
 inline QString icon(const QString &id) {
     if(label(id).isEmpty())return {};
     return QStandardPaths::locate(QStandardPaths::GenericDataLocation,"kylin-ai-pets/"+id+"/avatar.png");

@@ -10,7 +10,7 @@ set(BUILD_TESTING OFF CACHE BOOL "Shared library tests" FORCE)
 add_subdirectory("${LIQUID_DESKTOP_ROOT}/shared/liquid-glass" liquid-glass)
 add_subdirectory("${LIQUID_DESKTOP_ROOT}/shared/liquid-popup" liquid-popup)
 add_library(cli-ui STATIC src/Settings.cpp src/Markdown.cpp src/Conversation.cpp src/AgentClient.cpp src/AgentClient.h src/CodexClient.cpp src/AcpClient.cpp src/CommandCodeClient.cpp src/ChatView.cpp src/Composer.cpp
-  src/RegionCapture.cpp src/CaptureEditor.cpp src/Drawer.cpp src/Preferences.cpp src/SettingsHelp.cpp src/WindowIdentity.cpp assets/resources.qrc)
+  src/RegionCapture.cpp src/CaptureEditor.cpp src/Drawer.cpp src/Preferences.cpp src/DshCredentials.cpp src/SettingsHelp.cpp src/WindowIdentity.cpp assets/resources.qrc)
 target_include_directories(cli-ui PUBLIC src "${LIQUID_DESKTOP_ROOT}/apps/ukui-kaishicaidan-v2/src" "${LIQUID_DESKTOP_ROOT}/shared/desktop-launch")
 set_source_files_properties(src/CodexClient.cpp src/AcpClient.cpp PROPERTIES INCLUDE_DIRECTORIES "${LIQUID_DESKTOP_ROOT}/shared/async-work")
 target_link_libraries(cli-ui PUBLIC Qt5::Widgets Qt5::Network Qt5::DBus ukui-liquid-optics ukui-liquid-popup Threads::Threads)

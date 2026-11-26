@@ -37,6 +37,7 @@ void AcpClient::setIdleTimeout(int ms){idle.setInterval(ms);if(ms<=0)idle.stop()
 void AcpClient::armIdle(){if(phase==Ready&&!busy()&&permissions.isEmpty()&&idle.interval()>0)idle.start();}
 void AcpClient::send(const QString &text,const QStringList &images) {
     if(busy()||discoveryOnly)return;
+    if(renewBeforeSend){stop();renewBeforeSend=false;}
     idle.stop();cancelled=false;queued=true;queuedText=text;queuedImages=images;
     if(phase==Stopped)launch();else runQueued();
 }
@@ -92,6 +93,8 @@ void AcpClient::initialize() {
 }
 QString AcpClient::failure(const QJsonObject &error) const {
     QString text=error.value("message").toString("CLI 返回错误");
+    if (settings.backend == "deepseek" && text.contains("AccessDenied.Unpurchased"))
+        return QStringLiteral("模型服务商拒绝了请求（403 AccessDenied.Unpurchased）。请检查当前账号的套餐和所选模型的调用权限。");
     if(error.value("code").toInt()==-32000||text.contains("auth",Qt::CaseInsensitive)||text.contains("API key",Qt::CaseInsensitive))
         text+=settings.backend=="qwen"?"；请先在终端运行 qwen 完成登录或配置模型提供商":settings.backend=="commandcode-cli"?"；请先在终端运行 cmd login 登录 Command Code":"；请先配置 DeepSeek Harness 的模型提供商和凭据";
     return text.left(700);
